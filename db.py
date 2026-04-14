@@ -356,6 +356,18 @@ def get_or_create_alliance(alliance_name: str) -> Alliance:
     return create_alliance(alliance_name)
 
 
+def get_alliance_names() -> list[str]:
+    with _connect() as connection:
+        rows = connection.execute(
+            """
+            SELECT alliance_name
+            FROM alliances
+            ORDER BY alliance_name ASC
+            """
+        ).fetchall()
+    return [str(row["alliance_name"]) for row in rows]
+
+
 def get_alliance_counts_for_discord_ids(discord_ids: list[int]) -> dict[str, int]:
     if not discord_ids:
         return {}
@@ -511,6 +523,7 @@ def get_user_attendance_stats(
     start_at: str | None = None,
     end_at: str | None = None,
     search: str | None = None,
+    alliance_name: str | None = None,
     limit: int = 20,
 ) -> list[dict[str, Any]]:
     where_clause, params = _build_attendance_filter(guild_id, start_at, end_at)
@@ -525,6 +538,11 @@ def get_user_attendance_stats(
         """
         wildcard = f"%{search.strip()}%"
         params = [*params, wildcard, wildcard, wildcard]
+    if alliance_name:
+        search_clause += """
+        AND COALESCE(a.alliance_name, '미분류') = ?
+        """
+        params = [*params, alliance_name]
 
     params = [*params, int(limit)]
     with _connect() as connection:
@@ -566,6 +584,7 @@ def get_attendance_export_rows(
     start_at: str | None = None,
     end_at: str | None = None,
     search: str | None = None,
+    alliance_name: str | None = None,
 ) -> list[dict[str, Any]]:
     where_clause, params = _build_attendance_filter(guild_id, start_at, end_at)
     search_clause = ""
@@ -579,6 +598,11 @@ def get_attendance_export_rows(
         """
         wildcard = f"%{search.strip()}%"
         params = [*params, wildcard, wildcard, wildcard]
+    if alliance_name:
+        search_clause += """
+        AND COALESCE(a.alliance_name, '미분류') = ?
+        """
+        params = [*params, alliance_name]
     with _connect() as connection:
         rows = connection.execute(
             f"""

@@ -189,10 +189,18 @@ async def start_attendance(
             return False, "타이머를 먼저 설정해주세요."
 
         voice_channel = guild.get_channel(settings.attendance_voice_channel_id)
-        if voice_channel is None or not hasattr(voice_channel, "send"):
-            return False, "설정된 음성채널에 메시지를 보낼 수 없습니다."
+        if voice_channel is None:
+            return False, "설정된 출석 음성채널을 찾을 수 없습니다."
 
-        attendance_message = await voice_channel.send(
+        attendance_channel_id = settings.admin_channel_id
+        if attendance_channel_id is None:
+            return False, "출석 채널을 먼저 설정해주세요."
+
+        attendance_channel = guild.get_channel(attendance_channel_id)
+        if not isinstance(attendance_channel, discord.TextChannel):
+            return False, "설정된 출석 채널에 메시지를 보낼 수 없습니다."
+
+        attendance_message = await attendance_channel.send(
             embed=build_attendance_embed(guild, voice_channel, settings.timer),
             view=AttendanceActionView(bot, guild.id),
         )
@@ -203,14 +211,14 @@ async def start_attendance(
         set_attendance_state(
             bot,
             guild.id,
-            channel_id=voice_channel.id,
+            channel_id=attendance_channel.id,
             message_id=attendance_message.id,
             task=task,
             started_by=starter.id,
             started_at=datetime.now().strftime(TIME_FORMAT),
         )
     await update_admin_panel(bot, guild.id)
-    return True, f"출석을 시작했습니다. {voice_channel.mention}에 안내 메시지를 보냈습니다."
+    return True, f"출석을 시작했습니다. {attendance_channel.mention}에 안내 메시지를 보냈습니다."
 
 
 async def stop_attendance(
@@ -349,28 +357,20 @@ async def send_attendance_summary(
     )
     reason_text = "수동" if reason == "manual" else "자동"
     started_at_text = _format_summary_timestamp(snapshot.started_at)
-    alliance_counts = _get_alliance_counts_for_snapshot(guild, snapshot)
-    alliance_lines = [f"[{alliance_name}] : {member_count}명" for alliance_name, member_count in alliance_counts.items()]
-    if not alliance_lines:
-        alliance_lines.append("[미분류] : 0명")
+    clan_members = _get_clan_members_for_snapshot(guild, snapshot)
     summary_lines = [
         f"{started_by_mention} 출석 확인 {reason_text} 종료",
         f"확인 시작 시간 : {started_at_text}",
         f"참석 총인원 인원 : {len(snapshot.participant_ids)}명",
-        "```",
-        "연맹별 인원",
     ]
     if save_status:
         summary_lines.insert(2, save_status)
-    summary_lines.extend(alliance_lines)
-    summary_lines.append("```")
-    summary = "\n".join(summary_lines)
+    messages = _build_summary_messages(summary_lines, clan_members)
 
     try:
-        if thread is not None:
-            await thread.send(summary)
-        else:
-            await panel_message.channel.send(summary)
+        target = thread if thread is not None else panel_message.channel
+        for message in messages:
+            await target.send(message)
     except (discord.Forbidden, discord.HTTPException):
         return
 
@@ -456,17 +456,69 @@ def _resolve_alliance_name_from_nickname(nickname: str) -> str:
     return alliance_name
 
 
-def _get_alliance_counts_for_snapshot(
+def _get_clan_members_for_snapshot(
     guild: discord.Guild,
     snapshot: AttendanceSnapshot,
-) -> dict[str, int]:
-    counts: dict[str, int] = {}
+) -> dict[str, list[str]]:
+    counts: dict[str, list[str]] = {}
     for discord_id in snapshot.participant_ids:
         member = guild.get_member(discord_id)
         nickname = member.display_name if member is not None else str(discord_id)
         alliance_name = _resolve_alliance_name_from_nickname(nickname)
-        counts[alliance_name] = counts.get(alliance_name, 0) + 1
+        counts.setdefault(alliance_name, []).append(nickname)
+    for nicknames in counts.values():
+        nicknames.sort()
     return counts
+
+
+def _build_summary_messages(
+    header_lines: list[str],
+    clan_members: dict[str, list[str]],
+) -> list[str]:
+    messages = ["\n".join(header_lines)]
+    if not clan_members:
+        return messages + ["[미분류] : 0명\n```없음```"]
+
+    current_message = ""
+    for clan_name, nicknames in clan_members.items():
+        section = "\n".join(
+            [
+                f"[{clan_name}] : {len(nicknames)}명",
+                f"```{chr(10).join(nicknames) if nicknames else '없음'}```",
+            ]
+        )
+        if len(section) > 1800:
+            section = _truncate_clan_section(clan_name, nicknames)
+        if not current_message:
+            current_message = section
+            continue
+        if len(current_message) + 2 + len(section) > 1800:
+            messages.append(current_message)
+            current_message = section
+            continue
+        current_message = f"{current_message}\n\n{section}"
+
+    if current_message:
+        messages.append(current_message)
+    return messages
+
+
+def _truncate_clan_section(clan_name: str, nicknames: list[str]) -> str:
+    lines: list[str] = []
+    current_length = len(f"[{clan_name}] : {len(nicknames)}명\n")
+    for nickname in nicknames:
+        extra = len(nickname) + (1 if lines else 0)
+        if current_length + extra > 1750:
+            lines.append("...")
+            break
+        lines.append(nickname)
+        current_length += extra
+    return "\n".join(
+        [
+            f"[{clan_name}] : {len(nicknames)}명",
+            f"```{chr(10).join(lines) if lines else '없음'}```",
+        ]
+    )
 
 
 def _mention_or_system(discord_id: int | None) -> str:

@@ -11,12 +11,12 @@ def build_admin_panel_embed(
     guild: discord.Guild, settings: GuildSettings
 ) -> discord.Embed:
     embed = discord.Embed(
-        title="출석 관리자 패널",
+        title="출석 패널",
         description="출석 시스템 설정과 버튼을 여기에서 관리합니다.",
         color=discord.Color.blurple(),
     )
     embed.add_field(
-        name="관리자 채널",
+        name="출석 채널",
         value=_format_channel(guild, settings.admin_channel_id),
         inline=False,
     )
@@ -30,7 +30,7 @@ def build_admin_panel_embed(
         value=_format_timer(settings.timer),
         inline=False,
     )
-    embed.set_footer(text=f"{guild.name} 전용 관리자 UI")
+    embed.set_footer(text=f"{guild.name} 전용 출석 UI")
     return embed
 
 

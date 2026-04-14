@@ -12,9 +12,8 @@ from utils.panel import clear_old_admin_panel, rebuild_admin_panel
 load_dotenv()
 
 TOKEN = os.getenv("DISCORD_BOT_TOKEN")
-
 if not TOKEN:
-    raise RuntimeError("DISCORD_BOT_TOKEN is not set in .env")
+    raise RuntimeError("DISCORD_BOT_TOKEN이 .env 파일에 설정되어 있지 않습니다.")
 
 intents = discord.Intents.default()
 bot = discord.Bot(intents=intents)
@@ -34,16 +33,16 @@ async def on_ready() -> None:
         await rebuild_admin_panel(bot, guild.id)
 
     guild_names = ", ".join(guild.name for guild in bot.guilds) or "No Guild"
-    print(f"Logged in as {bot.user} | Guilds: {guild_names}")
+    print(f"봇 로그인 완료: {bot.user} | 길드: {guild_names}")
 
 
 @bot.slash_command(
     name="관리자채널",
-    description="관리자 패널을 표시할 채널을 설정합니다.",
+    description="출석 채널을 설정합니다.",
 )
 async def set_admin_channel(
     ctx: discord.ApplicationContext,
-    channel: discord.Option(discord.TextChannel, description="관리자 패널 채널"),
+    channel: discord.Option(discord.TextChannel, description="출석 채널"),
 ) -> None:
     guild = ctx.guild
     if guild is None:
@@ -68,7 +67,7 @@ async def set_admin_channel(
     await rebuild_admin_panel(bot, guild.id)
 
     await ctx.followup.send(
-        f"관리자 채널이 {channel.mention}으로 설정되었습니다.",
+        f"출석 채널이 {channel.mention}으로 설정되었습니다.",
         ephemeral=True,
     )
 

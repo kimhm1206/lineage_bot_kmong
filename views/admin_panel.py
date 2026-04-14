@@ -24,6 +24,12 @@ class AdminPanelView(discord.ui.View):
             await _safe_response(interaction, "권한이 없습니다.")
             return False
 
+        custom_id = None
+        if isinstance(interaction.data, dict):
+            custom_id = interaction.data.get("custom_id")
+        if custom_id == "attendance:stats":
+            return True
+
         if not is_admin_member(interaction.user):
             await _safe_response(interaction, "권한이 없습니다.")
             return False
@@ -103,7 +109,7 @@ class AdminPanelView(discord.ui.View):
     async def stats_button(
         self, button: discord.ui.Button, interaction: discord.Interaction
     ) -> None:
-        from views.statistics import (
+        from views.db_check import (
             StatisticsDashboardView,
             build_statistics_dashboard_embed,
         )
