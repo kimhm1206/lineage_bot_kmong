@@ -316,8 +316,8 @@ class StatisticsSearchModal(discord.ui.Modal):
         self.mode = mode
         self.stats_filter = stats_filter
         self.search_input = discord.ui.InputText(
-            label="유저/연맹 검색",
-            placeholder="닉네임, 디스코드 ID, 연맹명",
+            label="유저/혈맹 검색",
+            placeholder="닉네임, 디스코드 ID, 혈맹명",
             required=False,
             value=stats_filter.user_search or "",
         )
@@ -421,7 +421,7 @@ def _build_statistics_embed(
         )
         paged_rows, page_count = _slice_rows(rows, stats_filter.page)
         embed.add_field(
-            name=f"연맹별 통계 ({stats_filter.page + 1}/{page_count})",
+            name=f"혈맹별 통계 ({stats_filter.page + 1}/{page_count})",
             value=_format_alliance_rows(paged_rows),
             inline=False,
         )
@@ -462,7 +462,7 @@ def _build_mode_options(current_mode: str) -> list[discord.SelectOption]:
     options = [
         ("overview", "전체 요약", "출석 세션, 인원, 평균을 봅니다."),
         ("daily", "일자별", "날짜별 출석 흐름을 봅니다."),
-        ("alliance", "연맹별", "연맹별 출석 현황을 봅니다."),
+        ("alliance", "혈맹별", "혈맹별 출석 현황을 봅니다."),
         ("user", "유저별", "유저별 출석 횟수를 봅니다."),
     ]
     return [
