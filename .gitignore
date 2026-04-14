@@ -1,0 +1,12 @@
+venv/
+__pycache__/
+.env
+.tmp/
+*.db
+*.db-journal
+*.sqlite3
+*.sqlite3-journal
+sqlite_test.txt
+data/
+
+
