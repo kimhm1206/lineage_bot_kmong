@@ -524,7 +524,7 @@ def get_user_attendance_stats(
     end_at: str | None = None,
     search: str | None = None,
     alliance_name: str | None = None,
-    limit: int = 20,
+    limit: int = 1000,
 ) -> list[dict[str, Any]]:
     where_clause, params = _build_attendance_filter(guild_id, start_at, end_at)
     search_clause = ""

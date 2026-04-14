@@ -15,7 +15,10 @@ TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 if not TOKEN:
     raise RuntimeError("DISCORD_BOT_TOKEN이 .env 파일에 설정되어 있지 않습니다.")
 
-intents = discord.Intents.default()
+intents = discord.Intents.none()
+intents.guilds = True
+intents.members = True
+intents.voice_states = True
 bot = discord.Bot(intents=intents)
 bot.panel_state_by_guild = {}
 bot.attendance_state_by_guild = {}
