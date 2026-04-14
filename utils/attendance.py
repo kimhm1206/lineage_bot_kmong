@@ -362,7 +362,7 @@ async def send_attendance_summary(
     summary_lines = [
         f"{started_by_mention} 출석 확인 {reason_text} 종료",
         f"확인 시작 시간 : {started_at_text}",
-        f"참석 총인원 인원 : {len(snapshot.participant_ids)}명",
+        f"참석 총인원 : {len(snapshot.participant_ids)}명",
     ]
     if save_status:
         summary_lines.insert(2, save_status)
