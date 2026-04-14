@@ -3,7 +3,7 @@
 import asyncio
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import discord
@@ -26,6 +26,7 @@ from utils.panel import (
 
 TIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 ALLIANCE_PATTERN = re.compile(r"\[([^\[\]]{2,4})\]")
+KST = timezone(timedelta(hours=9))
 
 
 @dataclass(slots=True)
@@ -215,7 +216,7 @@ async def start_attendance(
             message_id=attendance_message.id,
             task=task,
             started_by=starter.id,
-            started_at=datetime.now().strftime(TIME_FORMAT),
+            started_at=_now_kst().strftime(TIME_FORMAT),
         )
     await update_admin_panel(bot, guild.id)
     return True, f"출석을 시작했습니다. {attendance_channel.mention}에 안내 메시지를 보냈습니다."
@@ -239,7 +240,7 @@ async def stop_attendance(
         snapshot = AttendanceSnapshot(
             guild_id=guild.id,
             started_at=_coerce_timestamp(state.get("started_at")),
-            ended_at=datetime.now().strftime(TIME_FORMAT),
+            ended_at=_now_kst().strftime(TIME_FORMAT),
             started_by_discord_id=_optional_int(state.get("started_by")),
             stopped_by_discord_id=stopped_by.id if stopped_by is not None else None,
             participant_ids=sorted(_participant_ids(state)),
@@ -428,7 +429,11 @@ def _optional_int(value: object) -> int | None:
 def _coerce_timestamp(value: object) -> str:
     if isinstance(value, str) and value:
         return value
-    return datetime.now().strftime(TIME_FORMAT)
+    return _now_kst().strftime(TIME_FORMAT)
+
+
+def _now_kst() -> datetime:
+    return datetime.now(KST)
 
 
 def _resolve_alliance_id_from_nickname(nickname: str) -> int | None:
