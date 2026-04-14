@@ -103,14 +103,14 @@ def init_db() -> None:
             CREATE TABLE IF NOT EXISTS attendance_entries (
                 attendance_id INTEGER NOT NULL,
                 user_id INTEGER NOT NULL,
-                alliance_id INTEGER,
                 PRIMARY KEY (attendance_id, user_id),
                 FOREIGN KEY (attendance_id) REFERENCES attendance_sessions(attendance_id) ON DELETE CASCADE,
-                FOREIGN KEY (user_id) REFERENCES users(user_id),
-                FOREIGN KEY (alliance_id) REFERENCES alliances(alliance_id)
+                FOREIGN KEY (user_id) REFERENCES users(user_id)
             )
             """
         )
+        _migrate_guild_settings_schema(connection)
+        _migrate_attendance_entries_schema(connection)
         connection.execute(
             """
             CREATE INDEX IF NOT EXISTS idx_guild_settings_admin_channel
@@ -143,17 +143,10 @@ def init_db() -> None:
         )
         connection.execute(
             """
-            CREATE INDEX IF NOT EXISTS idx_attendance_entries_alliance_id
-            ON attendance_entries(alliance_id)
-            """
-        )
-        connection.execute(
-            """
             CREATE INDEX IF NOT EXISTS idx_attendance_entries_attendance_id
             ON attendance_entries(attendance_id)
             """
         )
-        _migrate_guild_settings_schema(connection)
         connection.commit()
     _migrate_legacy_settings()
 
@@ -305,10 +298,10 @@ def save_attendance_session(
 
             connection.execute(
                 """
-                INSERT INTO attendance_entries (attendance_id, user_id, alliance_id)
-                VALUES (?, ?, ?)
+                INSERT INTO attendance_entries (attendance_id, user_id)
+                VALUES (?, ?)
                 """,
-                (attendance_id, user_id, alliance_id),
+                (attendance_id, user_id),
             )
 
         connection.commit()
@@ -498,7 +491,8 @@ def get_alliance_attendance_stats(
                 COUNT(DISTINCT s.attendance_id) AS session_count
             FROM attendance_sessions s
             LEFT JOIN attendance_entries e ON e.attendance_id = s.attendance_id
-            LEFT JOIN alliances a ON a.alliance_id = e.alliance_id
+            LEFT JOIN users u ON u.user_id = e.user_id
+            LEFT JOIN alliances a ON a.alliance_id = u.alliance_id
             {where_clause}
             GROUP BY COALESCE(a.alliance_name, '미분류')
             {search_clause}
@@ -557,7 +551,7 @@ def get_user_attendance_stats(
             FROM attendance_sessions s
             INNER JOIN attendance_entries e ON e.attendance_id = s.attendance_id
             INNER JOIN users u ON u.user_id = e.user_id
-            LEFT JOIN alliances a ON a.alliance_id = e.alliance_id
+            LEFT JOIN alliances a ON a.alliance_id = u.alliance_id
             {where_clause}
             {search_clause}
             GROUP BY u.user_id, u.discord_id, u.discord_nickname, COALESCE(a.alliance_name, '미분류')
@@ -614,7 +608,7 @@ def get_attendance_export_rows(
             FROM attendance_sessions s
             LEFT JOIN attendance_entries e ON e.attendance_id = s.attendance_id
             LEFT JOIN users u ON u.user_id = e.user_id
-            LEFT JOIN alliances a ON a.alliance_id = e.alliance_id
+            LEFT JOIN alliances a ON a.alliance_id = u.alliance_id
             {where_clause}
             {search_clause}
             ORDER BY s.started_at DESC, u.discord_nickname ASC
@@ -765,3 +759,38 @@ def _migrate_guild_settings_schema(connection: sqlite3.Connection) -> None:
     )
     connection.execute("DROP TABLE guild_settings")
     connection.execute("ALTER TABLE guild_settings_new RENAME TO guild_settings")
+
+
+def _migrate_attendance_entries_schema(connection: sqlite3.Connection) -> None:
+    columns = connection.execute("PRAGMA table_info(attendance_entries)").fetchall()
+    column_names = [str(column["name"]) for column in columns]
+    expected_columns = [
+        "attendance_id",
+        "user_id",
+    ]
+
+    if column_names == expected_columns:
+        connection.execute("DROP INDEX IF EXISTS idx_attendance_entries_alliance_id")
+        return
+
+    connection.execute("DROP INDEX IF EXISTS idx_attendance_entries_alliance_id")
+    connection.execute(
+        """
+        CREATE TABLE attendance_entries_new (
+            attendance_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            PRIMARY KEY (attendance_id, user_id),
+            FOREIGN KEY (attendance_id) REFERENCES attendance_sessions(attendance_id) ON DELETE CASCADE,
+            FOREIGN KEY (user_id) REFERENCES users(user_id)
+        )
+        """
+    )
+    connection.execute(
+        """
+        INSERT OR IGNORE INTO attendance_entries_new (attendance_id, user_id)
+        SELECT attendance_id, user_id
+        FROM attendance_entries
+        """
+    )
+    connection.execute("DROP TABLE attendance_entries")
+    connection.execute("ALTER TABLE attendance_entries_new RENAME TO attendance_entries")
