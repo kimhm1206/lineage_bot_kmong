@@ -58,6 +58,8 @@ async def set_admin_channel(
         await ctx.respond("권한이 없습니다.", ephemeral=True)
         return
 
+    await ctx.defer(ephemeral=True)
+
     previous_settings = get_settings(guild.id)
     previous_admin_channel_id = previous_settings.admin_channel_id
 
@@ -65,7 +67,7 @@ async def set_admin_channel(
     await clear_old_admin_panel(bot, guild, previous_admin_channel_id)
     await rebuild_admin_panel(bot, guild.id)
 
-    await ctx.respond(
+    await ctx.followup.send(
         f"관리자 채널이 {channel.mention}으로 설정되었습니다.",
         ephemeral=True,
     )
