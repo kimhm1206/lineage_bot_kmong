@@ -21,6 +21,7 @@ class GuildSettings:
     admin_channel_id: int | None = None
     attendance_voice_channel_id: int | None = None
     timer: int | None = None
+    attendance_available_timer: int | None = None
 
 
 @dataclass(slots=True)
@@ -63,6 +64,7 @@ def init_db() -> None:
                 admin_channel_id INTEGER,
                 attendance_voice_channel_id INTEGER,
                 timer INTEGER,
+                attendance_available_timer INTEGER,
                 FOREIGN KEY (guild_id) REFERENCES guilds(guild_id) ON DELETE CASCADE
             )
             """
@@ -185,7 +187,7 @@ def get_settings(guild_id: int) -> GuildSettings:
     with _connect() as connection:
         row = connection.execute(
             """
-            SELECT guild_id, admin_channel_id, attendance_voice_channel_id, timer
+            SELECT guild_id, admin_channel_id, attendance_voice_channel_id, timer, attendance_available_timer
             FROM guild_settings
             WHERE guild_id = ?
             """,
@@ -200,6 +202,7 @@ def get_settings(guild_id: int) -> GuildSettings:
         admin_channel_id=_optional_int(row["admin_channel_id"]),
         attendance_voice_channel_id=_optional_int(row["attendance_voice_channel_id"]),
         timer=_optional_int(row["timer"]),
+        attendance_available_timer=_optional_int(row["attendance_available_timer"]),
     )
 
 
@@ -208,6 +211,7 @@ def update_setting(guild_id: int, column: str, value: int | None) -> GuildSettin
         "admin_channel_id",
         "attendance_voice_channel_id",
         "timer",
+        "attendance_available_timer",
     }
     if column not in allowed_columns:
         raise ValueError(f"Unsupported settings column: {column}")
@@ -698,19 +702,22 @@ def _migrate_legacy_settings() -> None:
                         guild_id,
                         admin_channel_id,
                         attendance_voice_channel_id,
-                        timer
+                        timer,
+                        attendance_available_timer
                     )
-                    VALUES (?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?)
                     ON CONFLICT(guild_id) DO UPDATE SET
                         admin_channel_id = excluded.admin_channel_id,
                         attendance_voice_channel_id = excluded.attendance_voice_channel_id,
-                        timer = excluded.timer
+                        timer = excluded.timer,
+                        attendance_available_timer = excluded.attendance_available_timer
                     """,
                     (
                         guild_id,
                         row["admin_channel_id"],
                         row["attendance_voice_channel_id"],
                         row["timer"],
+                        None,
                     ),
                 )
             connection.commit()
@@ -725,6 +732,7 @@ def _migrate_guild_settings_schema(connection: sqlite3.Connection) -> None:
         "admin_channel_id",
         "attendance_voice_channel_id",
         "timer",
+        "attendance_available_timer",
     ]
 
     if column_names == expected_columns:
@@ -737,23 +745,28 @@ def _migrate_guild_settings_schema(connection: sqlite3.Connection) -> None:
             admin_channel_id INTEGER,
             attendance_voice_channel_id INTEGER,
             timer INTEGER,
+            attendance_available_timer INTEGER,
             FOREIGN KEY (guild_id) REFERENCES guilds(guild_id) ON DELETE CASCADE
         )
         """
     )
+    has_available_timer = "attendance_available_timer" in column_names
+    select_available_timer = "attendance_available_timer" if has_available_timer else "NULL"
     connection.execute(
-        """
+        f"""
         INSERT INTO guild_settings_new (
             guild_id,
             admin_channel_id,
             attendance_voice_channel_id,
-            timer
+            timer,
+            attendance_available_timer
         )
         SELECT
             guild_id,
             admin_channel_id,
             attendance_voice_channel_id,
-            timer
+            timer,
+            {select_available_timer}
         FROM guild_settings
         """
     )

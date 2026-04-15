@@ -3,6 +3,7 @@
 import discord
 
 from db import update_setting
+from utils.attendance import seed_voice_entry_times
 from utils.guild import is_admin_member, is_supported_guild
 from utils.panel import update_admin_panel
 
@@ -51,6 +52,11 @@ class SettingsMenuView(discord.ui.View):
                 value="timer",
                 description="초 단위 타이머 값을 입력합니다.",
             ),
+            discord.SelectOption(
+                label="출석 가능 타이머 설정",
+                value="attendance_available_timer",
+                description="입장 후 출석 가능해지는 시간을 초 단위로 입력합니다.",
+            ),
         ],
     )
     async def settings_select(
@@ -66,7 +72,27 @@ class SettingsMenuView(discord.ui.View):
             )
             return
 
-        await interaction.response.send_modal(TimerSettingModal(self.bot, self.guild_id))
+        if selected == "attendance_available_timer":
+            await interaction.response.send_modal(
+                TimerSettingModal(
+                    self.bot,
+                    self.guild_id,
+                    setting_key="attendance_available_timer",
+                    title="출석 가능 타이머 설정",
+                    success_label="출석 가능 타이머",
+                )
+            )
+            return
+
+        await interaction.response.send_modal(
+            TimerSettingModal(
+                self.bot,
+                self.guild_id,
+                setting_key="timer",
+                title="타이머 설정",
+                success_label="타이머",
+            )
+        )
 
 
 class VoiceChannelSettingView(discord.ui.View):
@@ -201,6 +227,9 @@ class VoiceChannelSelect(discord.ui.Select):
             content=f"출석 음성채널이 {channel.mention}으로 설정되었습니다.",
             view=SettingsMenuView(self.bot, self.guild_id),
         )
+        guild = interaction.guild
+        if guild is not None:
+            seed_voice_entry_times(self.bot, guild)
         await update_admin_panel(self.bot, self.guild_id)
 
 
@@ -222,10 +251,20 @@ class _DisabledSelect(discord.ui.Select):
 
 
 class TimerSettingModal(discord.ui.Modal):
-    def __init__(self, bot: discord.Bot, guild_id: int):
-        super().__init__(title="타이머 설정")
+    def __init__(
+        self,
+        bot: discord.Bot,
+        guild_id: int,
+        *,
+        setting_key: str,
+        title: str,
+        success_label: str,
+    ):
+        super().__init__(title=title)
         self.bot = bot
         self.guild_id = guild_id
+        self.setting_key = setting_key
+        self.success_label = success_label
         self.timer_input = discord.ui.InputText(
             label="타이머(초)",
             placeholder="예: 300 = 5분, 600 = 10분",
@@ -255,9 +294,12 @@ class TimerSettingModal(discord.ui.Modal):
             )
             return
 
-        update_setting(self.guild_id, "timer", timer_value)
+        update_setting(self.guild_id, self.setting_key, timer_value)
         await interaction.response.send_message(
-            f"타이머가 `{timer_value}`초로 설정되었습니다. 예: 300 = 5분, 600 = 10분",
+            (
+                f"{self.success_label}가 `{timer_value}`초로 설정되었습니다. "
+                "예: 300 = 5분, 600 = 10분"
+            ),
             ephemeral=True,
         )
         await update_admin_panel(self.bot, self.guild_id)

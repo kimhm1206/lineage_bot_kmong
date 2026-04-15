@@ -5,7 +5,12 @@ from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 
 from db import get_settings, init_db, update_setting
-from utils.attendance import AttendanceActionView, register_attendance
+from utils.attendance import (
+    AttendanceActionView,
+    register_attendance,
+    seed_voice_entry_times,
+    sync_voice_entry_time,
+)
 from utils.guild import is_admin_member, is_supported_guild
 from utils.panel import clear_old_admin_panel, rebuild_admin_panel, update_admin_panel
 from views.admin_panel import AdminPanelView
@@ -25,6 +30,7 @@ bot = discord.Bot(intents=intents)
 bot.panel_state_by_guild = {}
 bot.attendance_state_by_guild = {}
 bot.attendance_locks = {}
+bot.voice_entry_times_by_guild = {}
 bot.commands_synced = False
 bot.persistent_views_registered = False
 bot.runtime_label = (
@@ -44,6 +50,7 @@ async def on_ready() -> None:
         bot.commands_synced = True
 
     for guild in bot.guilds:
+        seed_voice_entry_times(bot, guild)
         await update_admin_panel(bot, guild.id)
 
     guild_names = ", ".join(guild.name for guild in bot.guilds) or "No Guild"
@@ -106,6 +113,22 @@ async def attend(ctx: discord.ApplicationContext) -> None:
 
     _, message = await register_attendance(bot, guild.id, author)
     await ctx.respond(message, ephemeral=True)
+
+
+@bot.event
+async def on_voice_state_update(
+    member: discord.Member,
+    before: discord.VoiceState,
+    after: discord.VoiceState,
+) -> None:
+    guild = member.guild
+    sync_voice_entry_time(
+        bot,
+        guild.id,
+        member.id,
+        getattr(before.channel, "id", None),
+        getattr(after.channel, "id", None),
+    )
 
 
 def main() -> None:

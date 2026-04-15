@@ -2,6 +2,7 @@
 
 import asyncio
 import re
+import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -29,6 +30,7 @@ from utils.panel import (
 TIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 ALLIANCE_PATTERN = re.compile(r"\[([^\[\]]{2,4})\]")
 KST = timezone(timedelta(hours=9))
+ATTENDANCE_USER_COOLDOWN_SECONDS = 3.0
 
 
 @dataclass(slots=True)
@@ -272,12 +274,35 @@ async def register_attendance(
     guild_id: int,
     member: discord.Member,
 ) -> tuple[bool, str]:
+    cooldown_remaining = _consume_user_attendance_cooldown(bot, guild_id, member.id)
+    if cooldown_remaining is not None:
+        return (
+            False,
+            f"출석 요청이 너무 빠릅니다. `{cooldown_remaining}`초 후 다시 시도해주세요.",
+        )
+
     settings = get_settings(guild_id)
     voice_channel_id = settings.attendance_voice_channel_id
     current_voice = getattr(member.voice, "channel", None)
     current_voice_id = getattr(current_voice, "id", None)
     if voice_channel_id is None or current_voice_id != voice_channel_id:
         return False, "설정된 출석 음성채널에 들어가 있어야 출석할 수 있습니다."
+
+    available_timer = settings.attendance_available_timer
+    if available_timer is not None and available_timer > 0:
+        joined_at = get_voice_entry_time(bot, guild_id, member.id)
+        if joined_at is None:
+            joined_at = _now_kst()
+            set_voice_entry_time(bot, guild_id, member.id, joined_at)
+
+        elapsed = (_now_kst() - joined_at).total_seconds()
+        if elapsed < available_timer:
+            remaining = int(available_timer - elapsed)
+            return (
+                False,
+                f"음성채널 입장 후 `{available_timer}`초가 지나야 출석할 수 있습니다. "
+                f"남은 시간: `{max(1, remaining)}`초",
+            )
 
     async with _get_attendance_lock(bot, guild_id):
         state = get_attendance_state(bot, guild_id)
@@ -290,6 +315,8 @@ async def register_attendance(
 
         if len(participants) == previous_count:
             return True, "이미 출석이 완료되었습니다."
+
+        set_voice_entry_time(bot, guild_id, member.id, _now_kst())
 
     return True, "출석이 완료되었습니다."
 
@@ -421,6 +448,123 @@ def _participant_ids(state: dict[str, Any]) -> set[int]:
     participants = set()
     state["participants"] = participants
     return participants
+
+
+def sync_voice_entry_time(
+    bot: discord.Bot,
+    guild_id: int,
+    member_id: int,
+    before_channel_id: int | None,
+    after_channel_id: int | None,
+) -> None:
+    settings = get_settings(guild_id)
+    tracked_channel_id = settings.attendance_voice_channel_id
+    if tracked_channel_id is None:
+        clear_voice_entry_time(bot, guild_id, member_id)
+        return
+
+    if after_channel_id == tracked_channel_id:
+        if before_channel_id != tracked_channel_id:
+            set_voice_entry_time(bot, guild_id, member_id, _now_kst())
+        return
+
+    if before_channel_id == tracked_channel_id or after_channel_id != tracked_channel_id:
+        clear_voice_entry_time(bot, guild_id, member_id)
+
+
+def seed_voice_entry_times(bot: discord.Bot, guild: discord.Guild) -> None:
+    settings = get_settings(guild.id)
+    tracked_channel_id = settings.attendance_voice_channel_id
+    if tracked_channel_id is None:
+        return
+
+    channel = guild.get_channel(tracked_channel_id)
+    if not isinstance(channel, discord.VoiceChannel):
+        return
+
+    now = _now_kst()
+    tracked_members = {member.id for member in channel.members}
+    voice_entry_times = _get_voice_entry_times(bot, guild.id)
+    for member_id in list(voice_entry_times.keys()):
+        if member_id not in tracked_members:
+            voice_entry_times.pop(member_id, None)
+    for member in channel.members:
+        voice_entry_times.setdefault(member.id, now)
+
+
+def get_voice_entry_time(
+    bot: discord.Bot,
+    guild_id: int,
+    member_id: int,
+) -> datetime | None:
+    return _get_voice_entry_times(bot, guild_id).get(member_id)
+
+
+def set_voice_entry_time(
+    bot: discord.Bot,
+    guild_id: int,
+    member_id: int,
+    joined_at: datetime,
+) -> None:
+    _get_voice_entry_times(bot, guild_id)[member_id] = joined_at
+
+
+def clear_voice_entry_time(
+    bot: discord.Bot,
+    guild_id: int,
+    member_id: int,
+) -> None:
+    _get_voice_entry_times(bot, guild_id).pop(member_id, None)
+
+
+def _get_voice_entry_times(
+    bot: discord.Bot,
+    guild_id: int,
+) -> dict[int, datetime]:
+    voice_entry_times_by_guild = getattr(bot, "voice_entry_times_by_guild", None)
+    if voice_entry_times_by_guild is None:
+        voice_entry_times_by_guild = {}
+        bot.voice_entry_times_by_guild = voice_entry_times_by_guild
+
+    state = voice_entry_times_by_guild.get(guild_id)
+    if state is None:
+        state = {}
+        voice_entry_times_by_guild[guild_id] = state
+    return state
+
+
+def _consume_user_attendance_cooldown(
+    bot: discord.Bot,
+    guild_id: int,
+    member_id: int,
+) -> int | None:
+    cooldowns = _get_user_attendance_cooldowns(bot, guild_id)
+    now = time.monotonic()
+    last_used_at = cooldowns.get(member_id)
+    if last_used_at is not None:
+        elapsed = now - last_used_at
+        if elapsed < ATTENDANCE_USER_COOLDOWN_SECONDS:
+            remaining = ATTENDANCE_USER_COOLDOWN_SECONDS - elapsed
+            return max(1, int(remaining) if remaining.is_integer() else int(remaining) + 1)
+
+    cooldowns[member_id] = now
+    return None
+
+
+def _get_user_attendance_cooldowns(
+    bot: discord.Bot,
+    guild_id: int,
+) -> dict[int, float]:
+    cooldowns_by_guild = getattr(bot, "attendance_user_cooldowns_by_guild", None)
+    if cooldowns_by_guild is None:
+        cooldowns_by_guild = {}
+        bot.attendance_user_cooldowns_by_guild = cooldowns_by_guild
+
+    state = cooldowns_by_guild.get(guild_id)
+    if state is None:
+        state = {}
+        cooldowns_by_guild[guild_id] = state
+    return state
 
 
 async def _get_saved_log_thread(

@@ -24,7 +24,7 @@ def build_admin_panel_embed(
 ) -> discord.Embed:
     embed = discord.Embed(
         title="출석 패널",
-        description="출석 시스템 설정과 버튼을 여기에서 관리합니다.",
+        description="출석 시스템 설정 통계를 관리합니다.",
         color=discord.Color.blurple(),
     )
     embed.add_field(
@@ -38,8 +38,13 @@ def build_admin_panel_embed(
         inline=False,
     )
     embed.add_field(
-        name="타이머",
+        name="출석 확인 타이머",
         value=_format_timer(settings.timer),
+        inline=False,
+    )
+    embed.add_field(
+        name="출석 가능 타이머",
+        value=_format_timer(settings.attendance_available_timer),
         inline=False,
     )
     embed.set_footer(text=_build_runtime_footer(bot))
