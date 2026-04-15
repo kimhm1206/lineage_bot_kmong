@@ -1,14 +1,26 @@
 ﻿from __future__ import annotations
 
 import asyncio
+import json
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import discord
 
 from db import GuildSettings, get_settings
 
 
+BASE_DIR = Path(__file__).resolve().parent.parent
+DATA_DIR = BASE_DIR / "data"
+UI_STATE_PATH = DATA_DIR / "ui_state.json"
+KST = timezone(timedelta(hours=9))
+VERSION_LABEL = "Ver1.3"
+
+
 def build_admin_panel_embed(
-    guild: discord.Guild, settings: GuildSettings
+    bot: discord.Bot,
+    guild: discord.Guild,
+    settings: GuildSettings,
 ) -> discord.Embed:
     embed = discord.Embed(
         title="출석 패널",
@@ -30,7 +42,7 @@ def build_admin_panel_embed(
         value=_format_timer(settings.timer),
         inline=False,
     )
-    embed.set_footer(text=f"{guild.name} 전용 출석 UI")
+    embed.set_footer(text=_build_runtime_footer(bot))
     return embed
 
 
@@ -73,7 +85,7 @@ async def rebuild_admin_panel(bot: discord.Bot, guild_id: int) -> discord.Messag
 
     await delete_bot_messages(channel, bot.user.id if bot.user else 0)
 
-    embed = build_admin_panel_embed(guild, settings)
+    embed = build_admin_panel_embed(bot, guild, settings)
     view = AdminPanelView(bot, guild_id)
     message = await channel.send(embed=embed, view=view)
 
@@ -110,7 +122,7 @@ async def update_admin_panel(bot: discord.Bot, guild_id: int) -> discord.Message
     except (discord.NotFound, discord.Forbidden, discord.HTTPException):
         return await rebuild_admin_panel(bot, guild_id)
 
-    embed = build_admin_panel_embed(guild, settings)
+    embed = build_admin_panel_embed(bot, guild, settings)
     view = AdminPanelView(bot, guild_id)
     await message.edit(embed=embed, view=view)
     return message
@@ -196,7 +208,12 @@ def _get_panel_state(bot: discord.Bot, guild_id: int) -> dict[str, int | None]:
 
     state = panel_state_by_guild.get(guild_id)
     if state is None:
-        state = {"channel_id": None, "message_id": None}
+        persisted = _load_persisted_panel_state(guild_id)
+        state = {
+            "channel_id": persisted.get("channel_id"),
+            "message_id": persisted.get("message_id"),
+            "thread_id": persisted.get("thread_id"),
+        }
         panel_state_by_guild[guild_id] = state
     return state
 
@@ -205,17 +222,36 @@ def _set_panel_state(
     bot: discord.Bot, guild_id: int, channel_id: int, message_id: int
 ) -> None:
     state = _get_panel_state(bot, guild_id)
+    previous_message_id = state.get("message_id")
     state["channel_id"] = channel_id
     state["message_id"] = message_id
+    if previous_message_id != message_id:
+        state["thread_id"] = None
+    _save_persisted_panel_state(guild_id, state)
+
+
+def get_saved_log_thread_id(bot: discord.Bot, guild_id: int) -> int | None:
+    state = _get_panel_state(bot, guild_id)
+    thread_id = state.get("thread_id")
+    return thread_id if isinstance(thread_id, int) else None
+
+
+def set_saved_log_thread_id(
+    bot: discord.Bot, guild_id: int, thread_id: int | None
+) -> None:
+    state = _get_panel_state(bot, guild_id)
+    state["thread_id"] = thread_id
+    _save_persisted_panel_state(guild_id, state)
 
 
 def _clear_panel_state(bot: discord.Bot, guild_id: int) -> None:
     panel_state_by_guild = getattr(bot, "panel_state_by_guild", None)
     if panel_state_by_guild is None:
         bot.panel_state_by_guild = {}
-        return
+    else:
+        panel_state_by_guild.pop(guild_id, None)
 
-    panel_state_by_guild.pop(guild_id, None)
+    _remove_persisted_panel_state(guild_id)
 
 
 def get_attendance_state(bot: discord.Bot, guild_id: int) -> dict[str, object | None]:
@@ -299,4 +335,72 @@ async def get_panel_message(
     try:
         return await channel.fetch_message(panel_message_id)
     except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+        return None
+
+
+def _build_runtime_footer(bot: discord.Bot) -> str:
+    runtime_label = getattr(bot, "runtime_label", None)
+    if isinstance(runtime_label, str) and runtime_label:
+        return runtime_label
+    return f"{datetime.now(KST).strftime('%Y-%m-%d %H:%M')} 구동 {VERSION_LABEL}"
+
+
+def _load_ui_state() -> dict[str, dict[str, int | None]]:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    if not UI_STATE_PATH.exists():
+        return {}
+
+    try:
+        with UI_STATE_PATH.open("r", encoding="utf-8") as file:
+            data = json.load(file)
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+    if not isinstance(data, dict):
+        return {}
+    return data
+
+
+def _write_ui_state(data: dict[str, dict[str, int | None]]) -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    with UI_STATE_PATH.open("w", encoding="utf-8") as file:
+        json.dump(data, file, ensure_ascii=False, indent=2)
+
+
+def _load_persisted_panel_state(guild_id: int) -> dict[str, int | None]:
+    data = _load_ui_state()
+    raw_state = data.get(str(guild_id), {})
+    if not isinstance(raw_state, dict):
+        return {}
+    return {
+        "channel_id": _coerce_int(raw_state.get("channel_id")),
+        "message_id": _coerce_int(raw_state.get("message_id")),
+        "thread_id": _coerce_int(raw_state.get("thread_id")),
+    }
+
+
+def _save_persisted_panel_state(guild_id: int, state: dict[str, int | None]) -> None:
+    data = _load_ui_state()
+    data[str(guild_id)] = {
+        "channel_id": _coerce_int(state.get("channel_id")),
+        "message_id": _coerce_int(state.get("message_id")),
+        "thread_id": _coerce_int(state.get("thread_id")),
+    }
+    _write_ui_state(data)
+
+
+def _remove_persisted_panel_state(guild_id: int) -> None:
+    data = _load_ui_state()
+    if str(guild_id) not in data:
+        return
+    data.pop(str(guild_id), None)
+    _write_ui_state(data)
+
+
+def _coerce_int(value: object) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
         return None

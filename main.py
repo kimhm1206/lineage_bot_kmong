@@ -1,12 +1,14 @@
 ﻿import os
 
 import discord
+from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 
 from db import get_settings, init_db, update_setting
-from utils.attendance import register_attendance
+from utils.attendance import AttendanceActionView, register_attendance
 from utils.guild import is_admin_member, is_supported_guild
-from utils.panel import clear_old_admin_panel, rebuild_admin_panel
+from utils.panel import clear_old_admin_panel, rebuild_admin_panel, update_admin_panel
+from views.admin_panel import AdminPanelView
 
 
 load_dotenv()
@@ -24,19 +26,34 @@ bot.panel_state_by_guild = {}
 bot.attendance_state_by_guild = {}
 bot.attendance_locks = {}
 bot.commands_synced = False
+bot.persistent_views_registered = False
+bot.runtime_label = (
+    f"{datetime.now(timezone(timedelta(hours=9))).strftime('%Y-%m-%d %H:%M')} "
+    "구동 Ver1.3"
+)
 
 
 @bot.event
 async def on_ready() -> None:
+    if not bot.persistent_views_registered:
+        _register_persistent_views()
+        bot.persistent_views_registered = True
+
     if not bot.commands_synced:
         await bot.sync_commands()
         bot.commands_synced = True
 
     for guild in bot.guilds:
-        await rebuild_admin_panel(bot, guild.id)
+        await update_admin_panel(bot, guild.id)
 
     guild_names = ", ".join(guild.name for guild in bot.guilds) or "No Guild"
     print(f"봇 로그인 완료: {bot.user} | 길드: {guild_names}")
+
+
+def _register_persistent_views() -> None:
+    for guild in bot.guilds:
+        bot.add_view(AdminPanelView(bot, guild.id))
+        bot.add_view(AttendanceActionView(bot, guild.id))
 
 
 @bot.slash_command(

@@ -19,6 +19,8 @@ from utils.panel import (
     delete_attendance_message,
     get_attendance_state,
     get_panel_message,
+    get_saved_log_thread_id,
+    set_saved_log_thread_id,
     set_attendance_state,
     update_admin_panel,
 )
@@ -341,13 +343,14 @@ async def send_attendance_summary(
     if panel_message is None:
         return
 
-    thread = getattr(panel_message, "thread", None) or guild.get_thread(panel_message.id)
+    thread = await _get_saved_log_thread(bot, guild)
     if thread is None:
         try:
             thread = await panel_message.create_thread(
                 name=f"출석 기록 {snapshot.ended_at[:16]}",
                 auto_archive_duration=1440,
             )
+            set_saved_log_thread_id(bot, guild.id, thread.id)
         except (discord.Forbidden, discord.HTTPException):
             thread = None
 
@@ -418,6 +421,31 @@ def _participant_ids(state: dict[str, Any]) -> set[int]:
     participants = set()
     state["participants"] = participants
     return participants
+
+
+async def _get_saved_log_thread(
+    bot: discord.Bot,
+    guild: discord.Guild,
+) -> discord.Thread | None:
+    thread_id = get_saved_log_thread_id(bot, guild.id)
+    if thread_id is None:
+        return None
+
+    thread = guild.get_thread(thread_id)
+    if isinstance(thread, discord.Thread):
+        return thread
+
+    try:
+        fetched = await bot.fetch_channel(thread_id)
+    except (discord.Forbidden, discord.NotFound, discord.HTTPException):
+        set_saved_log_thread_id(bot, guild.id, None)
+        return None
+
+    if isinstance(fetched, discord.Thread):
+        return fetched
+
+    set_saved_log_thread_id(bot, guild.id, None)
+    return None
 
 
 def _optional_int(value: object) -> int | None:
