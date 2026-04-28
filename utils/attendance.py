@@ -1,8 +1,11 @@
 ﻿from __future__ import annotations
 
 import asyncio
+import json
 import re
 import time
+import urllib.error
+import urllib.request
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -31,6 +34,8 @@ TIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 ALLIANCE_PATTERN = re.compile(r"\[([^\[\]]{2,4})\]")
 KST = timezone(timedelta(hours=9))
 ATTENDANCE_USER_COOLDOWN_SECONDS = 3.0
+RANKER_ALLIANCE_NAME = "랭커"
+RANKER_POST_URL = "https://script.google.com/macros/s/AKfycby3I-Vo8A8WKYm9dLrexqvlaOTb4KB93C_lKsdHEkHMm-G_hMsD1Proxp03fQvXMpTc6w/exec"
 
 
 @dataclass(slots=True)
@@ -108,6 +113,7 @@ class AttendanceRecordPromptView(discord.ui.View):
                 stopped_by_mention=_mention_or_system(self.snapshot.stopped_by_discord_id),
                 save_status=f"DB 저장 완료 (출석 ID: {attendance_id})",
             )
+            await send_ranker_attendance_ids(self.guild, self.snapshot)
             self.disable_all_items()
             await interaction.edit_original_response(
                 content=(
@@ -140,6 +146,7 @@ class AttendanceRecordPromptView(discord.ui.View):
                 stopped_by_mention=_mention_or_system(self.snapshot.stopped_by_discord_id),
                 save_status="기록 저장 X",
             )
+            await send_ranker_attendance_ids(self.guild, self.snapshot)
             self.disable_all_items()
             await interaction.edit_original_response(
                 content="이번 출석 기록은 저장하지 않습니다.",
@@ -436,6 +443,7 @@ async def _expire_attendance_after_timeout(
                 stopped_by_mention="시스템",
                 save_status=None,
             )
+            await send_ranker_attendance_ids(guild, snapshot)
     except asyncio.CancelledError:
         return
 
@@ -592,6 +600,18 @@ async def _get_saved_log_thread(
     return None
 
 
+async def send_ranker_attendance_ids(
+    guild: discord.Guild,
+    snapshot: AttendanceSnapshot,
+) -> None:
+    try:
+        ranker_ids = _get_ranker_discord_ids(guild, snapshot)
+        payload = {"ids": ranker_ids}
+        await asyncio.to_thread(_post_ranker_ids, payload)
+    except Exception:
+        return
+
+
 def _optional_int(value: object) -> int | None:
     if value is None:
         return None
@@ -631,6 +651,35 @@ def _resolve_alliance_name_from_nickname(nickname: str) -> str:
         return "미분류"
 
     return alliance_name
+
+
+def _get_ranker_discord_ids(
+    guild: discord.Guild,
+    snapshot: AttendanceSnapshot,
+) -> list[str]:
+    ranker_ids: list[str] = []
+    for discord_id in snapshot.participant_ids:
+        member = guild.get_member(discord_id)
+        nickname = member.display_name if member is not None else str(discord_id)
+        if _resolve_alliance_name_from_nickname(nickname) != RANKER_ALLIANCE_NAME:
+            continue
+        ranker_ids.append(str(discord_id))
+    return ranker_ids
+
+
+def _post_ranker_ids(payload: dict[str, list[str]]) -> None:
+    body = json.dumps(payload).encode("utf-8")
+    request = urllib.request.Request(
+        RANKER_POST_URL,
+        data=body,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            response.read()
+    except Exception:
+        return
 
 
 def _get_clan_members_for_snapshot(
