@@ -690,7 +690,7 @@ def _post_ranker_ids(payload: dict[str, list[str]]) -> dict[str, object]:
         method="POST",
     )
     try:
-        with urllib.request.urlopen(request, timeout=10) as response:
+        with urllib.request.urlopen(request, timeout=15) as response:
             response_body = response.read().decode("utf-8", errors="replace")
             return {
                 "ok": True,
