@@ -34,7 +34,7 @@ TIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 ALLIANCE_PATTERN = re.compile(r"\[([^\[\]]{2,4})\]")
 KST = timezone(timedelta(hours=9))
 ATTENDANCE_USER_COOLDOWN_SECONDS = 3.0
-RANKER_ALLIANCE_NAME = "랭커"
+RANKER_ROLE_ID = 1497949015570907196
 RANKER_POST_URL = "https://script.google.com/macros/s/AKfycby3I-Vo8A8WKYm9dLrexqvlaOTb4KB93C_lKsdHEkHMm-G_hMsD1Proxp03fQvXMpTc6w/exec"
 
 
@@ -673,8 +673,9 @@ def _get_ranker_discord_ids(
     ranker_ids: list[str] = []
     for discord_id in snapshot.participant_ids:
         member = guild.get_member(discord_id)
-        nickname = member.display_name if member is not None else str(discord_id)
-        if _resolve_alliance_name_from_nickname(nickname) != RANKER_ALLIANCE_NAME:
+        if member is None:
+            continue
+        if not any(role.id == RANKER_ROLE_ID for role in member.roles):
             continue
         ranker_ids.append(str(discord_id))
     return ranker_ids
