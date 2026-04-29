@@ -146,7 +146,6 @@ class AttendanceRecordPromptView(discord.ui.View):
                 stopped_by_mention=_mention_or_system(self.snapshot.stopped_by_discord_id),
                 save_status="기록 저장 X",
             )
-            await send_ranker_attendance_ids(self.guild, self.snapshot)
             self.disable_all_items()
             await interaction.edit_original_response(
                 content="이번 출석 기록은 저장하지 않습니다.",
@@ -607,8 +606,22 @@ async def send_ranker_attendance_ids(
     try:
         ranker_ids = _get_ranker_discord_ids(guild, snapshot)
         payload = {"ids": ranker_ids}
-        await asyncio.to_thread(_post_ranker_ids, payload)
-    except Exception:
+        result = await asyncio.to_thread(_post_ranker_ids, payload)
+        if result["ok"]:
+            print(
+                "[attendance] ranker POST success "
+                f"guild_id={guild.id} count={len(ranker_ids)} status={result['status']}"
+            )
+        else:
+            print(
+                "[attendance] ranker POST failed "
+                f"guild_id={guild.id} count={len(ranker_ids)} error={result['error']}"
+            )
+    except Exception as exc:
+        print(
+            "[attendance] ranker POST unexpected failure "
+            f"guild_id={guild.id} error={exc!r}"
+        )
         return
 
 
@@ -667,7 +680,7 @@ def _get_ranker_discord_ids(
     return ranker_ids
 
 
-def _post_ranker_ids(payload: dict[str, list[str]]) -> None:
+def _post_ranker_ids(payload: dict[str, list[str]]) -> dict[str, object]:
     body = json.dumps(payload).encode("utf-8")
     request = urllib.request.Request(
         RANKER_POST_URL,
@@ -677,9 +690,17 @@ def _post_ranker_ids(payload: dict[str, list[str]]) -> None:
     )
     try:
         with urllib.request.urlopen(request, timeout=10) as response:
-            response.read()
-    except Exception:
-        return
+            response_body = response.read().decode("utf-8", errors="replace")
+            return {
+                "ok": True,
+                "status": getattr(response, "status", None),
+                "body": response_body[:500],
+            }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "error": repr(exc),
+        }
 
 
 def _get_clan_members_for_snapshot(
