@@ -8,5 +8,5 @@ __pycache__/
 *.sqlite3-journal
 sqlite_test.txt
 data/
-
+aitest/
 
