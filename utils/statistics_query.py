@@ -26,6 +26,11 @@ EMBED_FIELD_LIMIT = 25
 
 TEST_GUILD_ID = 1493532198320603136
 TEST_CHANNEL_ID = 1493532198895227045
+TEST_LOG_CHANNEL_ID = 1493532243291934760
+TEST_QUERY_CHANNEL_IDS = {
+    TEST_CHANNEL_ID,
+    TEST_LOG_CHANNEL_ID,
+}
 COMMAND_PREFIX = "통계-"
 
 QUERY_TYPES = {
@@ -148,7 +153,7 @@ def is_statistics_trigger_message(message: discord.Message) -> bool:
         return False
     if message.guild is None or message.guild.id != TEST_GUILD_ID:
         return False
-    if message.channel.id != TEST_CHANNEL_ID:
+    if message.channel.id not in TEST_QUERY_CHANNEL_IDS:
         return False
     return message.content.strip().startswith(COMMAND_PREFIX)
 
