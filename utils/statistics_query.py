@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import sqlite3
 from dataclasses import dataclass
@@ -16,7 +17,6 @@ from dotenv import load_dotenv
 BASE_DIR = Path(__file__).resolve().parent.parent
 DB_PATH = BASE_DIR / "data" / "lineage_bot.sqlite3"
 ROOT_ENV_PATH = BASE_DIR / ".env"
-AITEST_ENV_PATH = BASE_DIR / "aitest" / ".env"
 TOKEN_USAGE_PATH = BASE_DIR / "data" / "groq_token_usage.json"
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 MODEL_NAME = "qwen/qwen3-32b"
@@ -196,10 +196,7 @@ def run_statistics_query(question: str) -> StatisticsResult:
 
 def _load_groq_api_key() -> str | None:
     load_dotenv(ROOT_ENV_PATH)
-    load_dotenv(AITEST_ENV_PATH)
-    import os
-
-    return os.getenv("GROQ_API_KEY") or os.getenv("APIKEY")
+    return os.getenv("APIKEY")
 
 
 def _today_strings() -> tuple[str, str]:
