@@ -1,7 +1,8 @@
-﻿import os
+import asyncio
+import os
+from datetime import datetime, timedelta, timezone
 
 import discord
-from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 
 from db import get_settings, init_db, update_setting
@@ -13,6 +14,11 @@ from utils.attendance import (
 )
 from utils.guild import is_admin_member, is_supported_guild
 from utils.panel import clear_old_admin_panel, rebuild_admin_panel, update_admin_panel
+from utils.statistics_query import (
+    extract_statistics_question,
+    is_statistics_trigger_message,
+    run_statistics_query,
+)
 from views.admin_panel import AdminPanelView
 
 
@@ -26,6 +32,8 @@ intents = discord.Intents.none()
 intents.guilds = True
 intents.members = True
 intents.voice_states = True
+intents.messages = True
+intents.message_content = True
 bot = discord.Bot(intents=intents)
 bot.panel_state_by_guild = {}
 bot.attendance_state_by_guild = {}
@@ -99,7 +107,6 @@ async def set_admin_channel(
     )
 
 
-
 @bot.slash_command(
     name="출석",
     description="진행 중인 출석에 참여합니다.",
@@ -128,6 +135,35 @@ async def on_voice_state_update(
         member.id,
         getattr(before.channel, "id", None),
         getattr(after.channel, "id", None),
+    )
+
+
+@bot.event
+async def on_message(message: discord.Message) -> None:
+    if not is_statistics_trigger_message(message):
+        return
+
+    question = extract_statistics_question(message.content)
+    if not question:
+        await message.reply(
+            "질문 내용이 비어 있습니다. `통계-질문` 형식으로 보내주세요.",
+            mention_author=False,
+        )
+        return
+
+    async with message.channel.typing():
+        try:
+            result = await asyncio.to_thread(run_statistics_query, question)
+        except Exception:
+            await message.reply(
+                "통계 처리 중 오류가 발생했습니다. 디스코드 봇으로 다시 질문해주세요.",
+                mention_author=False,
+            )
+            return
+
+    await message.reply(
+        embeds=result.embeds,
+        mention_author=False,
     )
 
 
