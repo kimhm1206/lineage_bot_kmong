@@ -22,9 +22,6 @@ from utils.panel import (
     clear_attendance_state,
     delete_attendance_message,
     get_attendance_state,
-    get_panel_message,
-    get_saved_log_thread_id,
-    set_saved_log_thread_id,
     set_attendance_state,
     update_admin_panel,
 )
@@ -372,20 +369,13 @@ async def send_attendance_summary(
     stopped_by_mention: str,
     save_status: str | None,
 ) -> None:
-    panel_message = await get_panel_message(bot, guild.id)
-    if panel_message is None:
+    settings = get_settings(guild.id)
+    if settings.log_channel_id is None:
         return
 
-    thread = await _get_saved_log_thread(bot, guild)
-    if thread is None:
-        try:
-            thread = await panel_message.create_thread(
-                name=f"출석 기록 {snapshot.ended_at[:16]}",
-                auto_archive_duration=1440,
-            )
-            set_saved_log_thread_id(bot, guild.id, thread.id)
-        except (discord.Forbidden, discord.HTTPException):
-            thread = None
+    log_channel = guild.get_channel(settings.log_channel_id)
+    if not isinstance(log_channel, discord.TextChannel):
+        return
 
     started_by_mention = (
         f"<@{snapshot.started_by_discord_id}>"
@@ -405,9 +395,8 @@ async def send_attendance_summary(
     messages = _build_summary_messages(summary_lines, clan_members)
 
     try:
-        target = thread if thread is not None else panel_message.channel
         for message in messages:
-            await target.send(message)
+            await log_channel.send(message)
     except (discord.Forbidden, discord.HTTPException):
         return
 
@@ -572,31 +561,6 @@ def _get_user_attendance_cooldowns(
         state = {}
         cooldowns_by_guild[guild_id] = state
     return state
-
-
-async def _get_saved_log_thread(
-    bot: discord.Bot,
-    guild: discord.Guild,
-) -> discord.Thread | None:
-    thread_id = get_saved_log_thread_id(bot, guild.id)
-    if thread_id is None:
-        return None
-
-    thread = guild.get_thread(thread_id)
-    if isinstance(thread, discord.Thread):
-        return thread
-
-    try:
-        fetched = await bot.fetch_channel(thread_id)
-    except (discord.Forbidden, discord.NotFound, discord.HTTPException):
-        set_saved_log_thread_id(bot, guild.id, None)
-        return None
-
-    if isinstance(fetched, discord.Thread):
-        return fetched
-
-    set_saved_log_thread_id(bot, guild.id, None)
-    return None
 
 
 async def send_ranker_attendance_ids(

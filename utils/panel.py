@@ -38,6 +38,11 @@ def build_admin_panel_embed(
         inline=False,
     )
     embed.add_field(
+        name="로그채널",
+        value=_format_channel(guild, settings.log_channel_id),
+        inline=False,
+    )
+    embed.add_field(
         name="출석 확인 타이머",
         value=_format_timer(settings.timer),
         inline=False,
@@ -217,7 +222,6 @@ def _get_panel_state(bot: discord.Bot, guild_id: int) -> dict[str, int | None]:
         state = {
             "channel_id": persisted.get("channel_id"),
             "message_id": persisted.get("message_id"),
-            "thread_id": persisted.get("thread_id"),
         }
         panel_state_by_guild[guild_id] = state
     return state
@@ -227,25 +231,8 @@ def _set_panel_state(
     bot: discord.Bot, guild_id: int, channel_id: int, message_id: int
 ) -> None:
     state = _get_panel_state(bot, guild_id)
-    previous_message_id = state.get("message_id")
     state["channel_id"] = channel_id
     state["message_id"] = message_id
-    if previous_message_id != message_id:
-        state["thread_id"] = None
-    _save_persisted_panel_state(guild_id, state)
-
-
-def get_saved_log_thread_id(bot: discord.Bot, guild_id: int) -> int | None:
-    state = _get_panel_state(bot, guild_id)
-    thread_id = state.get("thread_id")
-    return thread_id if isinstance(thread_id, int) else None
-
-
-def set_saved_log_thread_id(
-    bot: discord.Bot, guild_id: int, thread_id: int | None
-) -> None:
-    state = _get_panel_state(bot, guild_id)
-    state["thread_id"] = thread_id
     _save_persisted_panel_state(guild_id, state)
 
 
@@ -380,7 +367,6 @@ def _load_persisted_panel_state(guild_id: int) -> dict[str, int | None]:
     return {
         "channel_id": _coerce_int(raw_state.get("channel_id")),
         "message_id": _coerce_int(raw_state.get("message_id")),
-        "thread_id": _coerce_int(raw_state.get("thread_id")),
     }
 
 
@@ -389,7 +375,6 @@ def _save_persisted_panel_state(guild_id: int, state: dict[str, int | None]) -> 
     data[str(guild_id)] = {
         "channel_id": _coerce_int(state.get("channel_id")),
         "message_id": _coerce_int(state.get("message_id")),
-        "thread_id": _coerce_int(state.get("thread_id")),
     }
     _write_ui_state(data)
 
