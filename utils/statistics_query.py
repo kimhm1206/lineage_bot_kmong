@@ -118,7 +118,6 @@ Important for session_detail:
 - session_total_count must use SUM(COUNT(e.user_id)) OVER (PARTITION BY s.attendance_id).
 - Do not use COUNT(*) for session_total_count in session_detail.
 - If the request means first / last / most recent / earliest / latest / first session of a date / last session of a date / specific hour bucket like 00시, first isolate exactly one attendance_id using a CTE or subquery, then query detail rows by that attendance_id.
-- If a time bucket like 16시 or 21시 may match multiple sessions, choose exactly one deterministic session with ORDER BY started_at and LIMIT 1.
 - Do not LIMIT 1 on the final joined detail rows.
 - Group by attendance_id and alliance_name.
 
