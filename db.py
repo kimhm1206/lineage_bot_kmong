@@ -397,7 +397,7 @@ def get_alliance_counts_for_discord_ids(discord_ids: list[int]) -> dict[str, int
 
 
 def get_attendance_overview(
-    guild_id: int,
+    guild_id: int | None,
     start_at: str | None = None,
     end_at: str | None = None,
 ) -> dict[str, int | None]:
@@ -443,7 +443,7 @@ def get_attendance_overview(
 
 
 def get_daily_attendance_stats(
-    guild_id: int,
+    guild_id: int | None,
     start_at: str | None = None,
     end_at: str | None = None,
 ) -> list[dict[str, Any]]:
@@ -477,7 +477,7 @@ def get_daily_attendance_stats(
 
 
 def get_alliance_attendance_stats(
-    guild_id: int,
+    guild_id: int | None,
     start_at: str | None = None,
     end_at: str | None = None,
     search: str | None = None,
@@ -521,7 +521,7 @@ def get_alliance_attendance_stats(
 
 
 def get_user_attendance_stats(
-    guild_id: int,
+    guild_id: int | None,
     start_at: str | None = None,
     end_at: str | None = None,
     search: str | None = None,
@@ -582,7 +582,7 @@ def get_user_attendance_stats(
 
 
 def get_attendance_export_rows(
-    guild_id: int,
+    guild_id: int | None,
     start_at: str | None = None,
     end_at: str | None = None,
     search: str | None = None,
@@ -636,12 +636,15 @@ def get_attendance_export_rows(
 
 
 def _build_attendance_filter(
-    guild_id: int,
+    guild_id: int | None,
     start_at: str | None,
     end_at: str | None,
 ) -> tuple[str, list[Any]]:
-    clauses = ["WHERE s.guild_id = ?"]
-    params: list[Any] = [guild_id]
+    clauses = ["WHERE 1 = 1"]
+    params: list[Any] = []
+    if guild_id is not None:
+        clauses.append("AND s.guild_id = ?")
+        params.append(guild_id)
     if start_at:
         clauses.append("AND s.started_at >= ?")
         params.append(start_at)

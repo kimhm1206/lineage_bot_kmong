@@ -31,7 +31,10 @@ TIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 ALLIANCE_PATTERN = re.compile(r"\[([^\[\]]{2,4})\]")
 KST = timezone(timedelta(hours=9))
 ATTENDANCE_USER_COOLDOWN_SECONDS = 3.0
-RANKER_ROLE_ID = 1497949015570907196
+RANKER_ROLE_IDS = {
+    1497949015570907196,
+    1507247503928590377,
+}
 RANKER_POST_URL = "https://script.google.com/macros/s/AKfycby3I-Vo8A8WKYm9dLrexqvlaOTb4KB93C_lKsdHEkHMm-G_hMsD1Proxp03fQvXMpTc6w/exec"
 
 
@@ -639,7 +642,7 @@ def _get_ranker_discord_ids(
         member = guild.get_member(discord_id)
         if member is None:
             continue
-        if not any(role.id == RANKER_ROLE_ID for role in member.roles):
+        if not any(role.id in RANKER_ROLE_IDS for role in member.roles):
             continue
         ranker_ids.append(str(discord_id))
     return ranker_ids

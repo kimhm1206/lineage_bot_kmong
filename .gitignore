@@ -9,4 +9,4 @@ __pycache__/
 sqlite_test.txt
 data/
 aitest/
-
+.venv/

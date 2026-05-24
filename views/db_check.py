@@ -33,6 +33,7 @@ class StatisticsFilter:
     end_at: str | None = None
     user_search: str | None = None
     alliance_name: str | None = None
+    all_guilds: bool = False
     page: int = 0
 
 
@@ -65,6 +66,7 @@ class StatisticsDashboardView(discord.ui.View):
         self.clear_search_button.disabled = not is_user_mode
         self.alliance_select.disabled = not is_alliance_mode
         self.export_button.disabled = not has_mode
+        self.scope_button.label = "현재 서버" if self.stats_filter.all_guilds else "전체 서버"
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         guild = interaction.guild
@@ -102,6 +104,28 @@ class StatisticsDashboardView(discord.ui.View):
             stats_filter=_default_stats_filter(
                 user_search=self.stats_filter.user_search if self.mode == MODE_USER else None,
                 alliance_name=self.stats_filter.alliance_name if self.mode == MODE_ALLIANCE else None,
+                all_guilds=self.stats_filter.all_guilds,
+            ),
+        )
+
+    @discord.ui.button(label="전체 서버", style=discord.ButtonStyle.secondary, row=0)
+    async def scope_button(
+        self,
+        button: discord.ui.Button,
+        interaction: discord.Interaction,
+    ) -> None:
+        await _render_dashboard(
+            interaction,
+            self.bot,
+            self.guild_id,
+            mode=self.mode,
+            stats_filter=StatisticsFilter(
+                start_at=self.stats_filter.start_at,
+                end_at=self.stats_filter.end_at,
+                user_search=self.stats_filter.user_search,
+                alliance_name=self.stats_filter.alliance_name,
+                all_guilds=not self.stats_filter.all_guilds,
+                page=0,
             ),
         )
 
@@ -123,6 +147,7 @@ class StatisticsDashboardView(discord.ui.View):
         next_filter = _default_stats_filter(
             user_search=self.stats_filter.user_search if next_mode == MODE_USER else None,
             alliance_name=None,
+            all_guilds=self.stats_filter.all_guilds,
         )
         await _render_dashboard(
             interaction,
@@ -156,6 +181,7 @@ class StatisticsDashboardView(discord.ui.View):
                 end_at=self.stats_filter.end_at,
                 user_search=None,
                 alliance_name=alliance_name,
+                all_guilds=self.stats_filter.all_guilds,
                 page=0,
             ),
         )
@@ -186,7 +212,9 @@ class StatisticsDashboardView(discord.ui.View):
             self.bot,
             self.guild_id,
             mode=MODE_USER,
-            stats_filter=_default_stats_filter(),
+            stats_filter=_default_stats_filter(
+                all_guilds=self.stats_filter.all_guilds,
+            ),
         )
 
     @discord.ui.button(label="CSV 다운로드", style=discord.ButtonStyle.success, row=4)
@@ -205,7 +233,7 @@ class StatisticsDashboardView(discord.ui.View):
 
         rows = await asyncio.to_thread(
             get_attendance_export_rows,
-            self.guild_id,
+            _query_guild_id(self.guild_id, self.stats_filter),
             self.stats_filter.start_at,
             self.stats_filter.end_at,
             self.stats_filter.user_search if self.mode == MODE_USER else None,
@@ -234,6 +262,7 @@ class StatisticsDashboardView(discord.ui.View):
                 end_at=self.stats_filter.end_at,
                 user_search=self.stats_filter.user_search,
                 alliance_name=self.stats_filter.alliance_name,
+                all_guilds=self.stats_filter.all_guilds,
                 page=max(0, self.stats_filter.page - 1),
             ),
         )
@@ -256,6 +285,7 @@ class StatisticsDashboardView(discord.ui.View):
                 end_at=self.stats_filter.end_at,
                 user_search=self.stats_filter.user_search,
                 alliance_name=self.stats_filter.alliance_name,
+                all_guilds=self.stats_filter.all_guilds,
                 page=max(0, next_page),
             ),
         )
@@ -318,6 +348,7 @@ class StatisticsRangeModal(discord.ui.Modal):
                 end_at=end_at,
                 user_search=self.stats_filter.user_search,
                 alliance_name=self.stats_filter.alliance_name,
+                all_guilds=self.stats_filter.all_guilds,
                 page=0,
             ),
         )
@@ -357,6 +388,7 @@ class StatisticsSearchModal(discord.ui.Modal):
                 end_at=self.stats_filter.end_at,
                 user_search=search,
                 alliance_name=None,
+                all_guilds=self.stats_filter.all_guilds,
                 page=0,
             ),
         )
@@ -407,9 +439,10 @@ async def _build_statistics_embed(
         return embed
 
     if mode == MODE_ALLIANCE and not stats_filter.alliance_name:
+        query_guild_id = _query_guild_id(guild_id, stats_filter)
         rows = await asyncio.to_thread(
             get_alliance_attendance_stats,
-            guild_id,
+            query_guild_id,
             stats_filter.start_at,
             stats_filter.end_at,
             None,
@@ -426,9 +459,10 @@ async def _build_statistics_embed(
         )
         return embed
 
+    query_guild_id = _query_guild_id(guild_id, stats_filter)
     rows = await asyncio.to_thread(
         get_user_attendance_stats,
-        guild_id,
+        query_guild_id,
         stats_filter.start_at,
         stats_filter.end_at,
         stats_filter.user_search if mode == MODE_USER else None,
@@ -521,6 +555,7 @@ def _default_stats_filter(
     *,
     user_search: str | None = None,
     alliance_name: str | None = None,
+    all_guilds: bool = False,
 ) -> StatisticsFilter:
     today = datetime.now().strftime(DATE_ONLY_FORMAT)
     return StatisticsFilter(
@@ -528,6 +563,7 @@ def _default_stats_filter(
         end_at=f"{today} 23:59:59",
         user_search=user_search,
         alliance_name=alliance_name,
+        all_guilds=all_guilds,
         page=0,
     )
 
@@ -542,6 +578,7 @@ def _describe_filter(mode: str, stats_filter: StatisticsFilter) -> str:
         category = "혈맹별"
 
     lines = [
+        f"조회 서버: {'전체 서버' if stats_filter.all_guilds else '현재 서버'}",
         f"기준: {category}",
         f"기간: {start_text} ~ {end_text}",
     ]
@@ -594,7 +631,7 @@ async def _get_page_info(
 
     rows = await asyncio.to_thread(
         get_user_attendance_stats,
-        guild_id,
+        _query_guild_id(guild_id, stats_filter),
         stats_filter.start_at,
         stats_filter.end_at,
         stats_filter.user_search if mode == MODE_USER else None,
@@ -602,6 +639,12 @@ async def _get_page_info(
         1000,
     )
     return {"page_count": max(1, (len(rows) + DEFAULT_USER_LIMIT - 1) // DEFAULT_USER_LIMIT)}
+
+
+def _query_guild_id(guild_id: int, stats_filter: StatisticsFilter) -> int | None:
+    if stats_filter.all_guilds:
+        return None
+    return guild_id
 
 
 def _date_to_datetime(value: str, *, end_of_day: bool) -> str | None:

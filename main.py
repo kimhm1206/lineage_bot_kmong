@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 import discord
 from dotenv import load_dotenv
 
-from db import get_settings, init_db, update_setting
+from db import get_settings, get_user_attendance_stats, init_db, update_setting
 from utils.attendance import (
     AttendanceActionView,
     register_attendance,
@@ -123,6 +123,43 @@ async def attend(ctx: discord.ApplicationContext) -> None:
     await ctx.respond(message, ephemeral=True)
 
 
+@bot.slash_command(
+    name="일주일",
+    description="현재 서버의 최근 7일 유저별 출석 랭킹을 봅니다.",
+)
+async def weekly_ranking(ctx: discord.ApplicationContext) -> None:
+    guild = ctx.guild
+    if guild is None:
+        await ctx.respond("서버에서만 사용할 수 있습니다.", ephemeral=True)
+        return
+
+    if not is_supported_guild(bot, guild.id):
+        await ctx.respond("이 서버에서는 사용할 수 없습니다.", ephemeral=True)
+        return
+
+    await ctx.defer()
+
+    now = datetime.now(timezone(timedelta(hours=9)))
+    start = (now - timedelta(days=7)).replace(
+        hour=0,
+        minute=0,
+        second=0,
+        microsecond=0,
+    )
+    rows = await asyncio.to_thread(
+        get_user_attendance_stats,
+        guild.id,
+        start.strftime("%Y-%m-%d %H:%M:%S"),
+        now.strftime("%Y-%m-%d %H:%M:%S"),
+        None,
+        None,
+        50,
+    )
+
+    embed = _build_weekly_ranking_embed(guild, rows, start, now)
+    await ctx.followup.send(embed=embed)
+
+
 @bot.event
 async def on_voice_state_update(
     member: discord.Member,
@@ -178,6 +215,54 @@ def _chunk_text(text: str, limit: int) -> list[str]:
     if current:
         chunks.append(current)
     return chunks or [text[:limit]]
+
+
+def _build_weekly_ranking_embed(
+    guild: discord.Guild,
+    rows: list[dict[str, object]],
+    start: datetime,
+    end: datetime,
+) -> discord.Embed:
+    embed = discord.Embed(
+        title="일주일 출석 랭킹",
+        description=(
+            f"조회 서버: 현재 서버\n"
+            f"서버: {guild.name}\n"
+            f"기간: {start.strftime('%Y-%m-%d %H:%M:%S')} ~ "
+            f"{end.strftime('%Y-%m-%d %H:%M:%S')}"
+        ),
+        color=discord.Color.gold(),
+    )
+    embed.add_field(
+        name=f"유저별 랭킹 (총 {len(rows)}명)",
+        value=f"```text\n{_format_weekly_ranking_table(rows[:20])}\n```",
+        inline=False,
+    )
+    if len(rows) > 20:
+        embed.set_footer(text="상위 20명까지 표시합니다.")
+    return embed
+
+
+def _format_weekly_ranking_table(rows: list[dict[str, object]]) -> str:
+    if not rows:
+        return "조건에 맞는 출석 기록이 없습니다."
+
+    lines = [f"{'순위':>2}  {'닉네임':<18} {'혈맹':<8} {'출석':>4}"]
+    lines.append("-" * 40)
+    for index, row in enumerate(rows, start=1):
+        nickname = _clip_text(str(row.get("discord_nickname", "")), 18)
+        alliance = _clip_text(str(row.get("alliance_name", "미분류")), 8)
+        count = int(row.get("attendance_count", 0))
+        lines.append(f"{index:>2}  {nickname:<18} {alliance:<8} {count:>4}")
+    return "\n".join(lines)
+
+
+def _clip_text(value: str, limit: int) -> str:
+    if len(value) <= limit:
+        return value
+    if limit <= 1:
+        return value[:limit]
+    return value[: limit - 1] + "…"
 
 
 @bot.event
