@@ -14,12 +14,6 @@ from utils.attendance import (
 )
 from utils.guild import is_admin_member, is_supported_guild
 from utils.panel import clear_old_admin_panel, rebuild_admin_panel, update_admin_panel
-from utils.statistics_query import (
-    TEST_LOG_CHANNEL_ID,
-    extract_statistics_question,
-    is_statistics_trigger_message,
-    run_statistics_query,
-)
 from views.admin_panel import AdminPanelView
 
 
@@ -175,47 +169,6 @@ async def on_voice_state_update(
     )
 
 
-async def _send_statistics_log(text: str) -> None:
-    channel = bot.get_channel(TEST_LOG_CHANNEL_ID)
-    if channel is None:
-        try:
-            fetched = await bot.fetch_channel(TEST_LOG_CHANNEL_ID)
-        except discord.DiscordException:
-            return
-        if not isinstance(fetched, discord.TextChannel):
-            return
-        channel = fetched
-
-    if not isinstance(channel, discord.TextChannel):
-        return
-
-    for chunk in _chunk_text(text, 1900):
-        await channel.send(f"```text\n{chunk}\n```")
-
-
-def _chunk_text(text: str, limit: int) -> list[str]:
-    if len(text) <= limit:
-        return [text]
-
-    chunks: list[str] = []
-    current = ""
-    for line in text.splitlines():
-        candidate = line if not current else f"{current}\n{line}"
-        if len(candidate) > limit:
-            if current:
-                chunks.append(current)
-                current = line
-            else:
-                chunks.append(line[:limit])
-                current = line[limit:]
-            continue
-        current = candidate
-
-    if current:
-        chunks.append(current)
-    return chunks or [text[:limit]]
-
-
 def _build_weekly_ranking_message(
     guild: discord.Guild,
     rows: list[dict[str, object]],
@@ -263,62 +216,6 @@ def _clip_text(value: str, limit: int) -> str:
     if limit <= 1:
         return value[:limit]
     return value[: limit - 1] + "…"
-
-
-@bot.event
-async def on_message(message: discord.Message) -> None:
-    if not is_statistics_trigger_message(message):
-        return
-
-    question = extract_statistics_question(message.content)
-    if not question:
-        await message.reply(
-            "질문 내용이 비어 있습니다. `통계-질문` 형식으로 보내주세요.",
-            mention_author=False,
-        )
-        return
-
-    async with message.channel.typing():
-        try:
-            result = await asyncio.to_thread(run_statistics_query, question)
-        except Exception as exc:
-            await _send_statistics_log(
-                "\n".join(
-                    [
-                        "[statistics:error]",
-                        f"channel_id={message.channel.id}",
-                        f"author={message.author} ({message.author.id})",
-                        f"question={question}",
-                        f"error={exc}",
-                    ]
-                )
-            )
-            await message.reply(
-                "통계 처리 중 오류가 발생했습니다. 디스코드 봇으로 다시 질문해주세요.",
-                mention_author=False,
-            )
-            return
-
-    await _send_statistics_log(
-        "\n".join(
-            [
-                "[statistics:success]",
-                f"channel_id={message.channel.id}",
-                f"author={message.author} ({message.author.id})",
-                f"question={question}",
-                f"title={result.title}",
-                f"query_type={result.query_type}",
-                f"rows={len(result.rows)}",
-                "[sql]",
-                result.sql,
-            ]
-        )
-    )
-
-    await message.reply(
-        embeds=result.embeds,
-        mention_author=False,
-    )
 
 
 def main() -> None:
