@@ -107,6 +107,30 @@ select {
   color: var(--accent);
 }
 
+.role-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: rgba(101, 117, 138, 0.12);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.role-admin {
+  background: rgba(20, 108, 148, 0.13);
+  color: var(--accent-strong);
+}
+
+.role-owner {
+  background: rgba(18, 128, 92, 0.13);
+  color: var(--green);
+}
+
 .page {
   width: min(1180px, calc(100% - 36px));
   margin: 28px auto 56px;
@@ -319,6 +343,20 @@ button,
   background: var(--surface-muted);
 }
 
+.danger-button {
+  background: var(--red);
+  color: #fff;
+}
+
+.danger-button:hover {
+  background: #8f1d14;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
 .alert {
   margin-bottom: 16px;
   padding: 12px 14px;
@@ -413,7 +451,7 @@ button,
 
 .live-metrics {
   display: grid;
-  grid-template-columns: 0.8fr 1.1fr 1.1fr;
+  grid-template-columns: 0.75fr 0.8fr 1.15fr 1.15fr;
   gap: 10px;
 }
 
@@ -506,6 +544,40 @@ button,
 
 .live-empty {
   padding: 60px 12px;
+}
+
+.log-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 18px;
+}
+
+.log-tab {
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.76);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.log-tab.is-active,
+.log-tab:hover {
+  border-color: rgba(20, 108, 148, 0.24);
+  background: rgba(20, 108, 148, 0.11);
+  color: var(--text);
+}
+
+.error-row td {
+  background: #fff0ed;
+  color: var(--red);
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .login-body {

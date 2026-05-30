@@ -10,11 +10,26 @@
       <p class="hero-copy">웹에서 출석을 시작하고, Discord 봇이 받는 참여자를 실시간으로 확인합니다.</p>
     </div>
     <div class="hero-actions">
-      <form method="post" action="/attendance/start?guild_id={{ auth.selected_guild_id }}">
-        <button class="primary-button" type="submit">출석 시작</button>
-      </form>
-      <form method="post" action="/attendance/stop?guild_id={{ auth.selected_guild_id }}">
-        <button class="secondary-button" type="submit">출석 종료</button>
+      <form
+        method="post"
+        action="{% if live_state.active %}/attendance/stop{% else %}/attendance/start{% endif %}?guild_id={{ auth.selected_guild_id }}"
+        data-attendance-toggle-form
+        data-can-manage="{% if auth.selected_server.can_manage %}1{% else %}0{% endif %}"
+      >
+        <button
+          class="{% if live_state.active %}danger-button{% else %}primary-button{% endif %}"
+          type="submit"
+          data-attendance-toggle-button
+          {% if not auth.selected_server.can_manage %}disabled{% endif %}
+        >
+          {% if not auth.selected_server.can_manage %}
+            관리자 권한 필요
+          {% elif live_state.active %}
+            출석 종료
+          {% else %}
+            출석 시작
+          {% endif %}
+        </button>
       </form>
     </div>
   </section>
@@ -23,6 +38,8 @@
     <div class="alert success">출석 시작 요청을 봇 큐에 등록했습니다.</div>
   {% elif queued == "stop" %}
     <div class="alert success">출석 종료 요청을 봇 큐에 등록했습니다.</div>
+  {% elif queued == "forbidden" %}
+    <div class="alert error">이 서버의 관리자 권한이 있는 계정만 출석을 제어할 수 있습니다.</div>
   {% endif %}
 
   <section class="attendance-live-grid">
@@ -43,6 +60,10 @@
           <strong data-live-count>{{ live_state.participant_count }}</strong>
         </div>
         <div>
+          <span>남은 시간</span>
+          <strong data-live-remaining>-</strong>
+        </div>
+        <div>
           <span>시작</span>
           <strong data-live-started>{{ live_state.session.started_at if live_state.session else "-" }}</strong>
         </div>
@@ -57,7 +78,7 @@
 
     <article class="panel roster-panel">
       <header class="panel-header">
-        <h2>출석 중인 유저</h2>
+        <h2>출석 유저 리스트</h2>
         <span class="panel-caption">Discord 봇 참여 기준</span>
       </header>
       <div class="roster-list" data-live-roster>
@@ -77,7 +98,7 @@
   </section>
 
   <section class="content-grid">
-    <article class="panel">
+    <article class="panel wide">
       <header class="panel-header">
         <h2>최근 출석 회차</h2>
       </header>
@@ -98,40 +119,10 @@
               <td>{{ row.started_at }}</td>
               <td>{{ row.ended_at }}</td>
               <td>{{ row.participant_count }}</td>
-              <td>{{ row.started_by_discord_id or "-" }}</td>
+              <td>{{ row.started_by_name or "-" }}</td>
             </tr>
           {% else %}
             <tr><td colspan="5" class="empty">출석 회차가 없습니다.</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </article>
-
-    <article class="panel">
-      <header class="panel-header">
-        <h2>웹 요청 큐</h2>
-      </header>
-      <table>
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>명령</th>
-            <th>상태</th>
-            <th>요청자</th>
-            <th>요청시각</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for row in commands %}
-            <tr>
-              <td>{{ row.command_id }}</td>
-              <td>{{ row.command_type }}</td>
-              <td><span class="status status-{{ row.status }}">{{ row.status }}</span></td>
-              <td>{{ row.requested_by_discord_id or "-" }}</td>
-              <td>{{ row.created_at }}</td>
-            </tr>
-          {% else %}
-            <tr><td colspan="5" class="empty">등록된 웹 요청이 없습니다.</td></tr>
           {% endfor %}
         </tbody>
       </table>
@@ -147,10 +138,15 @@
 
     const liveStatus = document.querySelector("[data-live-status]");
     const liveCount = document.querySelector("[data-live-count]");
+    const liveRemaining = document.querySelector("[data-live-remaining]");
     const liveStarted = document.querySelector("[data-live-started]");
     const liveExpires = document.querySelector("[data-live-expires]");
     const liveRoster = document.querySelector("[data-live-roster]");
     const liveConnection = document.querySelector("[data-live-connection]");
+    const toggleForm = document.querySelector("[data-attendance-toggle-form]");
+    const toggleButton = document.querySelector("[data-attendance-toggle-button]");
+    const canManage = toggleForm?.dataset.canManage === "1";
+    let latestLiveState = {{ live_state | tojson }};
 
     liveSocket.addEventListener("open", () => {
       liveConnection.textContent = "실시간 연결됨";
@@ -166,13 +162,64 @@
       renderLiveAttendance(JSON.parse(event.data));
     });
 
+    setInterval(renderRemainingTime, 1000);
+    renderRemainingTime();
+    updateToggleButton(Boolean(latestLiveState.active));
+
     function renderLiveAttendance(state) {
+      latestLiveState = state;
       liveStatus.textContent = state.active ? "진행 중" : "대기 중";
       liveStatus.classList.toggle("is-active", state.active);
       liveCount.textContent = state.participant_count;
       liveStarted.textContent = state.session?.started_at || "-";
       liveExpires.textContent = state.session?.expires_at || "-";
+      updateToggleButton(state.active);
+      renderRemainingTime();
+      renderRoster(state);
+    }
 
+    function updateToggleButton(active) {
+      if (!toggleForm || !toggleButton || !canManage) {
+        return;
+      }
+      toggleForm.action = active
+        ? `/attendance/stop?guild_id=${liveGuildId}`
+        : `/attendance/start?guild_id=${liveGuildId}`;
+      toggleButton.textContent = active ? "출석 종료" : "출석 시작";
+      toggleButton.classList.toggle("primary-button", !active);
+      toggleButton.classList.toggle("danger-button", active);
+    }
+
+    function parseServerTime(value) {
+      if (!value) {
+        return null;
+      }
+      const text = String(value).replace(" ", "T");
+      const hasTimezone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(text);
+      const date = new Date(hasTimezone ? text : `${text}+09:00`);
+      return Number.isNaN(date.getTime()) ? null : date;
+    }
+
+    function renderRemainingTime() {
+      if (!liveRemaining || !latestLiveState?.active || !latestLiveState.session?.expires_at) {
+        liveRemaining.textContent = "-";
+        return;
+      }
+      const expiresAt = parseServerTime(latestLiveState.session.expires_at);
+      if (!expiresAt) {
+        liveRemaining.textContent = "-";
+        return;
+      }
+      const totalSeconds = Math.max(0, Math.floor((expiresAt.getTime() - Date.now()) / 1000));
+      const hours = Math.floor(totalSeconds / 3600);
+      const minutes = Math.floor((totalSeconds % 3600) / 60);
+      const seconds = totalSeconds % 60;
+      liveRemaining.textContent = hours > 0
+        ? `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`
+        : `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+    }
+
+    function renderRoster(state) {
       liveRoster.innerHTML = "";
       if (!state.participants.length) {
         const empty = document.createElement("div");
@@ -194,9 +241,9 @@
 
         const body = document.createElement("div");
         const name = document.createElement("strong");
-        name.textContent = participant.display_name;
+        name.textContent = participant.display_name || participant.discord_id;
         const meta = document.createElement("span");
-        meta.textContent = `${participant.alliance_name} · ${participant.attended_at}`;
+        meta.textContent = `${participant.alliance_name || "미분류"} · ${participant.attended_at || "-"}`;
 
         body.appendChild(name);
         body.appendChild(meta);

@@ -34,6 +34,15 @@ DISCORD_CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET") or os.getenv(
     "DISCORD_OAUTH_CLIENT_SECRET", ""
 )
 SESSION_SECRET = os.getenv("WEB_SESSION_SECRET", "lineage-local-web-session")
+GLOBAL_OWNER_DISCORD_ID = os.getenv("GLOBAL_OWNER_DISCORD_ID") or "238978205078388747"
+DISCORD_ADMINISTRATOR_PERMISSION = 0x8
+LOG_TABS = (
+    {"value": "all", "label": "전체"},
+    {"value": "attendance", "label": "출석"},
+    {"value": "statistics", "label": "통계"},
+    {"value": "settings", "label": "설정"},
+    {"value": "logs", "label": "로그"},
+)
 
 app = FastAPI(title="Lineage Ops Web")
 app.add_middleware(
@@ -102,18 +111,48 @@ def _normalize_discord_user(user: dict[str, Any]) -> dict[str, str]:
     }
 
 
-def _load_accessible_servers(discord_guilds: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _discord_permissions(discord_guild: dict[str, Any] | None) -> int:
+    if not discord_guild:
+        return 0
+    try:
+        return int(discord_guild.get("permissions") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _server_role(
+    discord_user_id: str,
+    discord_guild: dict[str, Any] | None,
+) -> str:
+    if str(discord_user_id) == GLOBAL_OWNER_DISCORD_ID:
+        return "owner"
+    if discord_guild and (
+        bool(discord_guild.get("owner"))
+        or bool(_discord_permissions(discord_guild) & DISCORD_ADMINISTRATOR_PERMISSION)
+    ):
+        return "admin"
+    return "user"
+
+
+def _load_accessible_servers(
+    discord_user_id: str,
+    discord_guilds: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
     guild_lookup = {
         str(guild["id"]): guild
         for guild in discord_guilds
         if str(guild.get("id", "")).isdigit()
     }
     guild_ids = [int(guild_id) for guild_id in guild_lookup]
-    if not guild_ids:
+    is_global_owner = str(discord_user_id) == GLOBAL_OWNER_DISCORD_ID
+    if not guild_ids and not is_global_owner:
         return []
 
+    where_clause = "TRUE" if is_global_owner else "g.guild_id = ANY(%s::bigint[])"
+    params: tuple[Any, ...] = () if is_global_owner else (guild_ids,)
+
     rows = database.fetchall(
-        """
+        f"""
         SELECT
             g.guild_id,
             gs.admin_channel_id,
@@ -129,7 +168,7 @@ def _load_accessible_servers(discord_guilds: list[dict[str, Any]]) -> list[dict[
         LEFT JOIN guild_settings gs ON gs.guild_id = g.guild_id
         LEFT JOIN attendance_sessions s ON s.guild_id = g.guild_id
         LEFT JOIN attendance_entries e ON e.attendance_id = s.attendance_id
-        WHERE g.guild_id = ANY(%s::bigint[])
+        WHERE {where_clause}
         GROUP BY
             g.guild_id,
             gs.admin_channel_id,
@@ -140,14 +179,14 @@ def _load_accessible_servers(discord_guilds: list[dict[str, Any]]) -> list[dict[
             MAX(s.started_at) DESC NULLS LAST,
             g.guild_id ASC
         """,
-        (guild_ids,),
+        params,
     )
 
     servers: list[dict[str, Any]] = []
     for row in rows:
         guild_id = str(row["guild_id"])
-        discord_guild = guild_lookup.get(guild_id, {})
-        session_count = int(row["session_count"] or 0)
+        discord_guild = guild_lookup.get(guild_id)
+        role = _server_role(discord_user_id, discord_guild)
         has_settings = any(
             row.get(column) is not None
             for column in (
@@ -159,8 +198,12 @@ def _load_accessible_servers(discord_guilds: list[dict[str, Any]]) -> list[dict[
         servers.append(
             {
                 "guild_id": guild_id,
-                "name": str(discord_guild.get("name") or f"Discord 서버 {guild_id}"),
-                "session_count": session_count,
+                "name": str(
+                    (discord_guild or {}).get("name") or f"Discord 서버 {guild_id}"
+                ),
+                "role": role,
+                "can_manage": role in {"admin", "owner"},
+                "session_count": int(row["session_count"] or 0),
                 "attendance_count": int(row["attendance_count"] or 0),
                 "first_started_at": row["first_started_at"] or "",
                 "last_started_at": row["last_attendance_at"]
@@ -200,6 +243,10 @@ def _auth_context(
     guild_id: str | None = None,
 ) -> dict[str, Any] | None:
     return _auth_context_from_session(request.session, guild_id)
+
+
+def _can_manage_selected_server(auth: dict[str, Any]) -> bool:
+    return bool(auth["selected_server"].get("can_manage"))
 
 
 def _safe_redirect_path(value: str | None) -> str | None:
@@ -243,9 +290,14 @@ def _latest_attendance_sessions(guild_id: int, limit: int = 20) -> list[dict[str
             s.started_at,
             s.ended_at,
             s.started_by_discord_id,
+            COALESCE(
+                MAX(starter.discord_nickname),
+                s.started_by_discord_id::text
+            ) AS started_by_name,
             COUNT(e.user_id) AS participant_count
         FROM attendance_sessions s
         LEFT JOIN attendance_entries e ON e.attendance_id = s.attendance_id
+        LEFT JOIN users starter ON starter.discord_id = s.started_by_discord_id
         WHERE s.guild_id = %s
         GROUP BY
             s.attendance_id,
@@ -263,10 +315,26 @@ def _latest_attendance_sessions(guild_id: int, limit: int = 20) -> list[dict[str
             "started_at": str(row["started_at"]),
             "ended_at": str(row["ended_at"]),
             "started_by_discord_id": row["started_by_discord_id"],
+            "started_by_name": row["started_by_name"] or "",
             "participant_count": int(row["participant_count"] or 0),
         }
         for row in rows
     ]
+
+
+def _command_category(command_type: str) -> str:
+    normalized = command_type.lower()
+    if "attendance" in normalized:
+        return "attendance"
+    if "stat" in normalized or "report" in normalized:
+        return "statistics"
+    if "setting" in normalized or "config" in normalized:
+        return "settings"
+    return "logs"
+
+
+def _command_category_label(category: str) -> str:
+    return next((tab["label"] for tab in LOG_TABS if tab["value"] == category), "로그")
 
 
 def _latest_command_queue(guild_id: int, limit: int = 10) -> list[dict[str, Any]]:
@@ -287,18 +355,23 @@ def _latest_command_queue(guild_id: int, limit: int = 10) -> list[dict[str, Any]
         """,
         (guild_id, limit),
     )
-    return [
-        {
-            "command_id": int(row["command_id"]),
-            "command_type": str(row["command_type"]),
-            "status": str(row["status"]),
-            "requested_by_discord_id": row["requested_by_discord_id"],
-            "created_at": row["created_at"],
-            "processed_at": row["processed_at"],
-            "error_message": row["error_message"] or "",
-        }
-        for row in rows
-    ]
+    commands: list[dict[str, Any]] = []
+    for row in rows:
+        category = _command_category(str(row["command_type"]))
+        commands.append(
+            {
+                "command_id": int(row["command_id"]),
+                "command_type": str(row["command_type"]),
+                "category": category,
+                "category_label": _command_category_label(category),
+                "status": str(row["status"]),
+                "requested_by_discord_id": row["requested_by_discord_id"],
+                "created_at": row["created_at"],
+                "processed_at": row["processed_at"],
+                "error_message": row["error_message"] or "",
+            }
+        )
+    return commands
 
 
 def _live_attendance_state(guild_id: int) -> dict[str, Any]:
@@ -434,7 +507,7 @@ def discord_callback(
         access_token = _exchange_discord_code(code)
         discord_user = _discord_get("/users/@me", access_token)
         discord_guilds = _discord_get("/users/@me/guilds", access_token)
-        servers = _load_accessible_servers(discord_guilds)
+        servers = _load_accessible_servers(str(discord_user["id"]), discord_guilds)
     except Exception:
         request.session.clear()
         return _render(
@@ -512,9 +585,45 @@ def attendance(
             "auth": auth,
             "live_state": _live_attendance_state(selected_guild_id),
             "sessions": _latest_attendance_sessions(selected_guild_id),
-            "commands": _latest_command_queue(selected_guild_id),
             "queued": queued,
             "active_page": "attendance",
+        },
+    )
+
+
+@app.get("/logs", response_class=HTMLResponse)
+def logs(
+    request: Request,
+    guild_id: str | None = None,
+    category: str = "all",
+):
+    auth = _auth_context(request, guild_id)
+    if not auth:
+        return _auth_redirect(request)
+
+    selected_guild_id = int(auth["selected_guild_id"])
+    selected_category = (
+        category
+        if category in {str(tab["value"]) for tab in LOG_TABS}
+        else "all"
+    )
+    commands = _latest_command_queue(selected_guild_id, limit=80)
+    if selected_category != "all":
+        commands = [
+            command
+            for command in commands
+            if command["category"] == selected_category
+        ]
+
+    return _render(
+        request,
+        "logs.html",
+        {
+            "auth": auth,
+            "commands": commands,
+            "log_tabs": LOG_TABS,
+            "selected_category": selected_category,
+            "active_page": "logs",
         },
     )
 
@@ -529,6 +638,12 @@ def start_attendance(
         return _auth_redirect(request)
 
     selected_guild_id = int(auth["selected_guild_id"])
+    if not _can_manage_selected_server(auth):
+        return RedirectResponse(
+            f"/attendance?guild_id={selected_guild_id}&queued=forbidden",
+            status_code=303,
+        )
+
     user_id = int(auth["user"]["id"])
     _enqueue_attendance_command(selected_guild_id, "start_attendance", user_id)
     return RedirectResponse(
@@ -547,6 +662,12 @@ def stop_attendance(
         return _auth_redirect(request)
 
     selected_guild_id = int(auth["selected_guild_id"])
+    if not _can_manage_selected_server(auth):
+        return RedirectResponse(
+            f"/attendance?guild_id={selected_guild_id}&queued=forbidden",
+            status_code=303,
+        )
+
     user_id = int(auth["user"]["id"])
     _enqueue_attendance_command(selected_guild_id, "stop_attendance", user_id)
     return RedirectResponse(
