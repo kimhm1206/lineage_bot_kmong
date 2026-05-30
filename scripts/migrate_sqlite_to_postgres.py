@@ -32,6 +32,11 @@ def main() -> None:
         action="store_true",
         help="Read source counts only; do not write PostgreSQL.",
     )
+    parser.add_argument(
+        "--test",
+        action="store_true",
+        help="Use PGHOST from .env instead of the local PostgreSQL host.",
+    )
     args = parser.parse_args()
 
     sqlite_path = Path(args.sqlite_path)

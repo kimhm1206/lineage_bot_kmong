@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import quote
@@ -13,6 +14,14 @@ from psycopg2.extras import RealDictCursor
 load_dotenv()
 
 DEFAULT_ALLIANCE_NAMES = ("정지", "랭커", "삼국", "해적", "보스", "인연")
+TEST_DB_FLAG = "--test"
+
+
+def is_test_database_mode() -> bool:
+    return TEST_DB_FLAG in sys.argv or os.getenv("LINEAGE_DB_TARGET", "").lower() in {
+        "test",
+        "remote",
+    }
 
 
 @dataclass(slots=True)
@@ -32,15 +41,24 @@ class Alliance:
 
 
 def _database_url() -> str:
-    url = os.getenv("DATABASE_URL")
+    test_mode = is_test_database_mode()
+    url = os.getenv("DATABASE_URL") if test_mode else os.getenv("LOCAL_DATABASE_URL")
     if url:
         return url
 
-    host = os.getenv("PGHOST")
-    database = os.getenv("PGDATABASE")
-    user = os.getenv("PGUSER")
-    password = os.getenv("PGPASSWORD")
-    port = os.getenv("PGPORT", "5432")
+    host = os.getenv("PGHOST") if test_mode else os.getenv("PGLOCALHOST", "127.0.0.1")
+    database = (
+        os.getenv("PGDATABASE")
+        if test_mode
+        else os.getenv("PGLOCALDATABASE", os.getenv("PGDATABASE"))
+    )
+    user = os.getenv("PGUSER") if test_mode else os.getenv("PGLOCALUSER", os.getenv("PGUSER"))
+    password = (
+        os.getenv("PGPASSWORD")
+        if test_mode
+        else os.getenv("PGLOCALPASSWORD", os.getenv("PGPASSWORD"))
+    )
+    port = os.getenv("PGPORT", "5432") if test_mode else os.getenv("PGLOCALPORT", "5432")
     if all((host, database, user, password)):
         encoded_user = quote(str(user), safe="")
         encoded_password = quote(str(password), safe="")
@@ -48,7 +66,7 @@ def _database_url() -> str:
         return f"postgresql://{encoded_user}:{encoded_password}@{host}:{port}/{encoded_database}"
 
     raise RuntimeError(
-        "PostgreSQL 접속 정보가 없습니다. DATABASE_URL 또는 PGHOST/PGDATABASE/PGUSER/PGPASSWORD를 설정해주세요."
+        "PostgreSQL 접속 정보가 없습니다. 기본 실행은 로컬 DB(PGLOCAL* 또는 PG*)를 사용하고, --test 실행은 .env의 PGHOST/PGDATABASE/PGUSER/PGPASSWORD를 사용합니다."
     )
 
 
