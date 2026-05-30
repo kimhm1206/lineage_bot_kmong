@@ -223,6 +223,50 @@ h2 {
   margin-bottom: 18px;
 }
 
+.filter-panel {
+  margin-bottom: 18px;
+  overflow: hidden;
+}
+
+.quick-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 14px 18px 0;
+}
+
+.quick-filter {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.68);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.quick-filter.is-active,
+.quick-filter:hover {
+  border-color: rgba(20, 108, 148, 0.24);
+  background: rgba(20, 108, 148, 0.11);
+  color: var(--text);
+}
+
+.filter-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr)) auto;
+  align-items: end;
+  gap: 12px;
+  padding: 18px;
+}
+
+.filter-actions {
+  display: flex;
+}
+
 .stat-card,
 .panel,
 .login-panel {
@@ -970,6 +1014,15 @@ button:disabled {
   .content-grid,
   .attendance-live-grid {
     grid-template-columns: 1fr;
+  }
+
+  .filter-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .filter-actions,
+  .filter-actions button {
+    width: 100%;
   }
 
   .live-metrics {

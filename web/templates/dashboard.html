@@ -7,12 +7,68 @@
     <div>
       <p class="eyebrow">{{ auth.selected_server.name }}</p>
       <h1>출석 통계</h1>
-      <p class="hero-copy">최근 출석 흐름과 유저, 혈맹별 참여 현황을 빠르게 확인합니다.</p>
+      <p class="hero-copy">기간, 유저, 혈맹을 조합해서 출석 흐름과 순위를 빠르게 확인합니다.</p>
     </div>
     <div class="server-summary">
       최근 출석 {{ auth.selected_server.last_started_at or "기록 없음" }}
     </div>
   </section>
+
+  <form class="panel filter-panel" method="get" action="/dashboard">
+    <input type="hidden" name="guild_id" value="{{ auth.selected_guild_id }}">
+    <header class="panel-header">
+      <h2>필터</h2>
+      <span class="panel-caption">{{ filters.active_count }}개 적용 중</span>
+    </header>
+
+    <div class="quick-filter-row">
+      {% for item in filters.quick %}
+        <a class="quick-filter {% if item.active %}is-active{% endif %}" href="{{ item.href }}">
+          {{ item.label }}
+        </a>
+      {% endfor %}
+      <a class="quick-filter" href="{{ filters.reset_href }}">초기화</a>
+    </div>
+
+    <div class="filter-grid">
+      <label class="field">
+        <span>시작일</span>
+        <input type="date" name="start_date" value="{{ filters.start_date }}">
+      </label>
+      <label class="field">
+        <span>종료일</span>
+        <input type="date" name="end_date" value="{{ filters.end_date }}">
+      </label>
+      <label class="field">
+        <span>검색</span>
+        <input type="search" name="search" value="{{ filters.search }}" placeholder="유저명, Discord ID, 혈맹">
+      </label>
+      <label class="field">
+        <span>혈맹</span>
+        <select name="alliance">
+          <option value="">전체 혈맹</option>
+          {% for alliance_name in alliance_options %}
+            <option value="{{ alliance_name }}" {% if filters.alliance == alliance_name %}selected{% endif %}>
+              {{ alliance_name }}
+            </option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="field">
+        <span>표시 개수</span>
+        <select name="limit">
+          {% for option in [10, 25, 50, 100, 200] %}
+            <option value="{{ option }}" {% if filters.limit == option %}selected{% endif %}>
+              {{ option }}명
+            </option>
+          {% endfor %}
+        </select>
+      </label>
+      <div class="filter-actions">
+        <button class="primary-button" type="submit">적용</button>
+      </div>
+    </div>
+  </form>
 
   <section class="stats-grid">
     <article class="stat-card">
@@ -36,7 +92,8 @@
   <section class="content-grid">
     <article class="panel">
       <header class="panel-header">
-        <h2>최근 일자별</h2>
+        <h2>일자별 흐름</h2>
+        <span class="panel-caption">최대 60일</span>
       </header>
       <table>
         <thead>
@@ -65,10 +122,12 @@
     <article class="panel">
       <header class="panel-header">
         <h2>유저 순위</h2>
+        <span class="panel-caption">{{ top_users|length }}명</span>
       </header>
       <table>
         <thead>
           <tr>
+            <th>순위</th>
             <th>유저</th>
             <th>혈맹</th>
             <th>출석</th>
@@ -77,20 +136,22 @@
         <tbody>
           {% for row in top_users %}
             <tr>
+              <td>{{ loop.index }}</td>
               <td>{{ row.discord_nickname }}</td>
               <td>{{ row.alliance_name }}</td>
               <td>{{ row.attendance_count }}</td>
             </tr>
           {% else %}
-            <tr><td colspan="3" class="empty">유저 기록이 없습니다.</td></tr>
+            <tr><td colspan="4" class="empty">조건에 맞는 유저 기록이 없습니다.</td></tr>
           {% endfor %}
         </tbody>
       </table>
     </article>
 
-    <article class="panel wide">
+    <article class="panel">
       <header class="panel-header">
         <h2>혈맹별 통계</h2>
+        <span class="panel-caption">{{ alliance_stats|length }}개</span>
       </header>
       <table>
         <thead>
@@ -110,7 +171,36 @@
               <td>{{ row.unique_user_count }}</td>
             </tr>
           {% else %}
-            <tr><td colspan="4" class="empty">혈맹 기록이 없습니다.</td></tr>
+            <tr><td colspan="4" class="empty">조건에 맞는 혈맹 기록이 없습니다.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </article>
+
+    <article class="panel">
+      <header class="panel-header">
+        <h2>출석 로그</h2>
+        <span class="panel-caption">최근 {{ attendance_rows|length }}건</span>
+      </header>
+      <table>
+        <thead>
+          <tr>
+            <th>시간</th>
+            <th>유저</th>
+            <th>혈맹</th>
+            <th>Discord ID</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in attendance_rows %}
+            <tr>
+              <td>{{ row.started_at }}</td>
+              <td>{{ row.discord_nickname or "-" }}</td>
+              <td>{{ row.alliance_name }}</td>
+              <td>{{ row.discord_id or "-" }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="4" class="empty">조건에 맞는 출석 로그가 없습니다.</td></tr>
           {% endfor %}
         </tbody>
       </table>

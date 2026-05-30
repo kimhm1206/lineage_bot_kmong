@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import os
 import secrets
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlencode
@@ -23,6 +24,7 @@ load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent
 DISCORD_API_BASE = "https://discord.com/api/v10"
+KST = timezone(timedelta(hours=9))
 DISCORD_REDIRECT_URI = os.getenv(
     "DISCORD_REDIRECT_URI",
     "http://localhost:8000/auth/discord/callback",
@@ -383,6 +385,177 @@ def _render(
         template_name,
         context or {},
         status_code=status_code,
+    )
+
+
+def _parse_date(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.strptime(value, "%Y-%m-%d")
+    except ValueError:
+        return None
+
+
+def _dashboard_period_dates(
+    period: str | None,
+) -> tuple[str | None, str | None]:
+    today = datetime.now(KST).date()
+    if period == "7d":
+        return (today - timedelta(days=6)).isoformat(), today.isoformat()
+    if period == "30d":
+        return (today - timedelta(days=29)).isoformat(), today.isoformat()
+    if period == "month":
+        return today.replace(day=1).isoformat(), today.isoformat()
+    if period == "all":
+        return None, None
+    return None, None
+
+
+def _date_bounds(
+    start_date: str | None,
+    end_date: str | None,
+) -> tuple[str | None, str | None, str, str]:
+    start = _parse_date(start_date)
+    end = _parse_date(end_date)
+    if start and end and start > end:
+        start, end = end, start
+    start_value = start.strftime("%Y-%m-%d") if start else ""
+    end_value = end.strftime("%Y-%m-%d") if end else ""
+    start_at = f"{start_value} 00:00:00" if start_value else None
+    end_at = f"{end_value} 23:59:59" if end_value else None
+    return start_at, end_at, start_value, end_value
+
+
+def _dashboard_url(
+    guild_id: int,
+    *,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    search: str | None = None,
+    alliance: str | None = None,
+    limit: int | None = None,
+) -> str:
+    params: dict[str, Any] = {"guild_id": guild_id}
+    if start_date:
+        params["start_date"] = start_date
+    if end_date:
+        params["end_date"] = end_date
+    if search:
+        params["search"] = search
+    if alliance:
+        params["alliance"] = alliance
+    if limit:
+        params["limit"] = limit
+    return f"/dashboard?{urlencode(params)}"
+
+
+def _quick_dashboard_filters(
+    guild_id: int,
+    *,
+    start_date: str,
+    end_date: str,
+    search: str,
+    alliance: str,
+    limit: int,
+) -> list[dict[str, Any]]:
+    items = []
+    for label, period in (
+        ("최근 7일", "7d"),
+        ("최근 30일", "30d"),
+        ("이번 달", "month"),
+        ("전체", "all"),
+    ):
+        quick_start, quick_end = _dashboard_period_dates(period)
+        items.append(
+            {
+                "label": label,
+                "href": _dashboard_url(
+                    guild_id,
+                    start_date=quick_start,
+                    end_date=quick_end,
+                    search=search,
+                    alliance=alliance,
+                    limit=limit,
+                ),
+                "active": (quick_start or "") == start_date
+                and (quick_end or "") == end_date,
+            }
+        )
+    return items
+
+
+def _overview_from_attendance_rows(rows: list[dict[str, Any]]) -> dict[str, int]:
+    session_keys = {row["started_at"] for row in rows if row.get("started_at")}
+    attendance_rows = [row for row in rows if row.get("discord_id") is not None]
+    unique_users = {row["discord_id"] for row in attendance_rows}
+    session_count = len(session_keys)
+    total_count = len(attendance_rows)
+    return {
+        "session_count": session_count,
+        "total_attendance_count": total_count,
+        "unique_user_count": len(unique_users),
+        "average_attendance_count": round(total_count / session_count)
+        if session_count
+        else 0,
+    }
+
+
+def _daily_stats_from_attendance_rows(
+    rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    grouped: dict[str, dict[str, set[Any]]] = {}
+    for row in rows:
+        started_at = str(row.get("started_at") or "")
+        if not started_at:
+            continue
+        day = started_at[:10]
+        bucket = grouped.setdefault(
+            day,
+            {"sessions": set(), "attendance": set(), "users": set()},
+        )
+        bucket["sessions"].add(started_at)
+        if row.get("discord_id") is not None:
+            bucket["attendance"].add((started_at, row["discord_id"]))
+            bucket["users"].add(row["discord_id"])
+    return [
+        {
+            "attendance_date": day,
+            "session_count": len(values["sessions"]),
+            "attendance_count": len(values["attendance"]),
+            "unique_user_count": len(values["users"]),
+        }
+        for day, values in sorted(grouped.items(), reverse=True)
+    ]
+
+
+def _alliance_stats_from_attendance_rows(
+    rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    grouped: dict[str, dict[str, set[Any]]] = {}
+    for row in rows:
+        if row.get("discord_id") is None:
+            continue
+        alliance_name = str(row.get("alliance_name") or "미분류")
+        bucket = grouped.setdefault(
+            alliance_name,
+            {"sessions": set(), "attendance": set(), "users": set()},
+        )
+        started_at = str(row.get("started_at") or "")
+        bucket["sessions"].add(started_at)
+        bucket["attendance"].add((started_at, row["discord_id"]))
+        bucket["users"].add(row["discord_id"])
+    return sorted(
+        [
+            {
+                "alliance_name": alliance_name,
+                "session_count": len(values["sessions"]),
+                "attendance_count": len(values["attendance"]),
+                "unique_user_count": len(values["users"]),
+            }
+            for alliance_name, values in grouped.items()
+        ],
+        key=lambda row: (-row["attendance_count"], row["alliance_name"]),
     )
 
 
@@ -902,16 +1075,60 @@ def logout(request: Request):
 def dashboard(
     request: Request,
     guild_id: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    search: str | None = None,
+    alliance: str | None = None,
+    limit: int = 25,
+    period: str | None = None,
 ):
     auth = _auth_context(request, guild_id)
     if not auth:
         return _auth_redirect(request)
 
     selected_guild_id = int(auth["selected_guild_id"])
-    overview = database.get_attendance_overview(selected_guild_id)
-    daily_stats = database.get_daily_attendance_stats(selected_guild_id)[:14]
-    top_users = database.get_user_attendance_stats(selected_guild_id, limit=10)
-    alliance_stats = database.get_alliance_attendance_stats(selected_guild_id)
+    if period:
+        start_date, end_date = _dashboard_period_dates(period)
+    start_at, end_at, start_value, end_value = _date_bounds(start_date, end_date)
+    search_value = (search or "").strip()
+    alliance_value = (alliance or "").strip()
+    limit_value = limit if limit in {10, 25, 50, 100, 200} else 25
+
+    filtered_rows = database.get_attendance_export_rows(
+        selected_guild_id,
+        start_at,
+        end_at,
+        search_value or None,
+        alliance_value or None,
+    )
+    should_compute_filtered_totals = bool(search_value or alliance_value)
+    if should_compute_filtered_totals:
+        overview = _overview_from_attendance_rows(filtered_rows)
+        daily_stats = _daily_stats_from_attendance_rows(filtered_rows)[:60]
+        alliance_stats = _alliance_stats_from_attendance_rows(filtered_rows)
+    else:
+        overview = database.get_attendance_overview(selected_guild_id, start_at, end_at)
+        daily_stats = database.get_daily_attendance_stats(
+            selected_guild_id,
+            start_at,
+            end_at,
+        )[:60]
+        alliance_stats = database.get_alliance_attendance_stats(
+            selected_guild_id,
+            start_at,
+            end_at,
+            alliance_value or None,
+        )
+    top_users = database.get_user_attendance_stats(
+        selected_guild_id,
+        start_at,
+        end_at,
+        search_value or None,
+        alliance_value or None,
+        limit_value,
+    )
+    attendance_rows = filtered_rows[:200]
+    alliance_options = database.get_alliance_names()
 
     return _render(
         request,
@@ -922,6 +1139,34 @@ def dashboard(
             "daily_stats": daily_stats,
             "top_users": top_users,
             "alliance_stats": alliance_stats,
+            "attendance_rows": attendance_rows,
+            "alliance_options": alliance_options,
+            "filters": {
+                "start_date": start_value,
+                "end_date": end_value,
+                "search": search_value,
+                "alliance": alliance_value,
+                "limit": limit_value,
+                "quick": _quick_dashboard_filters(
+                    selected_guild_id,
+                    start_date=start_value,
+                    end_date=end_value,
+                    search=search_value,
+                    alliance=alliance_value,
+                    limit=limit_value,
+                ),
+                "reset_href": _dashboard_url(selected_guild_id),
+                "active_count": sum(
+                    1
+                    for value in (
+                        start_value,
+                        end_value,
+                        search_value,
+                        alliance_value,
+                    )
+                    if value
+                ),
+            },
             "active_page": "dashboard",
         },
     )
