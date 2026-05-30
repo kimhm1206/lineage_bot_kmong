@@ -1042,6 +1042,7 @@ def _ensure_postgres_columns(cursor: psycopg2.extensions.cursor) -> None:
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP",
         "ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP",
+        "ALTER TABLE scheduled_report_settings ADD COLUMN IF NOT EXISTS run_time TEXT NOT NULL DEFAULT '00:00'",
     ]
     for sql in column_sql:
         cursor.execute(sql)
@@ -1175,6 +1176,7 @@ CREATE TABLE IF NOT EXISTS scheduled_report_settings (
     period_type TEXT NOT NULL,
     subject_type TEXT NOT NULL,
     result_type TEXT NOT NULL,
+    run_time TEXT NOT NULL DEFAULT '00:00',
     channel_id BIGINT NOT NULL,
     channel_name TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'off',

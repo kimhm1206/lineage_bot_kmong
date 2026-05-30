@@ -7,7 +7,7 @@
     <div>
       <p class="eyebrow">{{ auth.selected_server.name }}</p>
       <h1>서버 설정</h1>
-      <p class="hero-copy">Discord 봇의 출석 채널, 타이머, 통계 알림 문장을 웹에서 관리합니다.</p>
+      <p class="hero-copy">통계 알림, Discord 채널, 출석 타이머를 웹에서 관리합니다.</p>
     </div>
     <div class="server-summary">
       {{ auth.selected_server.role }}
@@ -39,6 +39,155 @@
   {% endif %}
 
   <section class="settings-layout">
+    <form
+      class="panel settings-form report-builder"
+      method="post"
+      action="/settings/reports?guild_id={{ auth.selected_guild_id }}"
+      data-report-builder
+    >
+      <header class="panel-header">
+        <h2>통계 알림 설정</h2>
+        <span class="panel-caption">발송 주기, 시간, 대상, 결과, 채널을 선택합니다</span>
+      </header>
+
+      <div class="settings-section report-grid">
+        <label class="field">
+          <span>발송 주기</span>
+          <select name="frequency" data-report-part {% if not auth.selected_server.can_manage %}disabled{% endif %}>
+            {% for option in report_options.frequencies %}
+              <option value="{{ option.value }}" data-label="{{ option.label }}" {% if report_form.frequency == option.value %}selected{% endif %}>
+                {{ option.label }}
+              </option>
+            {% endfor %}
+          </select>
+        </label>
+
+        <label class="field">
+          <span>발송 시간</span>
+          <input
+            name="run_time"
+            type="time"
+            value="{{ report_form.run_time or '00:00' }}"
+            data-report-time
+            {% if not auth.selected_server.can_manage %}disabled{% endif %}
+          >
+        </label>
+
+        <label class="field">
+          <span>상태</span>
+          <select name="status" {% if not auth.selected_server.can_manage %}disabled{% endif %}>
+            {% for option in report_options.statuses %}
+              {% if option.value != "delete" %}
+                <option value="{{ option.value }}" {% if report_form.status == option.value %}selected{% endif %}>
+                  {{ option.label }}
+                </option>
+              {% endif %}
+            {% endfor %}
+          </select>
+        </label>
+
+        <label class="field">
+          <span>조회 기간</span>
+          <select name="period_type" data-report-part {% if not auth.selected_server.can_manage %}disabled{% endif %}>
+            {% for option in report_options.periods %}
+              <option value="{{ option.value }}" data-label="{{ option.label }}" {% if report_form.period_type == option.value %}selected{% endif %}>
+                {{ option.label }}
+              </option>
+            {% endfor %}
+          </select>
+        </label>
+
+        <label class="field">
+          <span>통계 대상</span>
+          <select name="subject_type" data-report-part {% if not auth.selected_server.can_manage %}disabled{% endif %}>
+            {% for option in report_options.subjects %}
+              <option value="{{ option.value }}" data-label="{{ option.label }}" {% if report_form.subject_type == option.value %}selected{% endif %}>
+                {{ option.label }}
+              </option>
+            {% endfor %}
+          </select>
+        </label>
+
+        <label class="field">
+          <span>결과 형태</span>
+          <select name="result_type" data-report-part {% if not auth.selected_server.can_manage %}disabled{% endif %}>
+            {% for option in report_options.results %}
+              <option value="{{ option.value }}" data-label="{{ option.label }}" {% if report_form.result_type == option.value %}selected{% endif %}>
+                {{ option.label }}
+              </option>
+            {% endfor %}
+          </select>
+        </label>
+
+        <label class="field wide-field">
+          <span>받을 채널</span>
+          <select name="channel_id" data-report-channel {% if not auth.selected_server.can_manage %}disabled{% endif %}>
+            <option value="" data-label="채널">채널 선택</option>
+            {% for channel in channels.text %}
+              <option value="{{ channel.id }}" data-label="{{ channel.label }}" {% if report_form.channel_id|string == channel.id %}selected{% endif %}>
+                # {{ channel.label }}
+              </option>
+            {% endfor %}
+          </select>
+        </label>
+      </div>
+
+      <div class="sentence-preview" data-report-preview>
+        매일 00시에 최근 일주일의 유저별 전체 통계를 #채널로 받습니다.
+      </div>
+
+      <div class="form-actions">
+        <button class="primary-button" type="submit" {% if not auth.selected_server.can_manage %}disabled{% endif %}>
+          알림 추가
+        </button>
+      </div>
+    </form>
+
+    <article class="panel">
+      <header class="panel-header">
+        <h2>등록된 통계 알림</h2>
+        <span class="panel-caption">상태는 이 목록에서 변경합니다</span>
+      </header>
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>문장</th>
+            <th>상태</th>
+            <th>등록자</th>
+            <th>수정</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for report in report_settings %}
+            <tr>
+              <td>{{ report.report_setting_id }}</td>
+              <td>{{ report.sentence }}</td>
+              <td>
+                <form class="status-form" method="post" action="/settings/reports/status?guild_id={{ auth.selected_guild_id }}">
+                  <input type="hidden" name="report_setting_id" value="{{ report.report_setting_id }}">
+                  <select name="status" {% if not auth.selected_server.can_manage %}disabled{% endif %}>
+                    {% for option in report_options.statuses %}
+                      <option value="{{ option.value }}" {% if report.status == option.value %}selected{% endif %}>
+                        {{ option.label }}
+                      </option>
+                    {% endfor %}
+                  </select>
+                  <button class="tiny-button" type="submit" {% if not auth.selected_server.can_manage %}disabled{% endif %}>
+                    적용
+                  </button>
+                </form>
+              </td>
+              <td>{{ report.created_by_name }}</td>
+              <td>{{ report.updated_at }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="5" class="empty">등록된 통계 알림이 없습니다.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </article>
+
     <form class="panel settings-form" method="post" action="/settings?guild_id={{ auth.selected_guild_id }}">
       <header class="panel-header">
         <h2>채널 설정</h2>
@@ -132,146 +281,6 @@
         {% endif %}
       </div>
     </form>
-
-    <form
-      class="panel settings-form report-builder"
-      method="post"
-      action="/settings/reports?guild_id={{ auth.selected_guild_id }}"
-      data-report-builder
-    >
-      <header class="panel-header">
-        <h2>통계 알림 설정</h2>
-        <span class="panel-caption">5개 값을 선택해 자동 알림 문장을 만듭니다</span>
-      </header>
-
-      <div class="settings-section report-grid">
-        <label class="field">
-          <span>발송 주기</span>
-          <select name="frequency" data-report-part {% if not auth.selected_server.can_manage %}disabled{% endif %}>
-            {% for option in report_options.frequencies %}
-              <option value="{{ option.value }}" data-label="{{ option.label }}" {% if report_form.frequency == option.value %}selected{% endif %}>
-                {{ option.label }}
-              </option>
-            {% endfor %}
-          </select>
-        </label>
-
-        <label class="field">
-          <span>조회 기간</span>
-          <select name="period_type" data-report-part {% if not auth.selected_server.can_manage %}disabled{% endif %}>
-            {% for option in report_options.periods %}
-              <option value="{{ option.value }}" data-label="{{ option.label }}" {% if report_form.period_type == option.value %}selected{% endif %}>
-                {{ option.label }}
-              </option>
-            {% endfor %}
-          </select>
-        </label>
-
-        <label class="field">
-          <span>통계 대상</span>
-          <select name="subject_type" data-report-part {% if not auth.selected_server.can_manage %}disabled{% endif %}>
-            {% for option in report_options.subjects %}
-              <option value="{{ option.value }}" data-label="{{ option.label }}" {% if report_form.subject_type == option.value %}selected{% endif %}>
-                {{ option.label }}
-              </option>
-            {% endfor %}
-          </select>
-        </label>
-
-        <label class="field">
-          <span>결과 형태</span>
-          <select name="result_type" data-report-part {% if not auth.selected_server.can_manage %}disabled{% endif %}>
-            {% for option in report_options.results %}
-              <option value="{{ option.value }}" data-label="{{ option.label }}" {% if report_form.result_type == option.value %}selected{% endif %}>
-                {{ option.label }}
-              </option>
-            {% endfor %}
-          </select>
-        </label>
-
-        <label class="field">
-          <span>받을 채널</span>
-          <select name="channel_id" data-report-channel {% if not auth.selected_server.can_manage %}disabled{% endif %}>
-            <option value="" data-label="채널">채널 선택</option>
-            {% for channel in channels.text %}
-              <option value="{{ channel.id }}" data-label="{{ channel.label }}" {% if report_form.channel_id|string == channel.id %}selected{% endif %}>
-                # {{ channel.label }}
-              </option>
-            {% endfor %}
-          </select>
-        </label>
-
-        <label class="field">
-          <span>상태</span>
-          <select name="status" {% if not auth.selected_server.can_manage %}disabled{% endif %}>
-            {% for option in report_options.statuses %}
-              {% if option.value != "delete" %}
-                <option value="{{ option.value }}" {% if report_form.status == option.value %}selected{% endif %}>
-                  {{ option.label }}
-                </option>
-              {% endif %}
-            {% endfor %}
-          </select>
-        </label>
-      </div>
-
-      <div class="sentence-preview" data-report-preview>
-        매일 최근 일주일의 유저별 전체 통계를 #채널로 받습니다.
-      </div>
-
-      <div class="form-actions">
-        <button class="primary-button" type="submit" {% if not auth.selected_server.can_manage %}disabled{% endif %}>
-          알림 추가
-        </button>
-      </div>
-    </form>
-
-    <article class="panel">
-      <header class="panel-header">
-        <h2>등록된 통계 알림</h2>
-        <span class="panel-caption">on / off / delete</span>
-      </header>
-      <table>
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>문장</th>
-            <th>상태</th>
-            <th>등록자</th>
-            <th>수정</th>
-            <th>작업</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for report in report_settings %}
-            <tr>
-              <td>{{ report.report_setting_id }}</td>
-              <td>{{ report.sentence }}</td>
-              <td><span class="status status-{{ report.status }}">{{ report.status }}</span></td>
-              <td>{{ report.created_by_name }}</td>
-              <td>{{ report.updated_at }}</td>
-              <td>
-                <div class="inline-actions">
-                  {% for option in report_options.statuses %}
-                    {% if option.value != report.status %}
-                      <form method="post" action="/settings/reports/status?guild_id={{ auth.selected_guild_id }}">
-                        <input type="hidden" name="report_setting_id" value="{{ report.report_setting_id }}">
-                        <input type="hidden" name="status" value="{{ option.value }}">
-                        <button class="tiny-button" type="submit" {% if not auth.selected_server.can_manage %}disabled{% endif %}>
-                          {{ option.label }}
-                        </button>
-                      </form>
-                    {% endif %}
-                  {% endfor %}
-                </div>
-              </td>
-            </tr>
-          {% else %}
-            <tr><td colspan="6" class="empty">등록된 통계 알림이 없습니다.</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </article>
   </section>
 {% endblock %}
 
@@ -286,20 +295,27 @@
       return option?.dataset.label || option?.textContent?.trim() || "";
     }
 
+    function formatRunTime(value) {
+      const [hour = "00", minute = "00"] = String(value || "00:00").split(":");
+      return minute === "00" ? `${hour}시` : `${hour}시 ${minute}분`;
+    }
+
     function updateReportPreview() {
       if (!reportBuilder || !reportPreview) {
         return;
       }
       const frequency = selectedLabel("[name='frequency']");
+      const runTime = formatRunTime(reportBuilder.querySelector("[name='run_time']")?.value);
       const period = selectedLabel("[name='period_type']");
       const subject = selectedLabel("[name='subject_type']");
       const result = selectedLabel("[name='result_type']");
       const channel = selectedLabel("[name='channel_id']") || "채널";
-      reportPreview.textContent = `${frequency} ${period}의 ${subject} ${result} 통계를 #${channel}로 받습니다.`;
+      reportPreview.textContent = `${frequency} ${runTime}에 ${period}의 ${subject} ${result} 통계를 #${channel}로 받습니다.`;
     }
 
-    reportBuilder?.querySelectorAll("select").forEach((select) => {
-      select.addEventListener("change", updateReportPreview);
+    reportBuilder?.querySelectorAll("select, input").forEach((control) => {
+      control.addEventListener("change", updateReportPreview);
+      control.addEventListener("input", updateReportPreview);
     });
     updateReportPreview();
   </script>

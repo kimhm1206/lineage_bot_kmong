@@ -90,6 +90,11 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 
 
+@app.on_event("startup")
+def initialize_database_schema() -> None:
+    database.init_schema()
+
+
 def _oauth_ready() -> bool:
     return bool(DISCORD_CLIENT_ID and DISCORD_CLIENT_SECRET)
 
@@ -480,6 +485,7 @@ def _settings_form_from_values(values: dict[str, Any]) -> dict[str, Any]:
 def _default_report_form() -> dict[str, str]:
     return {
         "frequency": "daily",
+        "run_time": "00:00",
         "period_type": "recent_7_days",
         "subject_type": "user",
         "result_type": "all",
@@ -494,10 +500,38 @@ def _option_label(options: tuple[dict[str, str], ...], value: str) -> str:
 
 def _report_sentence(report: dict[str, Any]) -> str:
     return (
-        f"{report['frequency_label']} {report['period_label']}의 "
+        f"{report['frequency_label']} {report['run_time_label']}에 "
+        f"{report['period_label']}의 "
         f"{report['subject_label']} {report['result_label']} 통계를 "
         f"#{report['channel_name']}로 받습니다."
     )
+
+
+def _format_run_time(value: str | None) -> str:
+    if not value:
+        return "00시"
+    hour, _, minute = value.partition(":")
+    if minute == "00" or not minute:
+        return f"{int(hour):02d}시"
+    return f"{int(hour):02d}시 {int(minute):02d}분"
+
+
+def _validate_run_time(raw_value: str | None, errors: list[str]) -> str:
+    value = raw_value or "00:00"
+    parts = value.split(":")
+    if len(parts) != 2:
+        errors.append("발송 시간은 HH:MM 형식이어야 합니다.")
+        return "00:00"
+    try:
+        hour = int(parts[0])
+        minute = int(parts[1])
+    except ValueError:
+        errors.append("발송 시간은 숫자로 입력해야 합니다.")
+        return "00:00"
+    if not 0 <= hour <= 23 or not 0 <= minute <= 59:
+        errors.append("발송 시간은 00:00부터 23:59 사이여야 합니다.")
+        return "00:00"
+    return f"{hour:02d}:{minute:02d}"
 
 
 def _load_report_settings(guild_id: int) -> list[dict[str, Any]]:
@@ -513,6 +547,7 @@ def _load_report_settings(guild_id: int) -> list[dict[str, Any]]:
             r.period_type,
             r.subject_type,
             r.result_type,
+            r.run_time,
             r.channel_id,
             r.channel_name,
             r.status,
@@ -544,6 +579,8 @@ def _load_report_settings(guild_id: int) -> list[dict[str, Any]]:
             "period_type": str(row["period_type"]),
             "subject_type": str(row["subject_type"]),
             "result_type": str(row["result_type"]),
+            "run_time": str(row["run_time"] or "00:00"),
+            "run_time_label": _format_run_time(str(row["run_time"] or "00:00")),
             "channel_id": row["channel_id"],
             "channel_name": str(row["channel_name"]),
             "status": str(row["status"]),
@@ -1092,6 +1129,7 @@ async def create_report_setting(
         REPORT_FREQUENCY_OPTIONS,
         errors,
     )
+    run_time = _validate_run_time(form_data.get("run_time"), errors)
     period_type = _validate_report_option(
         "조회 기간",
         form_data.get("period_type"),
@@ -1132,6 +1170,7 @@ async def create_report_setting(
 
     report_form = {
         "frequency": frequency,
+        "run_time": run_time,
         "period_type": period_type,
         "subject_type": subject_type,
         "result_type": result_type,
@@ -1168,6 +1207,7 @@ async def create_report_setting(
                     created_by_discord_id,
                     updated_by_discord_id,
                     frequency,
+                    run_time,
                     period_type,
                     subject_type,
                     result_type,
@@ -1175,13 +1215,14 @@ async def create_report_setting(
                     channel_name,
                     status
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     selected_guild_id,
                     int(auth["user"]["id"]),
                     int(auth["user"]["id"]),
                     frequency,
+                    run_time,
                     period_type,
                     subject_type,
                     result_type,

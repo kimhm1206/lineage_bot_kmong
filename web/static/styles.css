@@ -627,6 +627,10 @@ button:disabled {
   width: 100%;
 }
 
+.wide-field {
+  grid-column: span 3;
+}
+
 .field small {
   color: var(--muted);
   line-height: 1.55;
@@ -654,6 +658,16 @@ button:disabled {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+.status-form {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.status-form select {
+  min-width: 104px;
 }
 
 .log-tabs {
@@ -968,6 +982,10 @@ button:disabled {
 
   .report-grid {
     grid-template-columns: 1fr;
+  }
+
+  .wide-field {
+    grid-column: auto;
   }
 
   .actions {
