@@ -261,6 +261,7 @@ def get_attendance_state(bot: discord.Bot, guild_id: int) -> dict[str, object | 
             "task": None,
             "started_by": None,
             "started_at": None,
+            "live_session_id": None,
             "participants": set(),
         }
         attendance_state_by_guild[guild_id] = state
@@ -276,6 +277,7 @@ def set_attendance_state(
     task: asyncio.Task[None] | None,
     started_by: int | None,
     started_at: object | None,
+    live_session_id: int | None = None,
 ) -> None:
     state = get_attendance_state(bot, guild_id)
     state["active"] = True
@@ -284,6 +286,7 @@ def set_attendance_state(
     state["task"] = task
     state["started_by"] = started_by
     state["started_at"] = started_at
+    state["live_session_id"] = live_session_id
     state["participants"] = set()
 
 
@@ -304,6 +307,7 @@ def clear_attendance_state(bot: discord.Bot, guild_id: int) -> None:
     state["task"] = None
     state["started_by"] = None
     state["started_at"] = None
+    state["live_session_id"] = None
     state["participants"] = set()
 
 

@@ -212,6 +212,20 @@ async def start_attendance(
             view=AttendanceActionView(bot, guild.id),
         )
 
+        started_at = _now_kst()
+        started_at_text = started_at.strftime(TIME_FORMAT)
+        expires_at_text = (started_at + timedelta(seconds=settings.timer)).strftime(
+            TIME_FORMAT
+        )
+        live_session_id = database.start_live_attendance(
+            guild.id,
+            discord_channel_id=attendance_channel.id,
+            discord_message_id=attendance_message.id,
+            started_by_discord_id=starter.id,
+            started_at=started_at_text,
+            expires_at=expires_at_text,
+        )
+
         task = asyncio.create_task(
             _expire_attendance_after_timeout(bot, guild.id, settings.timer)
         )
@@ -222,7 +236,8 @@ async def start_attendance(
             message_id=attendance_message.id,
             task=task,
             started_by=starter.id,
-            started_at=_now_kst().strftime(TIME_FORMAT),
+            started_at=started_at_text,
+            live_session_id=live_session_id,
         )
     await update_admin_panel(bot, guild.id)
     return True, f"출석을 시작했습니다. {attendance_channel.mention}에 안내 메시지를 보냈습니다."
@@ -253,8 +268,14 @@ async def stop_attendance(
         )
         channel_id = _optional_int(state.get("channel_id"))
         message_id = _optional_int(state.get("message_id"))
+        live_session_id = _optional_int(state.get("live_session_id"))
         clear_attendance_state(bot, guild.id)
 
+    database.finish_live_attendance(
+        live_session_id,
+        guild_id=guild.id,
+        ended_at=snapshot.ended_at,
+    )
     await delete_attendance_message(
         bot,
         guild.id,
@@ -318,7 +339,23 @@ async def register_attendance(
         if len(participants) == previous_count:
             return True, "이미 출석이 완료되었습니다."
 
-        set_voice_entry_time(bot, guild_id, member.id, _now_kst())
+        attended_at = _now_kst()
+        joined_at = get_voice_entry_time(bot, guild_id, member.id)
+        live_session_id = _optional_int(state.get("live_session_id"))
+        if live_session_id is not None:
+            database.add_live_attendance_participant(
+                live_session_id,
+                discord_id=member.id,
+                display_name=member.display_name,
+                alliance_id=_resolve_alliance_id_from_nickname(member.display_name),
+                joined_voice_at=joined_at.strftime(TIME_FORMAT)
+                if joined_at is not None
+                else None,
+                attended_at=attended_at.strftime(TIME_FORMAT),
+                source="discord",
+            )
+
+        set_voice_entry_time(bot, guild_id, member.id, attended_at)
 
     return True, "출석이 완료되었습니다."
 

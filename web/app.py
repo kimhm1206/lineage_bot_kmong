@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import secrets
 from pathlib import Path
@@ -8,7 +9,7 @@ from urllib.parse import urlencode
 
 import requests
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -172,12 +173,12 @@ def _load_accessible_servers(discord_guilds: list[dict[str, Any]]) -> list[dict[
     return servers
 
 
-def _auth_context(
-    request: Request,
+def _auth_context_from_session(
+    session: dict[str, Any],
     guild_id: str | None = None,
 ) -> dict[str, Any] | None:
-    user = request.session.get("discord_user")
-    servers = request.session.get("servers") or []
+    user = session.get("discord_user")
+    servers = session.get("servers") or []
     if not user or not servers:
         return None
 
@@ -192,6 +193,13 @@ def _auth_context(
         "selected_guild_id": selected_guild_id,
         "selected_server": allowed_servers[selected_guild_id],
     }
+
+
+def _auth_context(
+    request: Request,
+    guild_id: str | None = None,
+) -> dict[str, Any] | None:
+    return _auth_context_from_session(request.session, guild_id)
 
 
 def _auth_redirect() -> RedirectResponse:
@@ -278,6 +286,28 @@ def _latest_command_queue(guild_id: int, limit: int = 10) -> list[dict[str, Any]
     ]
 
 
+def _live_attendance_state(guild_id: int) -> dict[str, Any]:
+    state = database.get_live_attendance_state(guild_id)
+    participants = state.get("participants") or []
+    session = state.get("session") or {}
+    return {
+        "active": bool(state.get("active")),
+        "participant_count": len(participants),
+        "session": {
+            "live_session_id": session.get("live_session_id"),
+            "started_at": session.get("started_at") or "",
+            "expires_at": session.get("expires_at") or "",
+            "started_by_discord_id": session.get("started_by_discord_id"),
+            "discord_channel_id": session.get("discord_channel_id"),
+            "discord_message_id": session.get("discord_message_id"),
+            "status": session.get("status") or "idle",
+        }
+        if session
+        else None,
+        "participants": participants,
+    }
+
+
 def _enqueue_attendance_command(
     guild_id: int,
     command_type: str,
@@ -308,14 +338,14 @@ def _enqueue_attendance_command(
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request):
     if _auth_context(request):
-        return RedirectResponse("/dashboard", status_code=303)
+        return RedirectResponse("/attendance", status_code=303)
     return RedirectResponse("/login", status_code=303)
 
 
 @app.get("/login", response_class=HTMLResponse)
 def login(request: Request):
     if _auth_context(request):
-        return RedirectResponse("/dashboard", status_code=303)
+        return RedirectResponse("/attendance", status_code=303)
     return _render(
         request,
         "login.html",
@@ -396,7 +426,7 @@ def discord_callback(
 
     request.session["discord_user"] = _normalize_discord_user(discord_user)
     request.session["servers"] = servers
-    return RedirectResponse("/dashboard", status_code=303)
+    return RedirectResponse("/attendance", status_code=303)
 
 
 @app.get("/logout")
@@ -450,6 +480,7 @@ def attendance(
         "attendance.html",
         {
             "auth": auth,
+            "live_state": _live_attendance_state(selected_guild_id),
             "sessions": _latest_attendance_sessions(selected_guild_id),
             "commands": _latest_command_queue(selected_guild_id),
             "queued": queued,
@@ -492,3 +523,20 @@ def stop_attendance(
         f"/attendance?guild_id={selected_guild_id}&queued=stop",
         status_code=303,
     )
+
+
+@app.websocket("/ws/attendance/{guild_id}")
+async def attendance_websocket(websocket: WebSocket, guild_id: str) -> None:
+    auth = _auth_context_from_session(websocket.session, guild_id)
+    if not auth or auth["selected_guild_id"] != str(guild_id):
+        await websocket.close(code=1008)
+        return
+
+    await websocket.accept()
+    selected_guild_id = int(auth["selected_guild_id"])
+    try:
+        while True:
+            await websocket.send_json(_live_attendance_state(selected_guild_id))
+            await asyncio.sleep(1)
+    except WebSocketDisconnect:
+        return

@@ -1,14 +1,15 @@
 {% extends "base.html" %}
 
-{% block title %}출석{% endblock %}
+{% block title %}출석 관리{% endblock %}
 
 {% block content %}
-  <section class="page-heading">
+  <section class="ops-hero">
     <div>
       <p class="eyebrow">{{ auth.selected_server.name }}</p>
       <h1>출석 관리</h1>
+      <p class="hero-copy">웹에서 출석을 시작하고, Discord 봇이 받는 참여자를 실시간으로 확인합니다.</p>
     </div>
-    <div class="actions">
+    <div class="hero-actions">
       <form method="post" action="/attendance/start?guild_id={{ auth.selected_guild_id }}">
         <button class="primary-button" type="submit">출석 시작</button>
       </form>
@@ -19,13 +20,64 @@
   </section>
 
   {% if queued == "start" %}
-    <div class="alert success">출석 시작 요청을 큐에 등록했습니다.</div>
+    <div class="alert success">출석 시작 요청을 봇 큐에 등록했습니다.</div>
   {% elif queued == "stop" %}
-    <div class="alert success">출석 종료 요청을 큐에 등록했습니다.</div>
+    <div class="alert success">출석 종료 요청을 봇 큐에 등록했습니다.</div>
   {% endif %}
 
+  <section class="attendance-live-grid">
+    <article class="live-card">
+      <div class="live-card-header">
+        <div>
+          <p class="eyebrow">Live Attendance</p>
+          <h2>실시간 출석 현황</h2>
+        </div>
+        <span class="live-state {% if live_state.active %}is-active{% endif %}" data-live-status>
+          {% if live_state.active %}진행 중{% else %}대기 중{% endif %}
+        </span>
+      </div>
+
+      <div class="live-metrics">
+        <div>
+          <span>참여 인원</span>
+          <strong data-live-count>{{ live_state.participant_count }}</strong>
+        </div>
+        <div>
+          <span>시작</span>
+          <strong data-live-started>{{ live_state.session.started_at if live_state.session else "-" }}</strong>
+        </div>
+        <div>
+          <span>종료 예정</span>
+          <strong data-live-expires>{{ live_state.session.expires_at if live_state.session else "-" }}</strong>
+        </div>
+      </div>
+
+      <div class="live-connection" data-live-connection>실시간 연결 준비 중</div>
+    </article>
+
+    <article class="panel roster-panel">
+      <header class="panel-header">
+        <h2>출석 중인 유저</h2>
+        <span class="panel-caption">Discord 봇 참여 기준</span>
+      </header>
+      <div class="roster-list" data-live-roster>
+        {% for row in live_state.participants %}
+          <div class="roster-row">
+            <span class="roster-rank">{{ loop.index }}</span>
+            <div>
+              <strong>{{ row.display_name }}</strong>
+              <span>{{ row.alliance_name }} · {{ row.attended_at }}</span>
+            </div>
+          </div>
+        {% else %}
+          <div class="empty live-empty">아직 출석 중인 유저가 없습니다.</div>
+        {% endfor %}
+      </div>
+    </article>
+  </section>
+
   <section class="content-grid">
-    <article class="panel wide">
+    <article class="panel">
       <header class="panel-header">
         <h2>최근 출석 회차</h2>
       </header>
@@ -55,7 +107,7 @@
       </table>
     </article>
 
-    <article class="panel wide">
+    <article class="panel">
       <header class="panel-header">
         <h2>웹 요청 큐</h2>
       </header>
@@ -67,7 +119,6 @@
             <th>상태</th>
             <th>요청자</th>
             <th>요청시각</th>
-            <th>오류</th>
           </tr>
         </thead>
         <tbody>
@@ -78,13 +129,81 @@
               <td><span class="status status-{{ row.status }}">{{ row.status }}</span></td>
               <td>{{ row.requested_by_discord_id or "-" }}</td>
               <td>{{ row.created_at }}</td>
-              <td>{{ row.error_message or "-" }}</td>
             </tr>
           {% else %}
-            <tr><td colspan="6" class="empty">등록된 웹 요청이 없습니다.</td></tr>
+            <tr><td colspan="5" class="empty">등록된 웹 요청이 없습니다.</td></tr>
           {% endfor %}
         </tbody>
       </table>
     </article>
   </section>
+{% endblock %}
+
+{% block scripts %}
+  <script>
+    const liveGuildId = "{{ auth.selected_guild_id }}";
+    const liveSocketProtocol = window.location.protocol === "https:" ? "wss" : "ws";
+    const liveSocket = new WebSocket(`${liveSocketProtocol}://${window.location.host}/ws/attendance/${liveGuildId}`);
+
+    const liveStatus = document.querySelector("[data-live-status]");
+    const liveCount = document.querySelector("[data-live-count]");
+    const liveStarted = document.querySelector("[data-live-started]");
+    const liveExpires = document.querySelector("[data-live-expires]");
+    const liveRoster = document.querySelector("[data-live-roster]");
+    const liveConnection = document.querySelector("[data-live-connection]");
+
+    liveSocket.addEventListener("open", () => {
+      liveConnection.textContent = "실시간 연결됨";
+      liveConnection.classList.add("is-connected");
+    });
+
+    liveSocket.addEventListener("close", () => {
+      liveConnection.textContent = "실시간 연결 종료";
+      liveConnection.classList.remove("is-connected");
+    });
+
+    liveSocket.addEventListener("message", (event) => {
+      renderLiveAttendance(JSON.parse(event.data));
+    });
+
+    function renderLiveAttendance(state) {
+      liveStatus.textContent = state.active ? "진행 중" : "대기 중";
+      liveStatus.classList.toggle("is-active", state.active);
+      liveCount.textContent = state.participant_count;
+      liveStarted.textContent = state.session?.started_at || "-";
+      liveExpires.textContent = state.session?.expires_at || "-";
+
+      liveRoster.innerHTML = "";
+      if (!state.participants.length) {
+        const empty = document.createElement("div");
+        empty.className = "empty live-empty";
+        empty.textContent = state.active
+          ? "아직 출석 중인 유저가 없습니다."
+          : "출석이 시작되면 참여자가 여기에 표시됩니다.";
+        liveRoster.appendChild(empty);
+        return;
+      }
+
+      state.participants.forEach((participant, index) => {
+        const row = document.createElement("div");
+        row.className = "roster-row";
+
+        const rank = document.createElement("span");
+        rank.className = "roster-rank";
+        rank.textContent = String(index + 1);
+
+        const body = document.createElement("div");
+        const name = document.createElement("strong");
+        name.textContent = participant.display_name;
+        const meta = document.createElement("span");
+        meta.textContent = `${participant.alliance_name} · ${participant.attended_at}`;
+
+        body.appendChild(name);
+        body.appendChild(meta);
+        row.appendChild(rank);
+        row.appendChild(body);
+        liveRoster.appendChild(row);
+      });
+    }
+  </script>
 {% endblock %}

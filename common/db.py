@@ -189,6 +189,58 @@ class Database:
     def fail_bot_command(self, command_id: int, error_message: str) -> None:
         fail_bot_command(command_id, error_message)
 
+    def start_live_attendance(
+        self,
+        guild_id: int,
+        *,
+        discord_channel_id: int | None,
+        discord_message_id: int | None,
+        started_by_discord_id: int | None,
+        started_at: str,
+        expires_at: str | None,
+    ) -> int:
+        return start_live_attendance(
+            guild_id,
+            discord_channel_id=discord_channel_id,
+            discord_message_id=discord_message_id,
+            started_by_discord_id=started_by_discord_id,
+            started_at=started_at,
+            expires_at=expires_at,
+        )
+
+    def add_live_attendance_participant(
+        self,
+        live_session_id: int,
+        *,
+        discord_id: int,
+        display_name: str,
+        alliance_id: int | None,
+        joined_voice_at: str | None,
+        attended_at: str,
+        source: str = "discord",
+    ) -> None:
+        add_live_attendance_participant(
+            live_session_id,
+            discord_id=discord_id,
+            display_name=display_name,
+            alliance_id=alliance_id,
+            joined_voice_at=joined_voice_at,
+            attended_at=attended_at,
+            source=source,
+        )
+
+    def finish_live_attendance(
+        self,
+        live_session_id: int | None,
+        *,
+        guild_id: int,
+        ended_at: str,
+    ) -> None:
+        finish_live_attendance(live_session_id, guild_id=guild_id, ended_at=ended_at)
+
+    def get_live_attendance_state(self, guild_id: int) -> dict[str, Any]:
+        return get_live_attendance_state(guild_id)
+
 
 database = Database()
 
@@ -767,6 +819,185 @@ def fail_bot_command(command_id: int, error_message: str) -> None:
                 (error_message[:1000], command_id),
             )
         connection.commit()
+
+
+def start_live_attendance(
+    guild_id: int,
+    *,
+    discord_channel_id: int | None,
+    discord_message_id: int | None,
+    started_by_discord_id: int | None,
+    started_at: str,
+    expires_at: str | None,
+) -> int:
+    with _connect() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE attendance_live_sessions
+                SET status = 'ended', ended_at = COALESCE(ended_at, %s)
+                WHERE guild_id = %s AND status = 'active'
+                """,
+                (started_at, guild_id),
+            )
+            cursor.execute(
+                """
+                INSERT INTO attendance_live_sessions (
+                    guild_id,
+                    discord_channel_id,
+                    discord_message_id,
+                    started_by_discord_id,
+                    started_at,
+                    expires_at,
+                    status
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, 'active')
+                RETURNING live_session_id
+                """,
+                (
+                    guild_id,
+                    discord_channel_id,
+                    discord_message_id,
+                    started_by_discord_id,
+                    started_at,
+                    expires_at,
+                ),
+            )
+            row = cursor.fetchone()
+        connection.commit()
+    return int(row["live_session_id"])
+
+
+def add_live_attendance_participant(
+    live_session_id: int,
+    *,
+    discord_id: int,
+    display_name: str,
+    alliance_id: int | None,
+    joined_voice_at: str | None,
+    attended_at: str,
+    source: str = "discord",
+) -> None:
+    with _connect() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO attendance_live_participants (
+                    live_session_id,
+                    discord_id,
+                    display_name,
+                    alliance_id,
+                    joined_voice_at,
+                    attended_at,
+                    source
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (live_session_id, discord_id) DO UPDATE SET
+                    display_name = EXCLUDED.display_name,
+                    alliance_id = EXCLUDED.alliance_id,
+                    joined_voice_at = COALESCE(
+                        attendance_live_participants.joined_voice_at,
+                        EXCLUDED.joined_voice_at
+                    ),
+                    attended_at = EXCLUDED.attended_at,
+                    source = EXCLUDED.source
+                """,
+                (
+                    live_session_id,
+                    discord_id,
+                    display_name,
+                    alliance_id,
+                    joined_voice_at,
+                    attended_at,
+                    source,
+                ),
+            )
+        connection.commit()
+
+
+def finish_live_attendance(
+    live_session_id: int | None,
+    *,
+    guild_id: int,
+    ended_at: str,
+) -> None:
+    with _connect() as connection:
+        with connection.cursor() as cursor:
+            if live_session_id is not None:
+                cursor.execute(
+                    """
+                    UPDATE attendance_live_sessions
+                    SET status = 'ended', ended_at = %s
+                    WHERE live_session_id = %s
+                    """,
+                    (ended_at, live_session_id),
+                )
+            else:
+                cursor.execute(
+                    """
+                    UPDATE attendance_live_sessions
+                    SET status = 'ended', ended_at = %s
+                    WHERE guild_id = %s AND status = 'active'
+                    """,
+                    (ended_at, guild_id),
+                )
+        connection.commit()
+
+
+def get_live_attendance_state(guild_id: int) -> dict[str, Any]:
+    session = _fetchone(
+        """
+        SELECT
+            live_session_id,
+            guild_id,
+            discord_channel_id,
+            discord_message_id,
+            started_by_discord_id,
+            started_at,
+            expires_at,
+            ended_at,
+            status
+        FROM attendance_live_sessions
+        WHERE guild_id = %s AND status = 'active'
+        ORDER BY live_session_id DESC
+        LIMIT 1
+        """,
+        (guild_id,),
+    )
+    if session is None:
+        return {"active": False, "session": None, "participants": []}
+
+    participants = _fetchall(
+        """
+        SELECT
+            p.discord_id,
+            p.display_name,
+            COALESCE(a.alliance_name, '미분류') AS alliance_name,
+            p.joined_voice_at,
+            p.attended_at,
+            p.source
+        FROM attendance_live_participants p
+        LEFT JOIN alliances a ON a.alliance_id = p.alliance_id
+        WHERE p.live_session_id = %s
+        ORDER BY p.attended_at ASC, p.display_name ASC
+        """,
+        (session["live_session_id"],),
+    )
+    return {
+        "active": True,
+        "session": dict(session),
+        "participants": [
+            {
+                "discord_id": int(row["discord_id"]),
+                "display_name": str(row["display_name"]),
+                "alliance_name": str(row["alliance_name"]),
+                "joined_voice_at": row["joined_voice_at"] or "",
+                "attended_at": row["attended_at"] or "",
+                "source": row["source"] or "discord",
+            }
+            for row in participants
+        ],
+    }
 
 
 def _build_attendance_filter(

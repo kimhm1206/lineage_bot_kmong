@@ -8,11 +8,11 @@
   </head>
   <body class="{% block body_class %}{% endblock %}">
     <header class="topbar {% if not auth %}topbar-public{% endif %}">
-      <a class="brand" href="/dashboard">Lineage Ops</a>
+      <a class="brand" href="/attendance">Lineage Ops</a>
       {% if auth %}
         <nav class="nav">
-          <a class="nav-link {% if active_page == 'dashboard' %}is-active{% endif %}" href="/dashboard?guild_id={{ auth.selected_guild_id }}">통계</a>
           <a class="nav-link {% if active_page == 'attendance' %}is-active{% endif %}" href="/attendance?guild_id={{ auth.selected_guild_id }}">출석</a>
+          <a class="nav-link {% if active_page == 'dashboard' %}is-active{% endif %}" href="/dashboard?guild_id={{ auth.selected_guild_id }}">통계</a>
         </nav>
         <div class="topbar-spacer"></div>
         <label class="server-picker">
@@ -44,5 +44,6 @@
         window.location.href = url.pathname + url.search;
       }
     </script>
+    {% block scripts %}{% endblock %}
   </body>
 </html>

@@ -1,12 +1,13 @@
 {% extends "base.html" %}
 
-{% block title %}통계{% endblock %}
+{% block title %}출석 통계{% endblock %}
 
 {% block content %}
-  <section class="page-heading">
+  <section class="ops-hero">
     <div>
       <p class="eyebrow">{{ auth.selected_server.name }}</p>
       <h1>출석 통계</h1>
+      <p class="hero-copy">최근 출석 흐름과 유저, 혈맹별 참여 현황을 빠르게 확인합니다.</p>
     </div>
     <div class="server-summary">
       최근 출석 {{ auth.selected_server.last_started_at or "기록 없음" }}
