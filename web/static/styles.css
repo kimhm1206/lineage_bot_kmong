@@ -318,24 +318,186 @@ button,
   color: var(--red);
 }
 
+.login-body {
+  min-height: 100vh;
+  background:
+    linear-gradient(135deg, rgba(20, 108, 148, 0.16), transparent 34%),
+    linear-gradient(225deg, rgba(18, 128, 92, 0.18), transparent 36%),
+    linear-gradient(180deg, #f8fbfc 0%, #e8edf2 100%);
+}
+
+.login-body::before {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  content: "";
+  background-image:
+    linear-gradient(rgba(23, 32, 42, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(23, 32, 42, 0.045) 1px, transparent 1px);
+  background-size: 46px 46px;
+  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.88), transparent 86%);
+}
+
+.topbar-public {
+  position: relative;
+  background: transparent;
+  border-bottom: 0;
+}
+
+.login-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 440px);
+  align-items: center;
+  gap: clamp(28px, 6vw, 84px);
+  min-height: calc(100vh - 140px);
+  padding: 22px 0 58px;
+}
+
+.login-copy {
+  max-width: 620px;
+}
+
+.login-copy h1 {
+  max-width: 680px;
+  color: #101820;
+  font-size: 64px;
+  line-height: 1.02;
+}
+
+.login-copy p:not(.eyebrow) {
+  max-width: 540px;
+  margin: 22px 0 0;
+  color: #526173;
+  font-size: 18px;
+  line-height: 1.75;
+}
+
+.login-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 30px;
+}
+
+.login-chips span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 13px;
+  border: 1px solid rgba(255, 255, 255, 0.62);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.42);
+  color: #263443;
+  box-shadow: 0 10px 28px rgba(23, 32, 42, 0.08);
+  font-size: 13px;
+  font-weight: 800;
+  backdrop-filter: blur(18px);
+}
+
 .login-panel {
-  width: min(520px, 100%);
-  margin: 70px auto;
-  padding: 28px;
+  position: relative;
+  width: 100%;
+  margin: 0;
+  padding: 30px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.58);
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 8px;
+  box-shadow: 0 26px 70px rgba(23, 32, 42, 0.16);
+  backdrop-filter: blur(24px) saturate(150%);
 }
 
-.login-panel h1 {
-  margin-bottom: 10px;
+.login-panel::before {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  content: "";
+  background:
+    linear-gradient(120deg, rgba(255, 255, 255, 0.7), transparent 38%),
+    linear-gradient(180deg, transparent, rgba(20, 108, 148, 0.08));
 }
 
-.login-panel .primary-action {
-  margin-top: 20px;
+.login-panel > * {
+  position: relative;
+}
+
+.login-card-top {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.discord-mark,
+.discord-login-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  color: #fff;
+  font-weight: 900;
+}
+
+.discord-mark {
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  background: #5865f2;
+  box-shadow: 0 16px 34px rgba(88, 101, 242, 0.28);
+}
+
+.login-panel h2 {
+  font-size: 24px;
+}
+
+.login-description {
+  margin: 22px 0 20px;
+  color: #526173;
+  line-height: 1.7;
+}
+
+.discord-login-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 50px;
+  padding: 0 18px;
+  border: 1px solid rgba(88, 101, 242, 0.18);
+  border-radius: 8px;
+  background: #5865f2;
+  color: #fff;
+  box-shadow: 0 18px 36px rgba(88, 101, 242, 0.24);
+  font-weight: 900;
+  transition: transform 160ms ease, box-shadow 160ms ease, background 160ms ease;
+}
+
+.discord-login-button:hover {
+  background: #4752c4;
+  box-shadow: 0 22px 44px rgba(88, 101, 242, 0.34);
+  transform: translateY(-1px);
+}
+
+.discord-login-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.18);
+  font-size: 13px;
+}
+
+.login-config-note {
+  margin: 14px 0 0;
+  color: #7a4c00;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.55;
 }
 
 .meta-list {
   margin: 24px 0 0;
   padding-top: 18px;
-  border-top: 1px solid var(--line);
+  border-top: 1px solid rgba(23, 32, 42, 0.12);
 }
 
 .meta-list div {
@@ -400,5 +562,28 @@ button,
   table {
     display: block;
     overflow-x: auto;
+  }
+
+  .topbar-public {
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .login-shell {
+    grid-template-columns: 1fr;
+    min-height: auto;
+    padding: 18px 0 42px;
+  }
+
+  .login-copy h1 {
+    font-size: 42px;
+  }
+
+  .login-copy p:not(.eyebrow) {
+    font-size: 16px;
+  }
+
+  .login-panel {
+    padding: 24px;
   }
 }
