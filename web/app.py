@@ -37,7 +37,11 @@ DISCORD_CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET") or os.getenv(
 )
 SESSION_SECRET = os.getenv("WEB_SESSION_SECRET", "lineage-local-web-session")
 DISCORD_BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN", "")
-GLOBAL_OWNER_DISCORD_ID = os.getenv("GLOBAL_OWNER_DISCORD_ID") or "238978205078388747"
+GLOBAL_DEVELOPER_DISCORD_ID = (
+    os.getenv("GLOBAL_DEVELOPER_DISCORD_ID")
+    or os.getenv("GLOBAL_OWNER_DISCORD_ID")
+    or "238978205078388747"
+)
 DISCORD_ADMINISTRATOR_PERMISSION = 0x8
 DISCORD_MANAGE_GUILD_PERMISSION = 0x20
 DISCORD_WEB_ADMIN_PERMISSION_MASK = (
@@ -178,8 +182,8 @@ def _server_role(
     discord_user_id: str,
     discord_guild: dict[str, Any] | None,
 ) -> str:
-    if str(discord_user_id) == GLOBAL_OWNER_DISCORD_ID:
-        return "owner"
+    if str(discord_user_id) == GLOBAL_DEVELOPER_DISCORD_ID:
+        return "developer"
     if discord_guild and (
         bool(discord_guild.get("owner"))
         or bool(_discord_permissions(discord_guild) & DISCORD_WEB_ADMIN_PERMISSION_MASK)
@@ -192,8 +196,8 @@ def _role_from_bot_member_permissions(
     guild_id: int,
     discord_user_id: str,
 ) -> str | None:
-    if str(discord_user_id) == GLOBAL_OWNER_DISCORD_ID:
-        return "owner"
+    if str(discord_user_id) == GLOBAL_DEVELOPER_DISCORD_ID:
+        return "developer"
     if not DISCORD_BOT_TOKEN:
         return None
 
@@ -228,12 +232,12 @@ def _load_accessible_servers(
         if str(guild.get("id", "")).isdigit()
     }
     guild_ids = [int(guild_id) for guild_id in guild_lookup]
-    is_global_owner = str(discord_user_id) == GLOBAL_OWNER_DISCORD_ID
-    if not guild_ids and not is_global_owner:
+    is_global_developer = str(discord_user_id) == GLOBAL_DEVELOPER_DISCORD_ID
+    if not guild_ids and not is_global_developer:
         return []
 
-    where_clause = "TRUE" if is_global_owner else "g.guild_id = ANY(%s::bigint[])"
-    params: tuple[Any, ...] = () if is_global_owner else (guild_ids,)
+    where_clause = "TRUE" if is_global_developer else "g.guild_id = ANY(%s::bigint[])"
+    params: tuple[Any, ...] = () if is_global_developer else (guild_ids,)
 
     rows = database.fetchall(
         f"""
@@ -288,7 +292,7 @@ def _load_accessible_servers(
                 "permissions": _discord_permissions(discord_guild),
                 "discord_owner": bool((discord_guild or {}).get("owner")),
                 "role": role,
-                "can_manage": role in {"admin", "owner"},
+                "can_manage": role in {"admin", "developer"},
                 "session_count": int(row["session_count"] or 0),
                 "attendance_count": int(row["attendance_count"] or 0),
                 "first_started_at": row["first_started_at"] or "",
@@ -330,7 +334,7 @@ def _auth_context_from_session(
             },
         )
     selected_server["role"] = verified_role
-    selected_server["can_manage"] = verified_role in {"admin", "owner"}
+    selected_server["can_manage"] = verified_role in {"admin", "developer"}
     returned_servers = [
         selected_server if str(server["guild_id"]) == selected_guild_id else server
         for server in servers

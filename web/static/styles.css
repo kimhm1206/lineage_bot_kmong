@@ -137,7 +137,8 @@ input {
   color: var(--accent-strong);
 }
 
-.role-owner {
+.role-owner,
+.role-developer {
   background: rgba(18, 128, 92, 0.13);
   color: var(--green);
 }
