@@ -44,6 +44,36 @@ LOG_TABS = (
     {"value": "settings", "label": "설정"},
     {"value": "logs", "label": "로그"},
 )
+REPORT_FREQUENCY_OPTIONS = (
+    {"value": "daily", "label": "매일"},
+    {"value": "every_3_days", "label": "3일마다"},
+    {"value": "weekly", "label": "일주일마다"},
+)
+REPORT_PERIOD_OPTIONS = (
+    {"value": "recent_7_days", "label": "최근 일주일"},
+    {"value": "yesterday", "label": "전날"},
+    {"value": "recent_3_days", "label": "최근 3일"},
+)
+REPORT_SUBJECT_OPTIONS = (
+    {"value": "user", "label": "유저별"},
+    {"value": "alliance", "label": "혈맹별"},
+)
+REPORT_RESULT_OPTIONS = (
+    {"value": "ranking", "label": "순위"},
+    {"value": "all", "label": "전체"},
+)
+REPORT_STATUS_OPTIONS = (
+    {"value": "on", "label": "on"},
+    {"value": "off", "label": "off"},
+    {"value": "delete", "label": "delete"},
+)
+REPORT_OPTIONS = {
+    "frequencies": REPORT_FREQUENCY_OPTIONS,
+    "periods": REPORT_PERIOD_OPTIONS,
+    "subjects": REPORT_SUBJECT_OPTIONS,
+    "results": REPORT_RESULT_OPTIONS,
+    "statuses": REPORT_STATUS_OPTIONS,
+}
 
 app = FastAPI(title="Lineage Ops Web")
 app.add_middleware(
@@ -389,6 +419,125 @@ def _settings_form_from_values(values: dict[str, Any]) -> dict[str, Any]:
         "timer": values.get("timer"),
         "attendance_available_timer": values.get("attendance_available_timer"),
     }
+
+
+def _default_report_form() -> dict[str, str]:
+    return {
+        "frequency": "daily",
+        "period_type": "recent_7_days",
+        "subject_type": "user",
+        "result_type": "all",
+        "channel_id": "",
+        "status": "on",
+    }
+
+
+def _option_label(options: tuple[dict[str, str], ...], value: str) -> str:
+    return next((option["label"] for option in options if option["value"] == value), value)
+
+
+def _report_sentence(report: dict[str, Any]) -> str:
+    return (
+        f"{report['frequency_label']} {report['period_label']}의 "
+        f"{report['subject_label']} {report['result_label']} 통계를 "
+        f"#{report['channel_name']}로 받습니다."
+    )
+
+
+def _load_report_settings(guild_id: int) -> list[dict[str, Any]]:
+    rows = database.fetchall(
+        """
+        SELECT
+            r.report_setting_id,
+            r.guild_id,
+            r.created_by_discord_id,
+            r.updated_by_discord_id,
+            r.report_name,
+            r.frequency,
+            r.period_type,
+            r.subject_type,
+            r.result_type,
+            r.channel_id,
+            r.channel_name,
+            r.status,
+            r.last_sent_at,
+            r.next_run_at,
+            r.updated_at,
+            COALESCE(created_user.discord_nickname, r.created_by_discord_id::text)
+                AS created_by_name,
+            COALESCE(updated_user.discord_nickname, r.updated_by_discord_id::text)
+                AS updated_by_name
+        FROM scheduled_report_settings r
+        LEFT JOIN users created_user
+            ON created_user.discord_id = r.created_by_discord_id
+        LEFT JOIN users updated_user
+            ON updated_user.discord_id = r.updated_by_discord_id
+        WHERE r.guild_id = %s
+        ORDER BY
+            CASE r.status WHEN 'on' THEN 0 WHEN 'off' THEN 1 ELSE 2 END,
+            r.updated_at DESC,
+            r.report_setting_id DESC
+        """,
+        (guild_id,),
+    )
+    reports: list[dict[str, Any]] = []
+    for row in rows:
+        report = {
+            "report_setting_id": int(row["report_setting_id"]),
+            "frequency": str(row["frequency"]),
+            "period_type": str(row["period_type"]),
+            "subject_type": str(row["subject_type"]),
+            "result_type": str(row["result_type"]),
+            "channel_id": row["channel_id"],
+            "channel_name": str(row["channel_name"]),
+            "status": str(row["status"]),
+            "created_by_discord_id": row["created_by_discord_id"],
+            "updated_by_discord_id": row["updated_by_discord_id"],
+            "created_by_name": row["created_by_name"] or "",
+            "updated_by_name": row["updated_by_name"] or "",
+            "last_sent_at": row["last_sent_at"] or "",
+            "next_run_at": row["next_run_at"] or "",
+            "updated_at": row["updated_at"],
+            "frequency_label": _option_label(
+                REPORT_FREQUENCY_OPTIONS,
+                str(row["frequency"]),
+            ),
+            "period_label": _option_label(
+                REPORT_PERIOD_OPTIONS,
+                str(row["period_type"]),
+            ),
+            "subject_label": _option_label(
+                REPORT_SUBJECT_OPTIONS,
+                str(row["subject_type"]),
+            ),
+            "result_label": _option_label(
+                REPORT_RESULT_OPTIONS,
+                str(row["result_type"]),
+            ),
+        }
+        report["sentence"] = _report_sentence(report)
+        reports.append(report)
+    return reports
+
+
+def _validate_report_option(
+    field_label: str,
+    raw_value: str | None,
+    options: tuple[dict[str, str], ...],
+    errors: list[str],
+) -> str:
+    allowed_values = {option["value"] for option in options}
+    if raw_value in allowed_values:
+        return str(raw_value)
+    errors.append(f"{field_label} 값을 선택해주세요.")
+    return options[0]["value"]
+
+
+def _find_channel_name(channels: list[dict[str, Any]], channel_id: int) -> str | None:
+    for channel in channels:
+        if int(channel["id"]) == channel_id:
+            return str(channel["label"])
+    return None
 
 
 def _latest_attendance_sessions(guild_id: int, limit: int = 20) -> list[dict[str, Any]]:
@@ -739,6 +888,9 @@ def settings(
             "channel_error": channel_error,
             "saved": saved,
             "errors": [],
+            "report_options": REPORT_OPTIONS,
+            "report_form": _default_report_form(),
+            "report_settings": _load_report_settings(selected_guild_id),
             "active_page": "settings",
         },
     )
@@ -822,6 +974,9 @@ async def update_settings(
                 "channel_error": channel_error,
                 "saved": "",
                 "errors": errors,
+                "report_options": REPORT_OPTIONS,
+                "report_form": _default_report_form(),
+                "report_settings": _load_report_settings(selected_guild_id),
                 "active_page": "settings",
             },
             status_code=400,
@@ -841,6 +996,215 @@ async def update_settings(
     )
     return RedirectResponse(
         f"/settings?guild_id={selected_guild_id}&saved=1",
+        status_code=303,
+    )
+
+
+@app.post("/settings/reports", response_class=HTMLResponse)
+async def create_report_setting(
+    request: Request,
+    guild_id: str | None = None,
+):
+    auth = _auth_context(request, guild_id)
+    if not auth:
+        return _auth_redirect(request)
+
+    selected_guild_id = int(auth["selected_guild_id"])
+    if not _can_manage_selected_server(auth):
+        return RedirectResponse(
+            f"/settings?guild_id={selected_guild_id}&saved=forbidden",
+            status_code=303,
+        )
+
+    body = (await request.body()).decode("utf-8")
+    form_data = {
+        key: values[-1] if values else ""
+        for key, values in parse_qs(body, keep_blank_values=True).items()
+    }
+    errors: list[str] = []
+    channel_error = ""
+    channels = {"text": [], "voice": []}
+    try:
+        channels = _load_guild_channels(selected_guild_id)
+    except Exception as exc:
+        channel_error = f"Discord 채널 목록을 불러오지 못했습니다. {exc}"
+        errors.append("알람을 받을 채널 목록을 확인할 수 없습니다.")
+
+    frequency = _validate_report_option(
+        "발송 주기",
+        form_data.get("frequency"),
+        REPORT_FREQUENCY_OPTIONS,
+        errors,
+    )
+    period_type = _validate_report_option(
+        "조회 기간",
+        form_data.get("period_type"),
+        REPORT_PERIOD_OPTIONS,
+        errors,
+    )
+    subject_type = _validate_report_option(
+        "통계 대상",
+        form_data.get("subject_type"),
+        REPORT_SUBJECT_OPTIONS,
+        errors,
+    )
+    result_type = _validate_report_option(
+        "결과 형태",
+        form_data.get("result_type"),
+        REPORT_RESULT_OPTIONS,
+        errors,
+    )
+    status = _validate_report_option(
+        "상태",
+        form_data.get("status") or "on",
+        REPORT_STATUS_OPTIONS,
+        errors,
+    )
+    channel_id = _validate_channel_value(
+        "알람 채널",
+        form_data.get("channel_id"),
+        _channel_ids(channels["text"]),
+        errors,
+    )
+    channel_name = (
+        _find_channel_name(channels["text"], channel_id)
+        if channel_id is not None
+        else None
+    )
+    if channel_id is None or channel_name is None:
+        errors.append("알람을 받을 Discord 텍스트 채널을 선택해주세요.")
+
+    report_form = {
+        "frequency": frequency,
+        "period_type": period_type,
+        "subject_type": subject_type,
+        "result_type": result_type,
+        "channel_id": str(channel_id or ""),
+        "status": status,
+    }
+    guild_settings = database.get_settings(selected_guild_id)
+    if errors:
+        return _render(
+            request,
+            "settings.html",
+            {
+                "auth": auth,
+                "settings": _settings_to_dict(guild_settings),
+                "form": _settings_to_dict(guild_settings),
+                "channels": channels,
+                "channel_error": channel_error,
+                "saved": "",
+                "errors": errors,
+                "report_options": REPORT_OPTIONS,
+                "report_form": report_form,
+                "report_settings": _load_report_settings(selected_guild_id),
+                "active_page": "settings",
+            },
+            status_code=400,
+        )
+
+    with database.connect() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO scheduled_report_settings (
+                    guild_id,
+                    created_by_discord_id,
+                    updated_by_discord_id,
+                    frequency,
+                    period_type,
+                    subject_type,
+                    result_type,
+                    channel_id,
+                    channel_name,
+                    status
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    selected_guild_id,
+                    int(auth["user"]["id"]),
+                    int(auth["user"]["id"]),
+                    frequency,
+                    period_type,
+                    subject_type,
+                    result_type,
+                    channel_id,
+                    channel_name,
+                    status,
+                ),
+            )
+        connection.commit()
+
+    return RedirectResponse(
+        f"/settings?guild_id={selected_guild_id}&saved=report",
+        status_code=303,
+    )
+
+
+@app.post("/settings/reports/status")
+async def update_report_status(
+    request: Request,
+    guild_id: str | None = None,
+):
+    auth = _auth_context(request, guild_id)
+    if not auth:
+        return _auth_redirect(request)
+
+    selected_guild_id = int(auth["selected_guild_id"])
+    if not _can_manage_selected_server(auth):
+        return RedirectResponse(
+            f"/settings?guild_id={selected_guild_id}&saved=forbidden",
+            status_code=303,
+        )
+
+    body = (await request.body()).decode("utf-8")
+    form_data = {
+        key: values[-1] if values else ""
+        for key, values in parse_qs(body, keep_blank_values=True).items()
+    }
+    errors: list[str] = []
+    status = _validate_report_option(
+        "상태",
+        form_data.get("status"),
+        REPORT_STATUS_OPTIONS,
+        errors,
+    )
+    try:
+        report_setting_id = int(form_data.get("report_setting_id") or "")
+    except ValueError:
+        report_setting_id = 0
+        errors.append("알람 설정 ID가 올바르지 않습니다.")
+
+    if errors:
+        return RedirectResponse(
+            f"/settings?guild_id={selected_guild_id}&saved=report_error",
+            status_code=303,
+        )
+
+    with database.connect() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE scheduled_report_settings
+                SET
+                    status = %s,
+                    updated_by_discord_id = %s,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE report_setting_id = %s
+                  AND guild_id = %s
+                """,
+                (
+                    status,
+                    int(auth["user"]["id"]),
+                    report_setting_id,
+                    selected_guild_id,
+                ),
+            )
+        connection.commit()
+
+    return RedirectResponse(
+        f"/settings?guild_id={selected_guild_id}&saved=report_status",
         status_code=303,
     )
 

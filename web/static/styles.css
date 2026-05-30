@@ -368,6 +368,19 @@ button:disabled {
   opacity: 0.58;
 }
 
+.tiny-button {
+  min-height: 30px;
+  padding: 0 10px;
+  border-color: var(--line);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+}
+
+.tiny-button:hover {
+  background: var(--surface-muted);
+}
+
 .alert {
   margin-bottom: 16px;
   padding: 12px 14px;
@@ -415,6 +428,21 @@ button:disabled {
 .status-failed {
   background: #fff0ed;
   color: var(--red);
+}
+
+.status-on {
+  background: #e8f6f0;
+  color: var(--green);
+}
+
+.status-off {
+  background: #fff8df;
+  color: #8a5a00;
+}
+
+.status-delete {
+  background: #f1f3f5;
+  color: var(--muted);
 }
 
 .attendance-live-grid {
@@ -576,6 +604,10 @@ button:disabled {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.report-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .panel-subheader {
   border-top: 1px solid var(--line);
 }
@@ -605,6 +637,23 @@ button:disabled {
   align-items: center;
   gap: 12px;
   padding: 0 18px 18px;
+}
+
+.sentence-preview {
+  margin: 0 18px 18px;
+  padding: 14px;
+  border: 1px solid rgba(20, 108, 148, 0.18);
+  border-radius: 8px;
+  background: rgba(20, 108, 148, 0.08);
+  color: var(--text);
+  font-weight: 900;
+  line-height: 1.55;
+}
+
+.inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .log-tabs {
@@ -914,6 +963,10 @@ button:disabled {
   }
 
   .timer-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .report-grid {
     grid-template-columns: 1fr;
   }
 
