@@ -3,19 +3,20 @@ from __future__ import annotations
 import json
 import os
 import re
-import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 import discord
+import psycopg2
 import requests
 from dotenv import load_dotenv
+from psycopg2.extras import RealDictCursor
 
+from db import _database_url
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-DB_PATH = BASE_DIR / "data" / "lineage_bot.sqlite3"
 ROOT_ENV_PATH = BASE_DIR / ".env"
 TOKEN_USAGE_PATH = BASE_DIR / "data" / "groq_token_usage.json"
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
@@ -62,7 +63,7 @@ BANNED_SQL_TOKENS = {
 }
 
 SYSTEM_PROMPT = """
-You generate SQLite SELECT queries for a Lineage attendance bot.
+You generate PostgreSQL SELECT queries for a Lineage attendance bot.
 Analyze the user's request and return JSON only.
 
 Today is {TODAY}. Yesterday is {YESTERDAY}.
@@ -89,9 +90,10 @@ Return exactly:
 
 Rules:
 - Output valid JSON only. No markdown. No explanation.
-- SQL must be a single SELECT or WITH ... SELECT query.
+- SQL must be a single PostgreSQL SELECT or WITH ... SELECT query.
 - No semicolon.
 - No INSERT, UPDATE, DELETE, DROP, ALTER, ATTACH, DETACH, PRAGMA, CREATE, REPLACE.
+- started_at and ended_at are TEXT columns in 'YYYY-MM-DD HH:MM:SS' KST format.
 - Use started_at LIKE for date filters.
 - All date and time filtering must be interpreted in KST, not UTC.
 - Use COALESCE(a.alliance_name, '미분류') when alliance can be null.
@@ -118,7 +120,7 @@ Required shapes:
 
 Important for session_detail:
 - Return one row per alliance within exactly one chosen session.
-- nicknames must use GROUP_CONCAT(u.discord_nickname, '\n').
+- nicknames must use STRING_AGG(u.discord_nickname, E'\n' ORDER BY u.discord_nickname).
 - alliance_count must use COUNT(e.user_id) with GROUP BY attendance_id and alliance_name.
 - session_total_count must use SUM(COUNT(e.user_id)) OVER (PARTITION BY s.attendance_id).
 - Do not use COUNT(*) for session_total_count in session_detail.
@@ -170,7 +172,7 @@ def run_statistics_query(question: str) -> StatisticsResult:
     if not api_key:
         raise RuntimeError("GROQ API 키를 찾을 수 없습니다.")
 
-    known_alliances = load_known_alliance_names(DB_PATH)
+    known_alliances = load_known_alliance_names()
     enriched_question, _ = enrich_question_with_hints(question, known_alliances)
     raw_response = request_groq_response(enriched_question, api_key)
     token_usage = update_daily_token_usage(raw_response)
@@ -178,7 +180,7 @@ def run_statistics_query(question: str) -> StatisticsResult:
     query_type = validate_query_type(str(parsed.get("query_type", "")).strip())
     sql = validate_select_sql(str(parsed.get("sql", "")).strip())
     title = str(parsed.get("title", "")).strip() or "통계 조회 결과"
-    rows = run_readonly_query(DB_PATH, sql)
+    rows = run_readonly_query(sql)
     validate_result_shape(query_type, rows)
     embeds = build_discord_embeds(
         title=title,
@@ -369,12 +371,17 @@ def extract_cte_names(lowered_sql: str) -> set[str]:
     return names
 
 
-def run_readonly_query(db_path: Path, sql: str) -> list[dict[str, Any]]:
-    uri = f"file:{db_path.as_posix()}?mode=ro"
-    connection = sqlite3.connect(uri, uri=True)
-    connection.row_factory = sqlite3.Row
+def run_readonly_query(sql: str) -> list[dict[str, Any]]:
+    connection = psycopg2.connect(
+        _database_url(),
+        connect_timeout=10,
+        cursor_factory=RealDictCursor,
+    )
+    connection.set_session(readonly=True, autocommit=True)
     try:
-        rows = connection.execute(sql).fetchall()
+        with connection.cursor() as cursor:
+            cursor.execute(sql)
+            rows = cursor.fetchall()
     finally:
         connection.close()
     return [dict(row) for row in rows]
@@ -604,16 +611,17 @@ def format_remaining_token_footer(remaining_percent: float) -> str:
     return f"{remaining_percent:.1f}% 남음"
 
 
-def load_known_alliance_names(db_path: Path) -> list[str]:
-    if not db_path.exists():
-        return []
-    connection = sqlite3.connect(db_path)
-    connection.row_factory = sqlite3.Row
+def load_known_alliance_names() -> list[str]:
+    connection = psycopg2.connect(
+        _database_url(),
+        connect_timeout=10,
+        cursor_factory=RealDictCursor,
+    )
     try:
-        rows = connection.execute(
-            "SELECT alliance_name FROM alliances ORDER BY alliance_name ASC"
-        ).fetchall()
-    except sqlite3.DatabaseError:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT alliance_name FROM alliances ORDER BY alliance_name ASC")
+            rows = cursor.fetchall()
+    except psycopg2.Error:
         return []
     finally:
         connection.close()

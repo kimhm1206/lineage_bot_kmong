@@ -2,17 +2,15 @@ from __future__ import annotations
 
 import argparse
 import json
-import sqlite3
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
-from pathlib import Path
 from typing import Any
 
 import requests
 
-BASE_DIR = Path(__file__).resolve().parent
-DB_PATH = BASE_DIR / "data" / "lineage_bot.sqlite3"
+from db import _fetchall
+
 TIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 EMBED_DESCRIPTION_LIMIT = 4096
 EMBED_FIELD_VALUE_LIMIT = 1024
@@ -50,7 +48,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    records = load_attendance_records(DB_PATH)
+    records = load_attendance_records()
     if not records:
         raise SystemExit("출석 데이터가 없습니다.")
 
@@ -79,29 +77,24 @@ def main() -> None:
     print(f"[done] attendance_count={len(send_records)}")
 
 
-def load_attendance_records(db_path: Path) -> list[AttendanceRecord]:
-    connection = sqlite3.connect(db_path)
-    connection.row_factory = sqlite3.Row
-    try:
-        rows = connection.execute(
-            """
-            SELECT
-                s.attendance_id,
-                s.guild_id,
-                s.started_at,
-                s.ended_at,
-                s.started_by_discord_id,
-                u.discord_nickname,
-                COALESCE(a.alliance_name, '미분류') AS alliance_name
-            FROM attendance_sessions s
-            LEFT JOIN attendance_entries e ON e.attendance_id = s.attendance_id
-            LEFT JOIN users u ON u.user_id = e.user_id
-            LEFT JOIN alliances a ON a.alliance_id = u.alliance_id
-            ORDER BY s.attendance_id ASC, alliance_name ASC, u.discord_nickname ASC
-            """
-        ).fetchall()
-    finally:
-        connection.close()
+def load_attendance_records() -> list[AttendanceRecord]:
+    rows = _fetchall(
+        """
+        SELECT
+            s.attendance_id,
+            s.guild_id,
+            s.started_at,
+            s.ended_at,
+            s.started_by_discord_id,
+            u.discord_nickname,
+            COALESCE(a.alliance_name, '미분류') AS alliance_name
+        FROM attendance_sessions s
+        LEFT JOIN attendance_entries e ON e.attendance_id = s.attendance_id
+        LEFT JOIN users u ON u.user_id = e.user_id
+        LEFT JOIN alliances a ON a.alliance_id = u.alliance_id
+        ORDER BY s.attendance_id ASC, alliance_name ASC, u.discord_nickname ASC
+        """
+    )
 
     records_by_id: dict[int, AttendanceRecord] = {}
     for row in rows:

@@ -1,18 +1,18 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
-import sqlite3
+import os
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
+from urllib.parse import quote
+
+import psycopg2
+from dotenv import load_dotenv
+from psycopg2.extras import RealDictCursor
 
 
-BASE_DIR = Path(__file__).resolve().parent
-DATA_DIR = BASE_DIR / "data"
-DB_PATH = DATA_DIR / "lineage_bot.sqlite3"
-LEGACY_DB_PATHS = (
-    DATA_DIR / "settings.sqlite3",
-    BASE_DIR / "settings.db",
-)
+load_dotenv()
+
+DEFAULT_ALLIANCE_NAMES = ("정지", "랭커", "삼국", "해적", "보스", "인연")
 
 
 @dataclass(slots=True)
@@ -31,174 +31,100 @@ class Alliance:
     alliance_name: str
 
 
-def _connect() -> sqlite3.Connection:
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(DB_PATH, timeout=30.0)
-    connection.row_factory = sqlite3.Row
-    for pragma in (
-        "PRAGMA busy_timeout=30000",
-        "PRAGMA journal_mode=WAL",
-        "PRAGMA synchronous=NORMAL",
-        "PRAGMA foreign_keys=ON",
-    ):
-        try:
-            connection.execute(pragma)
-        except sqlite3.OperationalError:
-            continue
-    return connection
+def _database_url() -> str:
+    url = os.getenv("DATABASE_URL")
+    if url:
+        return url
+
+    host = os.getenv("PGHOST")
+    database = os.getenv("PGDATABASE")
+    user = os.getenv("PGUSER")
+    password = os.getenv("PGPASSWORD")
+    port = os.getenv("PGPORT", "5432")
+    if all((host, database, user, password)):
+        encoded_user = quote(str(user), safe="")
+        encoded_password = quote(str(password), safe="")
+        encoded_database = quote(str(database), safe="")
+        return f"postgresql://{encoded_user}:{encoded_password}@{host}:{port}/{encoded_database}"
+
+    raise RuntimeError(
+        "PostgreSQL 접속 정보가 없습니다. DATABASE_URL 또는 PGHOST/PGDATABASE/PGUSER/PGPASSWORD를 설정해주세요."
+    )
+
+
+def _connect() -> psycopg2.extensions.connection:
+    return psycopg2.connect(
+        _database_url(),
+        connect_timeout=10,
+        cursor_factory=RealDictCursor,
+    )
+
+
+def _fetchone(sql: str, params: tuple[Any, ...] = ()) -> dict[str, Any] | None:
+    with _connect() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(sql, params)
+            row = cursor.fetchone()
+    return dict(row) if row is not None else None
+
+
+def _fetchall(sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
+    with _connect() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(sql, params)
+            rows = cursor.fetchall()
+    return [dict(row) for row in rows]
 
 
 def init_db() -> None:
     with _connect() as connection:
-        connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS guilds (
-                guild_id INTEGER PRIMARY KEY,
-                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-            )
-            """
-        )
-        connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS guild_settings (
-                guild_id INTEGER PRIMARY KEY,
-                admin_channel_id INTEGER,
-                attendance_voice_channel_id INTEGER,
-                log_channel_id INTEGER,
-                timer INTEGER,
-                attendance_available_timer INTEGER,
-                FOREIGN KEY (guild_id) REFERENCES guilds(guild_id) ON DELETE CASCADE
-            )
-            """
-        )
-        connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS alliances (
-                alliance_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                alliance_name TEXT NOT NULL UNIQUE
-            )
-            """
-        )
-        connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS users (
-                user_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                alliance_id INTEGER,
-                discord_id INTEGER NOT NULL UNIQUE,
-                discord_nickname TEXT NOT NULL,
-                FOREIGN KEY (alliance_id) REFERENCES alliances(alliance_id)
-            )
-            """
-        )
-        connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS attendance_sessions (
-                attendance_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                guild_id INTEGER NOT NULL,
-                started_at TEXT NOT NULL,
-                ended_at TEXT NOT NULL,
-                started_by_discord_id INTEGER,
-                FOREIGN KEY (guild_id) REFERENCES guilds(guild_id) ON DELETE CASCADE
-            )
-            """
-        )
-        connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS attendance_entries (
-                attendance_id INTEGER NOT NULL,
-                user_id INTEGER NOT NULL,
-                PRIMARY KEY (attendance_id, user_id),
-                FOREIGN KEY (attendance_id) REFERENCES attendance_sessions(attendance_id) ON DELETE CASCADE,
-                FOREIGN KEY (user_id) REFERENCES users(user_id)
-            )
-            """
-        )
-        _migrate_guild_settings_schema(connection)
-        _migrate_attendance_entries_schema(connection)
-        connection.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_guild_settings_admin_channel
-            ON guild_settings(admin_channel_id)
-            """
-        )
-        connection.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_users_discord_id
-            ON users(discord_id)
-            """
-        )
-        connection.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_users_alliance_id
-            ON users(alliance_id)
-            """
-        )
-        connection.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_attendance_sessions_guild_started
-            ON attendance_sessions(guild_id, started_at)
-            """
-        )
-        connection.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_attendance_entries_user_id
-            ON attendance_entries(user_id)
-            """
-        )
-        connection.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_attendance_entries_attendance_id
-            ON attendance_entries(attendance_id)
-            """
-        )
+        with connection.cursor() as cursor:
+            cursor.execute(SCHEMA_SQL)
+            _ensure_postgres_columns(cursor)
+            _seed_default_alliances(cursor)
         connection.commit()
-    _migrate_legacy_settings()
 
 
 def ensure_guild(guild_id: int) -> None:
     with _connect() as connection:
-        connection.execute(
-            """
-            INSERT INTO guilds (guild_id)
-            VALUES (?)
-            ON CONFLICT(guild_id) DO NOTHING
-            """,
-            (guild_id,),
-        )
-        connection.execute(
-            """
-            INSERT INTO guild_settings (guild_id)
-            VALUES (?)
-            ON CONFLICT(guild_id) DO NOTHING
-            """,
-            (guild_id,),
-        )
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO guilds (guild_id)
+                VALUES (%s)
+                ON CONFLICT (guild_id) DO NOTHING
+                """,
+                (guild_id,),
+            )
+            cursor.execute(
+                """
+                INSERT INTO guild_settings (guild_id)
+                VALUES (%s)
+                ON CONFLICT (guild_id) DO NOTHING
+                """,
+                (guild_id,),
+            )
         connection.commit()
 
 
 def get_configured_guild_id() -> int | None:
-    with _connect() as connection:
-        row = connection.execute(
-            "SELECT guild_id FROM guilds ORDER BY guild_id LIMIT 1"
-        ).fetchone()
+    row = _fetchone("SELECT guild_id FROM guilds ORDER BY guild_id LIMIT 1")
     return int(row["guild_id"]) if row else None
 
 
 def get_settings(guild_id: int) -> GuildSettings:
     ensure_guild(guild_id)
-    with _connect() as connection:
-        row = connection.execute(
-            """
-            SELECT guild_id, admin_channel_id, attendance_voice_channel_id, log_channel_id, timer, attendance_available_timer
-            FROM guild_settings
-            WHERE guild_id = ?
-            """,
-            (guild_id,),
-        ).fetchone()
-
+    row = _fetchone(
+        """
+        SELECT guild_id, admin_channel_id, attendance_voice_channel_id, log_channel_id,
+               timer, attendance_available_timer
+        FROM guild_settings
+        WHERE guild_id = %s
+        """,
+        (guild_id,),
+    )
     if row is None:
         return GuildSettings(guild_id=guild_id)
-
     return GuildSettings(
         guild_id=int(row["guild_id"]),
         admin_channel_id=_optional_int(row["admin_channel_id"]),
@@ -222,19 +148,13 @@ def update_setting(guild_id: int, column: str, value: int | None) -> GuildSettin
 
     ensure_guild(guild_id)
     with _connect() as connection:
-        connection.execute(
-            f"UPDATE guild_settings SET {column} = ? WHERE guild_id = ?",
-            (value, guild_id),
-        )
+        with connection.cursor() as cursor:
+            cursor.execute(
+                f"UPDATE guild_settings SET {column} = %s, updated_at = CURRENT_TIMESTAMP WHERE guild_id = %s",
+                (value, guild_id),
+            )
         connection.commit()
-
     return get_settings(guild_id)
-
-
-def _optional_int(value: Any) -> int | None:
-    if value is None:
-        return None
-    return int(value)
 
 
 def save_attendance_session(
@@ -246,74 +166,78 @@ def save_attendance_session(
 ) -> int:
     ensure_guild(guild_id)
     with _connect() as connection:
-        cursor = connection.execute(
-            """
-            INSERT INTO attendance_sessions (
-                guild_id,
-                started_at,
-                ended_at,
-                started_by_discord_id
-            )
-            VALUES (?, ?, ?, ?)
-            """,
-            (guild_id, started_at, ended_at, started_by_discord_id),
-        )
-        attendance_id = int(cursor.lastrowid)
-
-        for participant in participants:
-            discord_id = int(participant["discord_id"])
-            nickname = str(participant["discord_nickname"])
-            alliance_id = _optional_int(participant.get("alliance_id"))
-
-            existing_user = connection.execute(
+        with connection.cursor() as cursor:
+            cursor.execute(
                 """
-                SELECT user_id, alliance_id, discord_nickname
-                FROM users
-                WHERE discord_id = ?
+                INSERT INTO attendance_sessions (
+                    guild_id,
+                    started_at,
+                    ended_at,
+                    started_by_discord_id
+                )
+                VALUES (%s, %s, %s, %s)
+                RETURNING attendance_id
                 """,
-                (discord_id,),
-            ).fetchone()
+                (guild_id, started_at, ended_at, started_by_discord_id),
+            )
+            attendance_id = int(cursor.fetchone()["attendance_id"])
 
-            if existing_user is None:
-                user_cursor = connection.execute(
+            for participant in participants:
+                discord_id = int(participant["discord_id"])
+                nickname = str(participant["discord_nickname"])
+                alliance_id = _optional_int(participant.get("alliance_id"))
+
+                cursor.execute(
                     """
-                    INSERT INTO users (alliance_id, discord_id, discord_nickname)
-                    VALUES (?, ?, ?)
+                    SELECT user_id, alliance_id, discord_nickname
+                    FROM users
+                    WHERE discord_id = %s
                     """,
-                    (alliance_id, discord_id, nickname),
+                    (discord_id,),
                 )
-                user_id = int(user_cursor.lastrowid)
-            else:
-                user_id = int(existing_user["user_id"])
-                resolved_alliance_id = (
-                    alliance_id
-                    if alliance_id is not None
-                    else _optional_int(existing_user["alliance_id"])
-                )
-                if (
-                    _optional_int(existing_user["alliance_id"]) != resolved_alliance_id
-                    or str(existing_user["discord_nickname"]) != nickname
-                ):
-                    connection.execute(
+                existing_user = cursor.fetchone()
+
+                if existing_user is None:
+                    cursor.execute(
                         """
-                        UPDATE users
-                        SET alliance_id = ?, discord_nickname = ?
-                        WHERE user_id = ?
+                        INSERT INTO users (alliance_id, discord_id, discord_nickname)
+                        VALUES (%s, %s, %s)
+                        RETURNING user_id
                         """,
-                        (resolved_alliance_id, nickname, user_id),
+                        (alliance_id, discord_id, nickname),
                     )
-                alliance_id = resolved_alliance_id
+                    user_id = int(cursor.fetchone()["user_id"])
+                else:
+                    user_id = int(existing_user["user_id"])
+                    resolved_alliance_id = (
+                        alliance_id
+                        if alliance_id is not None
+                        else _optional_int(existing_user["alliance_id"])
+                    )
+                    if (
+                        _optional_int(existing_user["alliance_id"]) != resolved_alliance_id
+                        or str(existing_user["discord_nickname"]) != nickname
+                    ):
+                        cursor.execute(
+                            """
+                            UPDATE users
+                            SET alliance_id = %s,
+                                discord_nickname = %s,
+                                updated_at = CURRENT_TIMESTAMP
+                            WHERE user_id = %s
+                            """,
+                            (resolved_alliance_id, nickname, user_id),
+                        )
 
-            connection.execute(
-                """
-                INSERT INTO attendance_entries (attendance_id, user_id)
-                VALUES (?, ?)
-                """,
-                (attendance_id, user_id),
-            )
-
+                cursor.execute(
+                    """
+                    INSERT INTO attendance_entries (attendance_id, user_id)
+                    VALUES (%s, %s)
+                    ON CONFLICT (attendance_id, user_id) DO NOTHING
+                    """,
+                    (attendance_id, user_id),
+                )
         connection.commit()
-
     return attendance_id
 
 
@@ -323,34 +247,22 @@ def create_alliance(alliance_name: str) -> Alliance:
         raise ValueError("Alliance name must not be empty.")
 
     with _connect() as connection:
-        try:
-            cursor = connection.execute(
+        with connection.cursor() as cursor:
+            cursor.execute(
                 """
-                INSERT INTO alliances (alliance_name)
-                VALUES (?)
+                INSERT INTO alliances (alliance_name, display_name, tag_name)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (alliance_name) DO UPDATE SET
+                    display_name = COALESCE(alliances.display_name, EXCLUDED.display_name),
+                    tag_name = COALESCE(alliances.tag_name, EXCLUDED.tag_name),
+                    updated_at = CURRENT_TIMESTAMP
+                RETURNING alliance_id, alliance_name
                 """,
-                (normalized_name,),
+                (normalized_name, normalized_name, normalized_name),
             )
-            connection.commit()
-            return Alliance(
-                alliance_id=int(cursor.lastrowid),
-                alliance_name=normalized_name,
-            )
-        except sqlite3.IntegrityError:
-            existing = connection.execute(
-                """
-                SELECT alliance_id, alliance_name
-                FROM alliances
-                WHERE alliance_name = ?
-                """,
-                (normalized_name,),
-            ).fetchone()
-            if existing is None:
-                raise
-            return Alliance(
-                alliance_id=int(existing["alliance_id"]),
-                alliance_name=str(existing["alliance_name"]),
-            )
+            row = cursor.fetchone()
+        connection.commit()
+    return Alliance(alliance_id=int(row["alliance_id"]), alliance_name=str(row["alliance_name"]))
 
 
 def get_or_create_alliance(alliance_name: str) -> Alliance:
@@ -358,14 +270,14 @@ def get_or_create_alliance(alliance_name: str) -> Alliance:
 
 
 def get_alliance_names() -> list[str]:
-    with _connect() as connection:
-        rows = connection.execute(
-            """
-            SELECT alliance_name
-            FROM alliances
-            ORDER BY alliance_name ASC
-            """
-        ).fetchall()
+    rows = _fetchall(
+        """
+        SELECT alliance_name
+        FROM alliances
+        WHERE is_active = TRUE
+        ORDER BY sort_order ASC NULLS LAST, alliance_name ASC
+        """
+    )
     return [str(row["alliance_name"]) for row in rows]
 
 
@@ -373,22 +285,19 @@ def get_alliance_counts_for_discord_ids(discord_ids: list[int]) -> dict[str, int
     if not discord_ids:
         return {}
 
-    placeholders = ", ".join("?" for _ in discord_ids)
-    with _connect() as connection:
-        rows = connection.execute(
-            f"""
-            SELECT
-                COALESCE(a.alliance_name, '미분류') AS alliance_name,
-                COUNT(*) AS member_count
-            FROM users u
-            LEFT JOIN alliances a ON a.alliance_id = u.alliance_id
-            WHERE u.discord_id IN ({placeholders})
-            GROUP BY COALESCE(a.alliance_name, '미분류')
-            ORDER BY member_count DESC, alliance_name
-            """,
-            tuple(discord_ids),
-        ).fetchall()
-
+    rows = _fetchall(
+        """
+        SELECT
+            COALESCE(a.alliance_name, '미분류') AS alliance_name,
+            COUNT(*) AS member_count
+        FROM users u
+        LEFT JOIN alliances a ON a.alliance_id = u.alliance_id
+        WHERE u.discord_id = ANY(%s)
+        GROUP BY COALESCE(a.alliance_name, '미분류')
+        ORDER BY member_count DESC, alliance_name
+        """,
+        (list({int(discord_id) for discord_id in discord_ids}),),
+    )
     counts = {str(row["alliance_name"]): int(row["member_count"]) for row in rows}
     missing = len(set(discord_ids)) - sum(counts.values())
     if missing > 0:
@@ -402,34 +311,31 @@ def get_attendance_overview(
     end_at: str | None = None,
 ) -> dict[str, int | None]:
     where_clause, params = _build_attendance_filter(guild_id, start_at, end_at)
-
-    with _connect() as connection:
-        row = connection.execute(
-            f"""
-            SELECT
-                COUNT(DISTINCT s.attendance_id) AS session_count,
-                COUNT(e.user_id) AS total_attendance_count,
-                COUNT(DISTINCT e.user_id) AS unique_user_count
+    row = _fetchone(
+        f"""
+        SELECT
+            COUNT(DISTINCT s.attendance_id) AS session_count,
+            COUNT(e.user_id) AS total_attendance_count,
+            COUNT(DISTINCT e.user_id) AS unique_user_count
+        FROM attendance_sessions s
+        LEFT JOIN attendance_entries e ON e.attendance_id = s.attendance_id
+        {where_clause}
+        """,
+        tuple(params),
+    )
+    average_row = _fetchone(
+        f"""
+        SELECT AVG(session_size) AS average_attendance_count
+        FROM (
+            SELECT COUNT(e.user_id) AS session_size
             FROM attendance_sessions s
             LEFT JOIN attendance_entries e ON e.attendance_id = s.attendance_id
             {where_clause}
-            """,
-            params,
-        ).fetchone()
-        average_row = connection.execute(
-            f"""
-            SELECT AVG(session_size) AS average_attendance_count
-            FROM (
-                SELECT COUNT(e.user_id) AS session_size
-                FROM attendance_sessions s
-                LEFT JOIN attendance_entries e ON e.attendance_id = s.attendance_id
-                {where_clause}
-                GROUP BY s.attendance_id
-            )
-            """,
-            params,
-        ).fetchone()
-
+            GROUP BY s.attendance_id
+        ) grouped_sessions
+        """,
+        tuple(params),
+    )
     return {
         "session_count": int(row["session_count"]) if row and row["session_count"] is not None else 0,
         "total_attendance_count": int(row["total_attendance_count"]) if row and row["total_attendance_count"] is not None else 0,
@@ -448,23 +354,21 @@ def get_daily_attendance_stats(
     end_at: str | None = None,
 ) -> list[dict[str, Any]]:
     where_clause, params = _build_attendance_filter(guild_id, start_at, end_at)
-    with _connect() as connection:
-        rows = connection.execute(
-            f"""
-            SELECT
-                substr(s.started_at, 1, 10) AS attendance_date,
-                COUNT(DISTINCT s.attendance_id) AS session_count,
-                COUNT(e.user_id) AS attendance_count,
-                COUNT(DISTINCT e.user_id) AS unique_user_count
-            FROM attendance_sessions s
-            LEFT JOIN attendance_entries e ON e.attendance_id = s.attendance_id
-            {where_clause}
-            GROUP BY substr(s.started_at, 1, 10)
-            ORDER BY attendance_date DESC
-            """,
-            params,
-        ).fetchall()
-
+    rows = _fetchall(
+        f"""
+        SELECT
+            LEFT(s.started_at, 10) AS attendance_date,
+            COUNT(DISTINCT s.attendance_id) AS session_count,
+            COUNT(e.user_id) AS attendance_count,
+            COUNT(DISTINCT e.user_id) AS unique_user_count
+        FROM attendance_sessions s
+        LEFT JOIN attendance_entries e ON e.attendance_id = s.attendance_id
+        {where_clause}
+        GROUP BY LEFT(s.started_at, 10)
+        ORDER BY attendance_date DESC
+        """,
+        tuple(params),
+    )
     return [
         {
             "attendance_date": str(row["attendance_date"]),
@@ -485,30 +389,26 @@ def get_alliance_attendance_stats(
     where_clause, params = _build_attendance_filter(guild_id, start_at, end_at)
     search_clause = ""
     if search:
-        search_clause = """
-        HAVING COALESCE(a.alliance_name, '미분류') LIKE ?
-        """
-        params = [*params, f"%{search.strip()}%"]
-    with _connect() as connection:
-        rows = connection.execute(
-            f"""
-            SELECT
-                COALESCE(a.alliance_name, '미분류') AS alliance_name,
-                COUNT(e.user_id) AS attendance_count,
-                COUNT(DISTINCT e.user_id) AS unique_user_count,
-                COUNT(DISTINCT s.attendance_id) AS session_count
-            FROM attendance_sessions s
-            LEFT JOIN attendance_entries e ON e.attendance_id = s.attendance_id
-            LEFT JOIN users u ON u.user_id = e.user_id
-            LEFT JOIN alliances a ON a.alliance_id = u.alliance_id
-            {where_clause}
-            GROUP BY COALESCE(a.alliance_name, '미분류')
-            {search_clause}
-            ORDER BY attendance_count DESC, alliance_name ASC
-            """,
-            params,
-        ).fetchall()
-
+        search_clause = "HAVING COALESCE(a.alliance_name, '미분류') ILIKE %s"
+        params.append(f"%{search.strip()}%")
+    rows = _fetchall(
+        f"""
+        SELECT
+            COALESCE(a.alliance_name, '미분류') AS alliance_name,
+            COUNT(e.user_id) AS attendance_count,
+            COUNT(DISTINCT e.user_id) AS unique_user_count,
+            COUNT(DISTINCT s.attendance_id) AS session_count
+        FROM attendance_sessions s
+        LEFT JOIN attendance_entries e ON e.attendance_id = s.attendance_id
+        LEFT JOIN users u ON u.user_id = e.user_id
+        LEFT JOIN alliances a ON a.alliance_id = u.alliance_id
+        {where_clause}
+        GROUP BY COALESCE(a.alliance_name, '미분류')
+        {search_clause}
+        ORDER BY attendance_count DESC, alliance_name ASC
+        """,
+        tuple(params),
+    )
     return [
         {
             "alliance_name": str(row["alliance_name"]),
@@ -533,42 +433,38 @@ def get_user_attendance_stats(
     if search:
         search_clause = """
         AND (
-            u.discord_nickname LIKE ?
-            OR CAST(u.discord_id AS TEXT) LIKE ?
-            OR COALESCE(a.alliance_name, '미분류') LIKE ?
+            u.discord_nickname ILIKE %s
+            OR CAST(u.discord_id AS TEXT) ILIKE %s
+            OR COALESCE(a.alliance_name, '미분류') ILIKE %s
         )
         """
         wildcard = f"%{search.strip()}%"
-        params = [*params, wildcard, wildcard, wildcard]
+        params.extend([wildcard, wildcard, wildcard])
     if alliance_name:
-        search_clause += """
-        AND COALESCE(a.alliance_name, '미분류') = ?
-        """
-        params = [*params, alliance_name]
+        search_clause += " AND COALESCE(a.alliance_name, '미분류') = %s"
+        params.append(alliance_name)
 
-    params = [*params, int(limit)]
-    with _connect() as connection:
-        rows = connection.execute(
-            f"""
-            SELECT
-                u.user_id,
-                u.discord_id,
-                u.discord_nickname,
-                COALESCE(a.alliance_name, '미분류') AS alliance_name,
-                COUNT(e.attendance_id) AS attendance_count
-            FROM attendance_sessions s
-            INNER JOIN attendance_entries e ON e.attendance_id = s.attendance_id
-            INNER JOIN users u ON u.user_id = e.user_id
-            LEFT JOIN alliances a ON a.alliance_id = u.alliance_id
-            {where_clause}
-            {search_clause}
-            GROUP BY u.user_id, u.discord_id, u.discord_nickname, COALESCE(a.alliance_name, '미분류')
-            ORDER BY attendance_count DESC, u.discord_nickname ASC
-            LIMIT ?
-            """,
-            params,
-        ).fetchall()
-
+    params.append(int(limit))
+    rows = _fetchall(
+        f"""
+        SELECT
+            u.user_id,
+            u.discord_id,
+            u.discord_nickname,
+            COALESCE(a.alliance_name, '미분류') AS alliance_name,
+            COUNT(e.attendance_id) AS attendance_count
+        FROM attendance_sessions s
+        INNER JOIN attendance_entries e ON e.attendance_id = s.attendance_id
+        INNER JOIN users u ON u.user_id = e.user_id
+        LEFT JOIN alliances a ON a.alliance_id = u.alliance_id
+        {where_clause}
+        {search_clause}
+        GROUP BY u.user_id, u.discord_id, u.discord_nickname, COALESCE(a.alliance_name, '미분류')
+        ORDER BY attendance_count DESC, u.discord_nickname ASC
+        LIMIT %s
+        """,
+        tuple(params),
+    )
     return [
         {
             "user_id": int(row["user_id"]),
@@ -593,37 +489,33 @@ def get_attendance_export_rows(
     if search:
         search_clause = """
         AND (
-            COALESCE(a.alliance_name, '미분류') LIKE ?
-            OR u.discord_nickname LIKE ?
-            OR CAST(u.discord_id AS TEXT) LIKE ?
+            COALESCE(a.alliance_name, '미분류') ILIKE %s
+            OR u.discord_nickname ILIKE %s
+            OR CAST(u.discord_id AS TEXT) ILIKE %s
         )
         """
         wildcard = f"%{search.strip()}%"
-        params = [*params, wildcard, wildcard, wildcard]
+        params.extend([wildcard, wildcard, wildcard])
     if alliance_name:
-        search_clause += """
-        AND COALESCE(a.alliance_name, '미분류') = ?
-        """
-        params = [*params, alliance_name]
-    with _connect() as connection:
-        rows = connection.execute(
-            f"""
-            SELECT
-                s.started_at,
-                u.discord_id,
-                u.discord_nickname,
-                COALESCE(a.alliance_name, '미분류') AS alliance_name
-            FROM attendance_sessions s
-            LEFT JOIN attendance_entries e ON e.attendance_id = s.attendance_id
-            LEFT JOIN users u ON u.user_id = e.user_id
-            LEFT JOIN alliances a ON a.alliance_id = u.alliance_id
-            {where_clause}
-            {search_clause}
-            ORDER BY s.started_at DESC, u.discord_nickname ASC
-            """,
-            params,
-        ).fetchall()
-
+        search_clause += " AND COALESCE(a.alliance_name, '미분류') = %s"
+        params.append(alliance_name)
+    rows = _fetchall(
+        f"""
+        SELECT
+            s.started_at,
+            u.discord_id,
+            u.discord_nickname,
+            COALESCE(a.alliance_name, '미분류') AS alliance_name
+        FROM attendance_sessions s
+        LEFT JOIN attendance_entries e ON e.attendance_id = s.attendance_id
+        LEFT JOIN users u ON u.user_id = e.user_id
+        LEFT JOIN alliances a ON a.alliance_id = u.alliance_id
+        {where_clause}
+        {search_clause}
+        ORDER BY s.started_at DESC, u.discord_nickname ASC
+        """,
+        tuple(params),
+    )
     return [
         {
             "started_at": str(row["started_at"]),
@@ -643,183 +535,441 @@ def _build_attendance_filter(
     clauses = ["WHERE 1 = 1"]
     params: list[Any] = []
     if guild_id is not None:
-        clauses.append("AND s.guild_id = ?")
+        clauses.append("AND s.guild_id = %s")
         params.append(guild_id)
     if start_at:
-        clauses.append("AND s.started_at >= ?")
+        clauses.append("AND s.started_at >= %s")
         params.append(start_at)
     if end_at:
-        clauses.append("AND s.started_at <= ?")
+        clauses.append("AND s.started_at <= %s")
         params.append(end_at)
     return " ".join(clauses), params
 
 
-def _migrate_legacy_settings() -> None:
-    if DB_PATH.exists():
-        with _connect() as connection:
-            row = connection.execute(
-                "SELECT COUNT(*) AS count FROM guild_settings"
-            ).fetchone()
-        if row is not None and int(row["count"]) > 0:
-            return
-
-    for legacy_path in LEGACY_DB_PATHS:
-        if not legacy_path.exists() or legacy_path == DB_PATH:
-            continue
-
-        legacy_connection = sqlite3.connect(legacy_path)
-        legacy_connection.row_factory = sqlite3.Row
-        try:
-            has_settings_table = legacy_connection.execute(
-                """
-                SELECT 1
-                FROM sqlite_master
-                WHERE type = 'table' AND name = 'settings'
-                """
-            ).fetchone()
-            if has_settings_table is None:
-                continue
-
-            rows = legacy_connection.execute(
-                """
-                SELECT guild_id, admin_channel_id, attendance_voice_channel_id, timer
-                FROM settings
-                """
-            ).fetchall()
-        finally:
-            legacy_connection.close()
-
-        if not rows:
-            continue
-
-        with _connect() as connection:
-            for row in rows:
-                guild_id = int(row["guild_id"])
-                connection.execute(
-                    """
-                    INSERT INTO guilds (guild_id)
-                    VALUES (?)
-                    ON CONFLICT(guild_id) DO NOTHING
-                    """,
-                    (guild_id,),
-                )
-                connection.execute(
-                    """
-                    INSERT INTO guild_settings (
-                        guild_id,
-                        admin_channel_id,
-                        attendance_voice_channel_id,
-                        log_channel_id,
-                        timer,
-                        attendance_available_timer
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(guild_id) DO UPDATE SET
-                        admin_channel_id = excluded.admin_channel_id,
-                        attendance_voice_channel_id = excluded.attendance_voice_channel_id,
-                        log_channel_id = excluded.log_channel_id,
-                        timer = excluded.timer,
-                        attendance_available_timer = excluded.attendance_available_timer
-                    """,
-                    (
-                        guild_id,
-                        row["admin_channel_id"],
-                        row["attendance_voice_channel_id"],
-                        None,
-                        row["timer"],
-                        None,
-                    ),
-                )
-            connection.commit()
-        return
+def _optional_int(value: Any) -> int | None:
+    if value is None:
+        return None
+    return int(value)
 
 
-def _migrate_guild_settings_schema(connection: sqlite3.Connection) -> None:
-    columns = connection.execute("PRAGMA table_info(guild_settings)").fetchall()
-    column_names = [str(column["name"]) for column in columns]
-    expected_columns = [
-        "guild_id",
-        "admin_channel_id",
-        "attendance_voice_channel_id",
-        "log_channel_id",
-        "timer",
-        "attendance_available_timer",
+def _ensure_postgres_columns(cursor: psycopg2.extensions.cursor) -> None:
+    column_sql = [
+        "ALTER TABLE alliances ADD COLUMN IF NOT EXISTS display_name TEXT",
+        "ALTER TABLE alliances ADD COLUMN IF NOT EXISTS tag_name TEXT",
+        "ALTER TABLE alliances ADD COLUMN IF NOT EXISTS color TEXT",
+        "ALTER TABLE alliances ADD COLUMN IF NOT EXISTS sort_order INTEGER",
+        "ALTER TABLE alliances ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE",
+        "ALTER TABLE alliances ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP",
+        "ALTER TABLE alliances ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS game_nickname TEXT",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS class_name TEXT",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS attribute_name TEXT",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS position_name TEXT",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS phone TEXT",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS memo TEXT",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP",
+        "ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP",
     ]
+    for sql in column_sql:
+        cursor.execute(sql)
 
-    if column_names == expected_columns:
-        return
 
-    connection.execute(
-        """
-        CREATE TABLE guild_settings_new (
-            guild_id INTEGER PRIMARY KEY,
-            admin_channel_id INTEGER,
-            attendance_voice_channel_id INTEGER,
-            log_channel_id INTEGER,
-            timer INTEGER,
-            attendance_available_timer INTEGER,
-            FOREIGN KEY (guild_id) REFERENCES guilds(guild_id) ON DELETE CASCADE
+def _seed_default_alliances(cursor: psycopg2.extensions.cursor) -> None:
+    for index, alliance_name in enumerate(DEFAULT_ALLIANCE_NAMES, start=1):
+        cursor.execute(
+            """
+            INSERT INTO alliances (alliance_name, display_name, tag_name, sort_order, is_active)
+            VALUES (%s, %s, %s, %s, TRUE)
+            ON CONFLICT (alliance_name) DO UPDATE SET
+                display_name = COALESCE(alliances.display_name, EXCLUDED.display_name),
+                tag_name = COALESCE(alliances.tag_name, EXCLUDED.tag_name),
+                sort_order = COALESCE(alliances.sort_order, EXCLUDED.sort_order),
+                is_active = TRUE,
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            (alliance_name, alliance_name, alliance_name, index),
         )
-        """
-    )
-    has_log_channel = "log_channel_id" in column_names
-    has_available_timer = "attendance_available_timer" in column_names
-    select_log_channel = "log_channel_id" if has_log_channel else "NULL"
-    select_available_timer = "attendance_available_timer" if has_available_timer else "NULL"
-    connection.execute(
-        f"""
-        INSERT INTO guild_settings_new (
-            guild_id,
-            admin_channel_id,
-            attendance_voice_channel_id,
-            log_channel_id,
-            timer,
-            attendance_available_timer
-        )
-        SELECT
-            guild_id,
-            admin_channel_id,
-            attendance_voice_channel_id,
-            {select_log_channel},
-            timer,
-            {select_available_timer}
-        FROM guild_settings
-        """
-    )
-    connection.execute("DROP TABLE guild_settings")
-    connection.execute("ALTER TABLE guild_settings_new RENAME TO guild_settings")
 
 
-def _migrate_attendance_entries_schema(connection: sqlite3.Connection) -> None:
-    columns = connection.execute("PRAGMA table_info(attendance_entries)").fetchall()
-    column_names = [str(column["name"]) for column in columns]
-    expected_columns = [
-        "attendance_id",
-        "user_id",
-    ]
+SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS guilds (
+    guild_id BIGINT PRIMARY KEY,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 
-    if column_names == expected_columns:
-        connection.execute("DROP INDEX IF EXISTS idx_attendance_entries_alliance_id")
-        return
+CREATE TABLE IF NOT EXISTS guild_settings (
+    guild_id BIGINT PRIMARY KEY REFERENCES guilds(guild_id) ON DELETE CASCADE,
+    admin_channel_id BIGINT,
+    attendance_voice_channel_id BIGINT,
+    log_channel_id BIGINT,
+    timer INTEGER,
+    attendance_available_timer INTEGER,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 
-    connection.execute("DROP INDEX IF EXISTS idx_attendance_entries_alliance_id")
-    connection.execute(
-        """
-        CREATE TABLE attendance_entries_new (
-            attendance_id INTEGER NOT NULL,
-            user_id INTEGER NOT NULL,
-            PRIMARY KEY (attendance_id, user_id),
-            FOREIGN KEY (attendance_id) REFERENCES attendance_sessions(attendance_id) ON DELETE CASCADE,
-            FOREIGN KEY (user_id) REFERENCES users(user_id)
-        )
-        """
-    )
-    connection.execute(
-        """
-        INSERT OR IGNORE INTO attendance_entries_new (attendance_id, user_id)
-        SELECT attendance_id, user_id
-        FROM attendance_entries
-        """
-    )
-    connection.execute("DROP TABLE attendance_entries")
-    connection.execute("ALTER TABLE attendance_entries_new RENAME TO attendance_entries")
+CREATE TABLE IF NOT EXISTS alliances (
+    alliance_id BIGSERIAL PRIMARY KEY,
+    alliance_name TEXT NOT NULL UNIQUE,
+    display_name TEXT,
+    tag_name TEXT,
+    color TEXT,
+    sort_order INTEGER,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS users (
+    user_id BIGSERIAL PRIMARY KEY,
+    alliance_id BIGINT REFERENCES alliances(alliance_id),
+    discord_id BIGINT NOT NULL UNIQUE,
+    discord_nickname TEXT NOT NULL,
+    game_nickname TEXT,
+    class_name TEXT,
+    attribute_name TEXT,
+    position_name TEXT,
+    phone TEXT,
+    memo TEXT,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS attendance_sessions (
+    attendance_id BIGSERIAL PRIMARY KEY,
+    guild_id BIGINT NOT NULL REFERENCES guilds(guild_id) ON DELETE CASCADE,
+    started_at TEXT NOT NULL,
+    ended_at TEXT NOT NULL,
+    started_by_discord_id BIGINT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS attendance_entries (
+    attendance_id BIGINT NOT NULL REFERENCES attendance_sessions(attendance_id) ON DELETE CASCADE,
+    user_id BIGINT NOT NULL REFERENCES users(user_id),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (attendance_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS web_admins (
+    admin_id BIGSERIAL PRIMARY KEY,
+    discord_id BIGINT NOT NULL UNIQUE,
+    display_name TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'admin',
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS bot_command_queue (
+    command_id BIGSERIAL PRIMARY KEY,
+    guild_id BIGINT REFERENCES guilds(guild_id) ON DELETE CASCADE,
+    command_type TEXT NOT NULL,
+    payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    status TEXT NOT NULL DEFAULT 'pending',
+    result_json JSONB,
+    requested_by_discord_id BIGINT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    processed_at TIMESTAMPTZ,
+    error_message TEXT
+);
+
+CREATE TABLE IF NOT EXISTS attendance_live_sessions (
+    live_session_id BIGSERIAL PRIMARY KEY,
+    guild_id BIGINT NOT NULL REFERENCES guilds(guild_id) ON DELETE CASCADE,
+    discord_channel_id BIGINT,
+    discord_message_id BIGINT,
+    started_by_discord_id BIGINT,
+    started_at TEXT NOT NULL,
+    expires_at TEXT,
+    ended_at TEXT,
+    status TEXT NOT NULL DEFAULT 'active',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS attendance_live_participants (
+    live_session_id BIGINT NOT NULL REFERENCES attendance_live_sessions(live_session_id) ON DELETE CASCADE,
+    discord_id BIGINT NOT NULL,
+    display_name TEXT NOT NULL,
+    alliance_id BIGINT REFERENCES alliances(alliance_id),
+    joined_voice_at TEXT,
+    attended_at TEXT NOT NULL,
+    source TEXT NOT NULL DEFAULT 'discord',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (live_session_id, discord_id)
+);
+
+CREATE TABLE IF NOT EXISTS bosses (
+    boss_id BIGSERIAL PRIMARY KEY,
+    boss_name TEXT NOT NULL UNIQUE,
+    alias TEXT,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    sort_order INTEGER,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS boss_spawn_schedules (
+    schedule_id BIGSERIAL PRIMARY KEY,
+    boss_id BIGINT NOT NULL REFERENCES bosses(boss_id) ON DELETE CASCADE,
+    time_label TEXT NOT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    memo TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS boss_hunt_sessions (
+    hunt_id BIGSERIAL PRIMARY KEY,
+    guild_id BIGINT REFERENCES guilds(guild_id) ON DELETE CASCADE,
+    boss_id BIGINT REFERENCES bosses(boss_id),
+    hunt_at TEXT NOT NULL,
+    title TEXT,
+    source TEXT NOT NULL DEFAULT 'web',
+    memo TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS boss_hunt_participants (
+    hunt_id BIGINT NOT NULL REFERENCES boss_hunt_sessions(hunt_id) ON DELETE CASCADE,
+    user_id BIGINT NOT NULL REFERENCES users(user_id),
+    discord_id BIGINT,
+    alliance_id BIGINT REFERENCES alliances(alliance_id),
+    attended_at TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (hunt_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS boss_attendance_snapshots (
+    snapshot_id BIGSERIAL PRIMARY KEY,
+    period_start TEXT NOT NULL,
+    period_end TEXT NOT NULL,
+    total_hunts INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS boss_attendance_snapshot_rows (
+    snapshot_id BIGINT NOT NULL REFERENCES boss_attendance_snapshots(snapshot_id) ON DELETE CASCADE,
+    user_id BIGINT NOT NULL REFERENCES users(user_id),
+    class_name TEXT,
+    attendance_count INTEGER NOT NULL DEFAULT 0,
+    attendance_rate NUMERIC(10, 6) NOT NULL DEFAULT 0,
+    rank_overall INTEGER,
+    rank_by_class INTEGER,
+    PRIMARY KEY (snapshot_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS items (
+    item_id BIGSERIAL PRIMARY KEY,
+    item_name TEXT NOT NULL UNIQUE,
+    category TEXT,
+    default_price NUMERIC(18, 2),
+    is_bid_item BOOLEAN NOT NULL DEFAULT FALSE,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    sort_order INTEGER,
+    memo TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS item_categories (
+    category_id BIGSERIAL PRIMARY KEY,
+    category_name TEXT NOT NULL UNIQUE,
+    sort_order INTEGER,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE
+);
+
+CREATE TABLE IF NOT EXISTS item_price_rules (
+    rule_id BIGSERIAL PRIMARY KEY,
+    item_id BIGINT NOT NULL REFERENCES items(item_id) ON DELETE CASCADE,
+    price NUMERIC(18, 2) NOT NULL,
+    starts_at TEXT,
+    ends_at TEXT,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    memo TEXT
+);
+
+CREATE TABLE IF NOT EXISTS item_bid_rules (
+    rule_id BIGSERIAL PRIMARY KEY,
+    item_id BIGINT NOT NULL REFERENCES items(item_id) ON DELETE CASCADE,
+    rule_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    memo TEXT
+);
+
+CREATE TABLE IF NOT EXISTS alliance_item_bid_statuses (
+    alliance_id BIGINT NOT NULL REFERENCES alliances(alliance_id) ON DELETE CASCADE,
+    item_id BIGINT NOT NULL REFERENCES items(item_id) ON DELETE CASCADE,
+    status TEXT NOT NULL DEFAULT 'available',
+    completed_at TEXT,
+    memo TEXT,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (alliance_id, item_id)
+);
+
+CREATE TABLE IF NOT EXISTS loot_events (
+    loot_event_id BIGSERIAL PRIMARY KEY,
+    guild_id BIGINT REFERENCES guilds(guild_id) ON DELETE CASCADE,
+    event_date TEXT NOT NULL,
+    event_time_label TEXT,
+    title TEXT,
+    memo TEXT,
+    created_by_discord_id BIGINT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS loot_event_items (
+    loot_item_id BIGSERIAL PRIMARY KEY,
+    loot_event_id BIGINT NOT NULL REFERENCES loot_events(loot_event_id) ON DELETE CASCADE,
+    item_id BIGINT REFERENCES items(item_id),
+    item_name_snapshot TEXT NOT NULL,
+    buyer_name TEXT,
+    buyer_alliance_id BIGINT REFERENCES alliances(alliance_id),
+    sale_price NUMERIC(18, 2) NOT NULL DEFAULT 0,
+    fee_rate NUMERIC(8, 6) NOT NULL DEFAULT 0,
+    net_amount NUMERIC(18, 2) NOT NULL DEFAULT 0,
+    memo TEXT
+);
+
+CREATE TABLE IF NOT EXISTS loot_event_alliance_counts (
+    loot_event_id BIGINT NOT NULL REFERENCES loot_events(loot_event_id) ON DELETE CASCADE,
+    alliance_id BIGINT NOT NULL REFERENCES alliances(alliance_id) ON DELETE CASCADE,
+    participant_count INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (loot_event_id, alliance_id)
+);
+
+CREATE TABLE IF NOT EXISTS loot_event_participants (
+    loot_event_id BIGINT NOT NULL REFERENCES loot_events(loot_event_id) ON DELETE CASCADE,
+    user_id BIGINT NOT NULL REFERENCES users(user_id),
+    alliance_id BIGINT REFERENCES alliances(alliance_id),
+    attended_at TEXT,
+    source TEXT NOT NULL DEFAULT 'web',
+    PRIMARY KEY (loot_event_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS distribution_batches (
+    distribution_id BIGSERIAL PRIMARY KEY,
+    loot_event_id BIGINT REFERENCES loot_events(loot_event_id) ON DELETE SET NULL,
+    total_sale_amount NUMERIC(18, 2) NOT NULL DEFAULT 0,
+    total_net_amount NUMERIC(18, 2) NOT NULL DEFAULT 0,
+    total_participant_count INTEGER NOT NULL DEFAULT 0,
+    fee_rate NUMERIC(8, 6) NOT NULL DEFAULT 0,
+    fee_amount NUMERIC(18, 2) NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'draft',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    closed_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS distribution_lines (
+    line_id BIGSERIAL PRIMARY KEY,
+    distribution_id BIGINT NOT NULL REFERENCES distribution_batches(distribution_id) ON DELETE CASCADE,
+    loot_item_id BIGINT REFERENCES loot_event_items(loot_item_id),
+    line_type TEXT NOT NULL DEFAULT 'item',
+    amount NUMERIC(18, 2) NOT NULL DEFAULT 0,
+    memo TEXT
+);
+
+CREATE TABLE IF NOT EXISTS distribution_alliance_payouts (
+    distribution_id BIGINT NOT NULL REFERENCES distribution_batches(distribution_id) ON DELETE CASCADE,
+    alliance_id BIGINT NOT NULL REFERENCES alliances(alliance_id),
+    participant_count INTEGER NOT NULL DEFAULT 0,
+    gross_amount NUMERIC(18, 2) NOT NULL DEFAULT 0,
+    net_amount NUMERIC(18, 2) NOT NULL DEFAULT 0,
+    payout_status TEXT NOT NULL DEFAULT 'unpaid',
+    payout_method TEXT,
+    memo TEXT,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (distribution_id, alliance_id)
+);
+
+CREATE TABLE IF NOT EXISTS member_payout_groups (
+    payout_group_id BIGSERIAL PRIMARY KEY,
+    distribution_id BIGINT REFERENCES distribution_batches(distribution_id) ON DELETE SET NULL,
+    alliance_id BIGINT REFERENCES alliances(alliance_id),
+    title TEXT NOT NULL,
+    total_amount NUMERIC(18, 2) NOT NULL DEFAULT 0,
+    fee_rate NUMERIC(8, 6) NOT NULL DEFAULT 0,
+    fee_amount NUMERIC(18, 2) NOT NULL DEFAULT 0,
+    per_member_amount NUMERIC(18, 2) NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'draft',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS member_payout_items (
+    payout_item_id BIGSERIAL PRIMARY KEY,
+    payout_group_id BIGINT NOT NULL REFERENCES member_payout_groups(payout_group_id) ON DELETE CASCADE,
+    item_id BIGINT REFERENCES items(item_id),
+    item_name_snapshot TEXT,
+    amount NUMERIC(18, 2) NOT NULL DEFAULT 0,
+    memo TEXT
+);
+
+CREATE TABLE IF NOT EXISTS member_payout_recipients (
+    payout_group_id BIGINT NOT NULL REFERENCES member_payout_groups(payout_group_id) ON DELETE CASCADE,
+    user_id BIGINT NOT NULL REFERENCES users(user_id),
+    display_name_snapshot TEXT NOT NULL,
+    share_weight NUMERIC(10, 4) NOT NULL DEFAULT 1,
+    payout_amount NUMERIC(18, 2) NOT NULL DEFAULT 0,
+    payout_status TEXT NOT NULL DEFAULT 'unpaid',
+    paid_at TEXT,
+    memo TEXT,
+    PRIMARY KEY (payout_group_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS payout_transactions (
+    transaction_id BIGSERIAL PRIMARY KEY,
+    payout_group_id BIGINT REFERENCES member_payout_groups(payout_group_id) ON DELETE SET NULL,
+    user_id BIGINT REFERENCES users(user_id),
+    alliance_id BIGINT REFERENCES alliances(alliance_id),
+    amount NUMERIC(18, 2) NOT NULL DEFAULT 0,
+    transaction_type TEXT NOT NULL DEFAULT 'payout',
+    status TEXT NOT NULL DEFAULT 'pending',
+    processed_at TEXT,
+    memo TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS websocket_events (
+    event_id BIGSERIAL PRIMARY KEY,
+    event_type TEXT NOT NULL,
+    payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS notifications (
+    notification_id BIGSERIAL PRIMARY KEY,
+    guild_id BIGINT REFERENCES guilds(guild_id) ON DELETE CASCADE,
+    target_type TEXT,
+    target_id BIGINT,
+    channel TEXT NOT NULL DEFAULT 'discord',
+    message TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    sent_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS discord_message_links (
+    link_id BIGSERIAL PRIMARY KEY,
+    guild_id BIGINT REFERENCES guilds(guild_id) ON DELETE CASCADE,
+    entity_type TEXT NOT NULL,
+    entity_id BIGINT NOT NULL,
+    channel_id BIGINT,
+    message_id BIGINT,
+    message_url TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_guild_settings_admin_channel ON guild_settings(admin_channel_id);
+CREATE INDEX IF NOT EXISTS idx_users_discord_id ON users(discord_id);
+CREATE INDEX IF NOT EXISTS idx_users_alliance_id ON users(alliance_id);
+CREATE INDEX IF NOT EXISTS idx_attendance_sessions_guild_started ON attendance_sessions(guild_id, started_at);
+CREATE INDEX IF NOT EXISTS idx_attendance_entries_user_id ON attendance_entries(user_id);
+CREATE INDEX IF NOT EXISTS idx_attendance_entries_attendance_id ON attendance_entries(attendance_id);
+CREATE INDEX IF NOT EXISTS idx_bot_command_queue_status ON bot_command_queue(status, created_at);
+CREATE INDEX IF NOT EXISTS idx_attendance_live_sessions_guild_status ON attendance_live_sessions(guild_id, status);
+CREATE INDEX IF NOT EXISTS idx_items_name ON items(item_name);
+CREATE INDEX IF NOT EXISTS idx_loot_events_date ON loot_events(event_date);
+"""
