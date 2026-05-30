@@ -21,29 +21,20 @@
       <span class="panel-caption">{{ filters.active_count }}개 적용 중</span>
     </header>
 
-    <div class="quick-filter-row">
-      {% for item in filters.quick %}
-        <a class="quick-filter {% if item.active %}is-active{% endif %}" href="{{ item.href }}">
-          {{ item.label }}
-        </a>
-      {% endfor %}
-      <a class="quick-filter" href="{{ filters.reset_href }}">초기화</a>
-    </div>
-
     <div class="filter-grid">
-      <label class="field">
+      <label class="field filter-field-date">
         <span>시작일</span>
         <input type="date" name="start_date" value="{{ filters.start_date }}">
       </label>
-      <label class="field">
+      <label class="field filter-field-date">
         <span>종료일</span>
         <input type="date" name="end_date" value="{{ filters.end_date }}">
       </label>
-      <label class="field">
+      <label class="field filter-field-search">
         <span>검색</span>
         <input type="search" name="search" value="{{ filters.search }}" placeholder="유저명, Discord ID, 혈맹">
       </label>
-      <label class="field">
+      <label class="field filter-field-alliance">
         <span>혈맹</span>
         <select name="alliance">
           <option value="">전체 혈맹</option>
@@ -54,7 +45,7 @@
           {% endfor %}
         </select>
       </label>
-      <label class="field">
+      <label class="field filter-field-limit">
         <span>표시 개수</span>
         <select name="limit">
           {% for option in [10, 25, 50, 100, 200] %}
@@ -67,6 +58,15 @@
       <div class="filter-actions">
         <button class="primary-button" type="submit">적용</button>
       </div>
+    </div>
+
+    <div class="quick-filter-row">
+      {% for item in filters.quick %}
+        <a class="quick-filter {% if item.active %}is-active{% endif %}" href="{{ item.href }}">
+          {{ item.label }}
+        </a>
+      {% endfor %}
+      <a class="quick-filter" href="{{ filters.reset_href }}">초기화</a>
     </div>
   </form>
 

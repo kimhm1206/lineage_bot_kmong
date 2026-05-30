@@ -226,13 +226,16 @@ h2 {
 .filter-panel {
   margin-bottom: 18px;
   overflow: hidden;
+  background:
+    linear-gradient(135deg, rgba(20, 108, 148, 0.08), rgba(255, 255, 255, 0.68)),
+    rgba(255, 255, 255, 0.88);
 }
 
 .quick-filter-row {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  padding: 14px 18px 0;
+  padding: 0 18px 18px;
 }
 
 .quick-filter {
@@ -257,19 +260,71 @@ h2 {
 
 .filter-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr)) auto;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
   align-items: end;
   gap: 12px;
   padding: 18px;
 }
 
+.filter-grid .field {
+  min-width: 0;
+  min-height: 86px;
+  padding: 12px;
+  border: 1px solid rgba(217, 224, 232, 0.88);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.filter-grid .field > span {
+  color: #46576b;
+}
+
+.filter-panel input,
+.filter-panel select {
+  width: 100%;
+  min-width: 0;
+  height: 42px;
+  border-color: rgba(174, 188, 205, 0.78);
+  background: rgba(255, 255, 255, 0.94);
+}
+
+.filter-panel input:focus,
+.filter-panel select:focus {
+  border-color: rgba(20, 108, 148, 0.62);
+  box-shadow: 0 0 0 3px rgba(20, 108, 148, 0.12);
+  outline: none;
+}
+
+.filter-field-date {
+  grid-column: span 2;
+}
+
+.filter-field-search {
+  grid-column: span 3;
+}
+
+.filter-field-alliance,
+.filter-field-limit {
+  grid-column: span 2;
+}
+
 .filter-actions {
   display: flex;
+  grid-column: span 1;
+  min-width: 0;
+}
+
+.filter-actions button {
+  width: 100%;
+  min-height: 86px;
+  border-radius: 8px;
+  box-shadow: 0 12px 24px rgba(20, 108, 148, 0.15);
 }
 
 .stat-card,
 .panel,
 .login-panel {
+  min-width: 0;
   background: rgba(255, 255, 255, 0.88);
   border: 1px solid rgba(217, 224, 232, 0.9);
   border-radius: 8px;
@@ -341,6 +396,7 @@ td {
   border-bottom: 1px solid var(--line);
   text-align: left;
   vertical-align: middle;
+  overflow-wrap: anywhere;
 }
 
 th {
@@ -967,6 +1023,26 @@ button:disabled {
   color: var(--text);
 }
 
+@media (max-width: 1040px) {
+  .filter-grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+
+  .filter-field-date,
+  .filter-field-alliance,
+  .filter-field-limit {
+    grid-column: span 2;
+  }
+
+  .filter-field-search {
+    grid-column: span 4;
+  }
+
+  .filter-actions {
+    grid-column: span 2;
+  }
+}
+
 @media (max-width: 780px) {
   .topbar {
     align-items: stretch;
@@ -1018,6 +1094,14 @@ button:disabled {
 
   .filter-grid {
     grid-template-columns: 1fr;
+  }
+
+  .filter-field-date,
+  .filter-field-search,
+  .filter-field-alliance,
+  .filter-field-limit,
+  .filter-actions {
+    grid-column: 1 / -1;
   }
 
   .filter-actions,
