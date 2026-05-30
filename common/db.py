@@ -8,7 +8,7 @@ from urllib.parse import quote
 
 import psycopg2
 from dotenv import load_dotenv
-from psycopg2.extras import RealDictCursor
+from psycopg2.extras import Json, RealDictCursor
 
 
 load_dotenv()
@@ -38,6 +38,159 @@ class GuildSettings:
 class Alliance:
     alliance_id: int
     alliance_name: str
+
+
+class Database:
+    """Small shared database facade used by the bot and the web app."""
+
+    def is_test_mode(self) -> bool:
+        return is_test_database_mode()
+
+    def url(self) -> str:
+        return _database_url()
+
+    def connect(self) -> psycopg2.extensions.connection:
+        return _connect()
+
+    def fetchone(
+        self,
+        sql: str,
+        params: tuple[Any, ...] = (),
+    ) -> dict[str, Any] | None:
+        return _fetchone(sql, params)
+
+    def fetchall(
+        self,
+        sql: str,
+        params: tuple[Any, ...] = (),
+    ) -> list[dict[str, Any]]:
+        return _fetchall(sql, params)
+
+    def init_schema(self) -> None:
+        init_db()
+
+    def ensure_guild(self, guild_id: int) -> None:
+        ensure_guild(guild_id)
+
+    def get_configured_guild_id(self) -> int | None:
+        return get_configured_guild_id()
+
+    def get_settings(self, guild_id: int) -> GuildSettings:
+        return get_settings(guild_id)
+
+    def update_setting(
+        self,
+        guild_id: int,
+        column: str,
+        value: int | None,
+    ) -> GuildSettings:
+        return update_setting(guild_id, column, value)
+
+    def save_attendance_session(
+        self,
+        guild_id: int,
+        started_at: str,
+        ended_at: str,
+        started_by_discord_id: int | None,
+        participants: list[dict[str, Any]],
+    ) -> int:
+        return save_attendance_session(
+            guild_id,
+            started_at,
+            ended_at,
+            started_by_discord_id,
+            participants,
+        )
+
+    def create_alliance(self, alliance_name: str) -> Alliance:
+        return create_alliance(alliance_name)
+
+    def get_or_create_alliance(self, alliance_name: str) -> Alliance:
+        return get_or_create_alliance(alliance_name)
+
+    def get_alliance_names(self) -> list[str]:
+        return get_alliance_names()
+
+    def get_alliance_counts_for_discord_ids(
+        self,
+        discord_ids: list[int],
+    ) -> dict[str, int]:
+        return get_alliance_counts_for_discord_ids(discord_ids)
+
+    def get_attendance_overview(
+        self,
+        guild_id: int | None,
+        start_at: str | None = None,
+        end_at: str | None = None,
+    ) -> dict[str, int | None]:
+        return get_attendance_overview(guild_id, start_at, end_at)
+
+    def get_daily_attendance_stats(
+        self,
+        guild_id: int | None,
+        start_at: str | None = None,
+        end_at: str | None = None,
+    ) -> list[dict[str, Any]]:
+        return get_daily_attendance_stats(guild_id, start_at, end_at)
+
+    def get_alliance_attendance_stats(
+        self,
+        guild_id: int | None,
+        start_at: str | None = None,
+        end_at: str | None = None,
+        search: str | None = None,
+    ) -> list[dict[str, Any]]:
+        return get_alliance_attendance_stats(guild_id, start_at, end_at, search)
+
+    def get_user_attendance_stats(
+        self,
+        guild_id: int | None,
+        start_at: str | None = None,
+        end_at: str | None = None,
+        search: str | None = None,
+        alliance_name: str | None = None,
+        limit: int = 1000,
+    ) -> list[dict[str, Any]]:
+        return get_user_attendance_stats(
+            guild_id,
+            start_at,
+            end_at,
+            search,
+            alliance_name,
+            limit,
+        )
+
+    def get_attendance_export_rows(
+        self,
+        guild_id: int | None,
+        start_at: str | None = None,
+        end_at: str | None = None,
+        search: str | None = None,
+        alliance_name: str | None = None,
+    ) -> list[dict[str, Any]]:
+        return get_attendance_export_rows(
+            guild_id,
+            start_at,
+            end_at,
+            search,
+            alliance_name,
+        )
+
+    def claim_bot_commands(self, limit: int = 5) -> list[dict[str, Any]]:
+        return claim_bot_commands(limit)
+
+    def complete_bot_command(
+        self,
+        command_id: int,
+        result: dict[str, Any] | None = None,
+    ) -> None:
+        complete_bot_command(command_id, result)
+
+    def fail_bot_command(self, command_id: int, error_message: str) -> None:
+        fail_bot_command(command_id, error_message)
+
+
+database = Database()
 
 
 def _database_url() -> str:
@@ -544,6 +697,76 @@ def get_attendance_export_rows(
         }
         for row in rows
     ]
+
+
+def claim_bot_commands(limit: int = 5) -> list[dict[str, Any]]:
+    with _connect() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                WITH picked AS (
+                    SELECT command_id
+                    FROM bot_command_queue
+                    WHERE status = 'pending'
+                    ORDER BY created_at ASC
+                    LIMIT %s
+                    FOR UPDATE SKIP LOCKED
+                )
+                UPDATE bot_command_queue q
+                SET status = 'processing'
+                FROM picked
+                WHERE q.command_id = picked.command_id
+                RETURNING
+                    q.command_id,
+                    q.guild_id,
+                    q.command_type,
+                    q.payload_json,
+                    q.requested_by_discord_id,
+                    q.created_at
+                """,
+                (int(limit),),
+            )
+            rows = cursor.fetchall()
+        connection.commit()
+    return [dict(row) for row in rows]
+
+
+def complete_bot_command(
+    command_id: int,
+    result: dict[str, Any] | None = None,
+) -> None:
+    with _connect() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE bot_command_queue
+                SET
+                    status = 'completed',
+                    result_json = %s,
+                    processed_at = CURRENT_TIMESTAMP,
+                    error_message = NULL
+                WHERE command_id = %s
+                """,
+                (Json(result or {}), command_id),
+            )
+        connection.commit()
+
+
+def fail_bot_command(command_id: int, error_message: str) -> None:
+    with _connect() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE bot_command_queue
+                SET
+                    status = 'failed',
+                    processed_at = CURRENT_TIMESTAMP,
+                    error_message = %s
+                WHERE command_id = %s
+                """,
+                (error_message[:1000], command_id),
+            )
+        connection.commit()
 
 
 def _build_attendance_filter(

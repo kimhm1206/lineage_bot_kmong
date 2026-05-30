@@ -12,12 +12,8 @@ from typing import Any
 
 import discord
 
-from db import (
-    get_or_create_alliance,
-    get_settings,
-    save_attendance_session,
-)
-from utils.panel import (
+from common import database
+from discord_bot.utils.panel import (
     build_attendance_embed,
     clear_attendance_state,
     delete_attendance_message,
@@ -192,7 +188,7 @@ async def start_attendance(
         if bool(state.get("active")):
             return False, "이미 출석이 진행 중입니다."
 
-        settings = get_settings(guild.id)
+        settings = database.get_settings(guild.id)
         if settings.attendance_voice_channel_id is None:
             return False, "출석 음성채널을 먼저 설정해주세요."
 
@@ -287,7 +283,7 @@ async def register_attendance(
             f"출석 요청이 너무 빠릅니다. `{cooldown_remaining}`초 후 다시 시도해주세요.",
         )
 
-    settings = get_settings(guild_id)
+    settings = database.get_settings(guild_id)
     voice_channel_id = settings.attendance_voice_channel_id
     current_voice = getattr(member.voice, "channel", None)
     current_voice_id = getattr(current_voice, "id", None)
@@ -354,7 +350,7 @@ async def persist_attendance_snapshot(
         )
 
     return await asyncio.to_thread(
-        save_attendance_session,
+        database.save_attendance_session,
         guild_id=snapshot.guild_id,
         started_at=snapshot.started_at,
         ended_at=snapshot.ended_at,
@@ -372,7 +368,7 @@ async def send_attendance_summary(
     stopped_by_mention: str,
     save_status: str | None,
 ) -> None:
-    settings = get_settings(guild.id)
+    settings = database.get_settings(guild.id)
     if settings.log_channel_id is None:
         return
 
@@ -456,7 +452,7 @@ def sync_voice_entry_time(
     before_channel_id: int | None,
     after_channel_id: int | None,
 ) -> None:
-    settings = get_settings(guild_id)
+    settings = database.get_settings(guild_id)
     tracked_channel_id = settings.attendance_voice_channel_id
     if tracked_channel_id is None:
         clear_voice_entry_time(bot, guild_id, member_id)
@@ -472,7 +468,7 @@ def sync_voice_entry_time(
 
 
 def seed_voice_entry_times(bot: discord.Bot, guild: discord.Guild) -> None:
-    settings = get_settings(guild.id)
+    settings = database.get_settings(guild.id)
     tracked_channel_id = settings.attendance_voice_channel_id
     if tracked_channel_id is None:
         return
@@ -617,7 +613,7 @@ def _resolve_alliance_id_from_nickname(nickname: str) -> int | None:
     if not alliance_name:
         return None
 
-    alliance = get_or_create_alliance(alliance_name)
+    alliance = database.get_or_create_alliance(alliance_name)
     return alliance.alliance_id
 
 

@@ -2,10 +2,10 @@
 
 import discord
 
-from db import update_setting
-from utils.attendance import seed_voice_entry_times
-from utils.guild import is_admin_member, is_supported_guild
-from utils.panel import update_admin_panel
+from common import database
+from discord_bot.utils.attendance import seed_voice_entry_times
+from discord_bot.utils.guild import is_admin_member, is_supported_guild
+from discord_bot.utils.panel import update_admin_panel
 
 
 VOICE_CHANNELS_PER_SELECT = 25
@@ -234,7 +234,7 @@ class VoiceChannelSelect(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         channel = self.channel_map[self.values[0]]
-        update_setting(self.guild_id, "attendance_voice_channel_id", channel.id)
+        database.update_setting(self.guild_id, "attendance_voice_channel_id", channel.id)
 
         await interaction.response.edit_message(
             content=f"출석 음성채널이 {channel.mention}으로 설정되었습니다.",
@@ -371,7 +371,7 @@ class LogChannelSelect(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         channel = self.channel_map[self.values[0]]
-        update_setting(self.guild_id, "log_channel_id", channel.id)
+        database.update_setting(self.guild_id, "log_channel_id", channel.id)
 
         await interaction.response.edit_message(
             content=f"로그채널이 {channel.mention}으로 설정되었습니다.",
@@ -441,7 +441,7 @@ class TimerSettingModal(discord.ui.Modal):
             )
             return
 
-        update_setting(self.guild_id, self.setting_key, timer_value)
+        database.update_setting(self.guild_id, self.setting_key, timer_value)
         await interaction.response.send_message(
             (
                 f"{self.success_label}가 `{timer_value}`초로 설정되었습니다. "

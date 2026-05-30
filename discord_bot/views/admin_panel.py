@@ -2,13 +2,13 @@
 
 import discord
 
-from utils.attendance import (
+from discord_bot.utils.attendance import (
     build_record_prompt_view,
     start_attendance,
     stop_attendance,
 )
-from utils.guild import is_admin_member, is_supported_guild
-from utils.panel import get_attendance_state
+from discord_bot.utils.guild import is_admin_member, is_supported_guild
+from discord_bot.utils.panel import get_attendance_state
 
 
 class AdminPanelView(discord.ui.View):
@@ -92,7 +92,7 @@ class AdminPanelView(discord.ui.View):
     async def settings_button(
         self, button: discord.ui.Button, interaction: discord.Interaction
     ) -> None:
-        from views.settings import SettingsMenuView
+        from discord_bot.views.settings import SettingsMenuView
 
         await interaction.response.send_message(
             "변경할 설정 항목을 선택해주세요.",
@@ -109,7 +109,7 @@ class AdminPanelView(discord.ui.View):
     async def stats_button(
         self, button: discord.ui.Button, interaction: discord.Interaction
     ) -> None:
-        from views.db_check import (
+        from discord_bot.views.db_check import (
             StatisticsDashboardView,
             build_statistics_dashboard_embed,
         )

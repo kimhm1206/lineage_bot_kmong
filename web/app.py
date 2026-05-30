@@ -15,7 +15,7 @@ from fastapi.templating import Jinja2Templates
 from psycopg2.extras import Json
 from starlette.middleware.sessions import SessionMiddleware
 
-import db
+from common import database
 
 
 load_dotenv()
@@ -111,7 +111,7 @@ def _load_accessible_servers(discord_guilds: list[dict[str, Any]]) -> list[dict[
     if not guild_ids:
         return []
 
-    rows = db._fetchall(
+    rows = database.fetchall(
         """
         SELECT
             g.guild_id,
@@ -213,7 +213,7 @@ def _render(
 
 
 def _latest_attendance_sessions(guild_id: int, limit: int = 20) -> list[dict[str, Any]]:
-    rows = db._fetchall(
+    rows = database.fetchall(
         """
         SELECT
             s.attendance_id,
@@ -247,7 +247,7 @@ def _latest_attendance_sessions(guild_id: int, limit: int = 20) -> list[dict[str
 
 
 def _latest_command_queue(guild_id: int, limit: int = 10) -> list[dict[str, Any]]:
-    rows = db._fetchall(
+    rows = database.fetchall(
         """
         SELECT
             command_id,
@@ -283,7 +283,7 @@ def _enqueue_attendance_command(
     command_type: str,
     requested_by_discord_id: int,
 ) -> None:
-    with db._connect() as connection:
+    with database.connect() as connection:
         with connection.cursor() as cursor:
             cursor.execute(
                 """
@@ -415,10 +415,10 @@ def dashboard(
         return _auth_redirect()
 
     selected_guild_id = int(auth["selected_guild_id"])
-    overview = db.get_attendance_overview(selected_guild_id)
-    daily_stats = db.get_daily_attendance_stats(selected_guild_id)[:14]
-    top_users = db.get_user_attendance_stats(selected_guild_id, limit=10)
-    alliance_stats = db.get_alliance_attendance_stats(selected_guild_id)
+    overview = database.get_attendance_overview(selected_guild_id)
+    daily_stats = database.get_daily_attendance_stats(selected_guild_id)[:14]
+    top_users = database.get_user_attendance_stats(selected_guild_id, limit=10)
+    alliance_stats = database.get_alliance_attendance_stats(selected_guild_id)
 
     return _render(
         request,

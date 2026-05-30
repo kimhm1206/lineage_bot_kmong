@@ -7,11 +7,11 @@ from pathlib import Path
 
 import discord
 
-from db import GuildSettings, get_settings
+from common.db import GuildSettings, database
 
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-DATA_DIR = BASE_DIR / "data"
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DATA_DIR = PROJECT_ROOT / "data"
 UI_STATE_PATH = DATA_DIR / "ui_state.json"
 KST = timezone(timedelta(hours=9))
 VERSION_LABEL = "Ver1.3"
@@ -77,13 +77,13 @@ def build_attendance_embed(
 
 
 async def rebuild_admin_panel(bot: discord.Bot, guild_id: int) -> discord.Message | None:
-    from views.admin_panel import AdminPanelView
+    from discord_bot.views.admin_panel import AdminPanelView
 
     guild = bot.get_guild(guild_id)
     if guild is None:
         return None
 
-    settings = get_settings(guild_id)
+    settings = database.get_settings(guild_id)
     if settings.admin_channel_id is None:
         _clear_panel_state(bot, guild_id)
         return None
@@ -104,13 +104,13 @@ async def rebuild_admin_panel(bot: discord.Bot, guild_id: int) -> discord.Messag
 
 
 async def update_admin_panel(bot: discord.Bot, guild_id: int) -> discord.Message | None:
-    from views.admin_panel import AdminPanelView
+    from discord_bot.views.admin_panel import AdminPanelView
 
     guild = bot.get_guild(guild_id)
     if guild is None:
         return None
 
-    settings = get_settings(guild_id)
+    settings = database.get_settings(guild_id)
     if settings.admin_channel_id is None:
         _clear_panel_state(bot, guild_id)
         return None

@@ -3,8 +3,17 @@
   "tasks": [
     {
       "label": "starttest",
+      "dependsOrder": "parallel",
+      "dependsOn": [
+        "starttest:web",
+        "starttest:bot"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "starttest:web",
       "type": "shell",
-      "command": "${workspaceFolder}\\venv\\Scripts\\python.exe",
+      "command": "${workspaceFolder}\\web\\venv\\Scripts\\python.exe",
       "args": [
         "-m",
         "uvicorn",
@@ -14,6 +23,23 @@
         "--port",
         "8000",
         "--reload"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "LINEAGE_DB_TARGET": "test"
+        }
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "starttest:bot",
+      "type": "shell",
+      "command": "${workspaceFolder}\\discord_bot\\venv\\Scripts\\python.exe",
+      "args": [
+        "-m",
+        "discord_bot.main",
+        "--test"
       ],
       "options": {
         "cwd": "${workspaceFolder}",

@@ -1,0 +1,6 @@
+-r ../common/requirements.txt
+fastapi
+uvicorn
+jinja2
+itsdangerous
+requests

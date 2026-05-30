@@ -5,16 +5,21 @@ from datetime import datetime, timedelta, timezone
 import discord
 from dotenv import load_dotenv
 
-from db import get_settings, get_user_attendance_stats, init_db, update_setting
-from utils.attendance import (
+from common import database
+from discord_bot.utils.attendance import (
     AttendanceActionView,
     register_attendance,
     seed_voice_entry_times,
     sync_voice_entry_time,
 )
-from utils.guild import is_admin_member, is_supported_guild
-from utils.panel import clear_old_admin_panel, rebuild_admin_panel, update_admin_panel
-from views.admin_panel import AdminPanelView
+from discord_bot.utils.guild import is_admin_member, is_supported_guild
+from discord_bot.utils.panel import (
+    clear_old_admin_panel,
+    rebuild_admin_panel,
+    update_admin_panel,
+)
+from discord_bot.queue import start_command_queue_worker
+from discord_bot.views.admin_panel import AdminPanelView
 
 
 load_dotenv()
@@ -36,6 +41,7 @@ bot.attendance_locks = {}
 bot.voice_entry_times_by_guild = {}
 bot.commands_synced = False
 bot.persistent_views_registered = False
+bot.command_queue_task = None
 bot.runtime_label = (
     f"{datetime.now(timezone(timedelta(hours=9))).strftime('%Y-%m-%d %H:%M')} "
     "구동 Ver1.3"
@@ -51,6 +57,8 @@ async def on_ready() -> None:
     if not bot.commands_synced:
         await bot.sync_commands()
         bot.commands_synced = True
+
+    start_command_queue_worker(bot)
 
     for guild in bot.guilds:
         seed_voice_entry_times(bot, guild)
@@ -89,10 +97,10 @@ async def set_admin_channel(
 
     await ctx.defer(ephemeral=True)
 
-    previous_settings = get_settings(guild.id)
+    previous_settings = database.get_settings(guild.id)
     previous_admin_channel_id = previous_settings.admin_channel_id
 
-    update_setting(guild.id, "admin_channel_id", channel.id)
+    database.update_setting(guild.id, "admin_channel_id", channel.id)
     await clear_old_admin_panel(bot, guild, previous_admin_channel_id)
     await rebuild_admin_panel(bot, guild.id)
 
@@ -141,7 +149,7 @@ async def weekly_ranking(ctx: discord.ApplicationContext) -> None:
         microsecond=0,
     )
     rows = await asyncio.to_thread(
-        get_user_attendance_stats,
+        database.get_user_attendance_stats,
         guild.id,
         start.strftime("%Y-%m-%d %H:%M:%S"),
         now.strftime("%Y-%m-%d %H:%M:%S"),
@@ -219,7 +227,7 @@ def _clip_text(value: str, limit: int) -> str:
 
 
 def main() -> None:
-    init_db()
+    database.init_schema()
     bot.run(TOKEN)
 
 

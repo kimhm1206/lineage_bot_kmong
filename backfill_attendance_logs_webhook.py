@@ -9,7 +9,7 @@ from typing import Any
 
 import requests
 
-from db import _fetchall
+from common import database
 
 TIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 EMBED_DESCRIPTION_LIMIT = 4096
@@ -78,7 +78,7 @@ def main() -> None:
 
 
 def load_attendance_records() -> list[AttendanceRecord]:
-    rows = _fetchall(
+    rows = database.fetchall(
         """
         SELECT
             s.attendance_id,

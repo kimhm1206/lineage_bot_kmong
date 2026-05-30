@@ -12,7 +12,7 @@ from psycopg2.extras import RealDictCursor, execute_values
 BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
-from db import _database_url, init_db
+from common import database
 
 
 DEFAULT_SQLITE_PATH = BASE_DIR / "data" / "lineage_bot.sqlite3"
@@ -48,7 +48,7 @@ def main() -> None:
     if args.dry_run:
         return
 
-    init_db()
+    database.init_schema()
     migrate_to_postgres(source)
     print("[done] SQLite data migrated to PostgreSQL.")
 
@@ -92,7 +92,7 @@ def print_source_summary(source: dict[str, list[dict[str, Any]]]) -> None:
 
 def migrate_to_postgres(source: dict[str, list[dict[str, Any]]]) -> None:
     connection = psycopg2.connect(
-        _database_url(),
+        database.url(),
         connect_timeout=10,
         cursor_factory=RealDictCursor,
     )

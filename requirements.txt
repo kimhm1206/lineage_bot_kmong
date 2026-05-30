@@ -1,8 +1,2 @@
-py-cord
-python-dotenv
-requests
-psycopg2-binary
-fastapi
-uvicorn
-jinja2
-itsdangerous
+-r discord_bot/requirements.txt
+-r web/requirements.txt

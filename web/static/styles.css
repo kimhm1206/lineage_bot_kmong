@@ -303,6 +303,11 @@ button,
   color: #8a5a00;
 }
 
+.status-processing {
+  background: #e7f2ff;
+  color: #0b5cab;
+}
+
 .status-completed {
   background: #e8f6f0;
   color: var(--green);
