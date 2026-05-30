@@ -81,6 +81,7 @@ def init_db() -> None:
         with connection.cursor() as cursor:
             cursor.execute(SCHEMA_SQL)
             _ensure_postgres_columns(cursor)
+            _drop_redundant_timestamp_columns(cursor)
             _seed_default_alliances(cursor)
         connection.commit()
 
@@ -559,7 +560,6 @@ def _ensure_postgres_columns(cursor: psycopg2.extensions.cursor) -> None:
         "ALTER TABLE alliances ADD COLUMN IF NOT EXISTS color TEXT",
         "ALTER TABLE alliances ADD COLUMN IF NOT EXISTS sort_order INTEGER",
         "ALTER TABLE alliances ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE",
-        "ALTER TABLE alliances ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP",
         "ALTER TABLE alliances ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS game_nickname TEXT",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS class_name TEXT",
@@ -568,12 +568,34 @@ def _ensure_postgres_columns(cursor: psycopg2.extensions.cursor) -> None:
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS phone TEXT",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS memo TEXT",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE",
-        "ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP",
         "ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP",
     ]
     for sql in column_sql:
         cursor.execute(sql)
+
+
+def _drop_redundant_timestamp_columns(cursor: psycopg2.extensions.cursor) -> None:
+    redundant_columns = {
+        "guilds": ("created_at",),
+        "alliances": ("created_at",),
+        "users": ("created_at",),
+        "attendance_sessions": ("created_at",),
+        "attendance_entries": ("created_at",),
+        "attendance_live_sessions": ("created_at", "updated_at"),
+        "attendance_live_participants": ("created_at",),
+        "bosses": ("created_at",),
+        "boss_spawn_schedules": ("created_at",),
+        "boss_hunt_sessions": ("created_at",),
+        "boss_hunt_participants": ("created_at",),
+        "boss_attendance_snapshots": ("created_at",),
+        "items": ("created_at",),
+        "loot_events": ("created_at",),
+        "member_payout_groups": ("created_at",),
+    }
+    for table_name, column_names in redundant_columns.items():
+        for column_name in column_names:
+            cursor.execute(f"ALTER TABLE {table_name} DROP COLUMN IF EXISTS {column_name}")
 
 
 def _seed_default_alliances(cursor: psycopg2.extensions.cursor) -> None:
@@ -595,8 +617,7 @@ def _seed_default_alliances(cursor: psycopg2.extensions.cursor) -> None:
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS guilds (
-    guild_id BIGINT PRIMARY KEY,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    guild_id BIGINT PRIMARY KEY
 );
 
 CREATE TABLE IF NOT EXISTS guild_settings (
@@ -617,7 +638,6 @@ CREATE TABLE IF NOT EXISTS alliances (
     color TEXT,
     sort_order INTEGER,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -633,7 +653,6 @@ CREATE TABLE IF NOT EXISTS users (
     phone TEXT,
     memo TEXT,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -642,14 +661,12 @@ CREATE TABLE IF NOT EXISTS attendance_sessions (
     guild_id BIGINT NOT NULL REFERENCES guilds(guild_id) ON DELETE CASCADE,
     started_at TEXT NOT NULL,
     ended_at TEXT NOT NULL,
-    started_by_discord_id BIGINT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    started_by_discord_id BIGINT
 );
 
 CREATE TABLE IF NOT EXISTS attendance_entries (
     attendance_id BIGINT NOT NULL REFERENCES attendance_sessions(attendance_id) ON DELETE CASCADE,
     user_id BIGINT NOT NULL REFERENCES users(user_id),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (attendance_id, user_id)
 );
 
@@ -685,9 +702,7 @@ CREATE TABLE IF NOT EXISTS attendance_live_sessions (
     started_at TEXT NOT NULL,
     expires_at TEXT,
     ended_at TEXT,
-    status TEXT NOT NULL DEFAULT 'active',
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    status TEXT NOT NULL DEFAULT 'active'
 );
 
 CREATE TABLE IF NOT EXISTS attendance_live_participants (
@@ -698,7 +713,6 @@ CREATE TABLE IF NOT EXISTS attendance_live_participants (
     joined_voice_at TEXT,
     attended_at TEXT NOT NULL,
     source TEXT NOT NULL DEFAULT 'discord',
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (live_session_id, discord_id)
 );
 
@@ -708,7 +722,6 @@ CREATE TABLE IF NOT EXISTS bosses (
     alias TEXT,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     sort_order INTEGER,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -717,8 +730,7 @@ CREATE TABLE IF NOT EXISTS boss_spawn_schedules (
     boss_id BIGINT NOT NULL REFERENCES bosses(boss_id) ON DELETE CASCADE,
     time_label TEXT NOT NULL,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
-    memo TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    memo TEXT
 );
 
 CREATE TABLE IF NOT EXISTS boss_hunt_sessions (
@@ -728,8 +740,7 @@ CREATE TABLE IF NOT EXISTS boss_hunt_sessions (
     hunt_at TEXT NOT NULL,
     title TEXT,
     source TEXT NOT NULL DEFAULT 'web',
-    memo TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    memo TEXT
 );
 
 CREATE TABLE IF NOT EXISTS boss_hunt_participants (
@@ -738,7 +749,6 @@ CREATE TABLE IF NOT EXISTS boss_hunt_participants (
     discord_id BIGINT,
     alliance_id BIGINT REFERENCES alliances(alliance_id),
     attended_at TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (hunt_id, user_id)
 );
 
@@ -746,8 +756,7 @@ CREATE TABLE IF NOT EXISTS boss_attendance_snapshots (
     snapshot_id BIGSERIAL PRIMARY KEY,
     period_start TEXT NOT NULL,
     period_end TEXT NOT NULL,
-    total_hunts INTEGER NOT NULL DEFAULT 0,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    total_hunts INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS boss_attendance_snapshot_rows (
@@ -770,7 +779,6 @@ CREATE TABLE IF NOT EXISTS items (
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     sort_order INTEGER,
     memo TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -817,7 +825,6 @@ CREATE TABLE IF NOT EXISTS loot_events (
     title TEXT,
     memo TEXT,
     created_by_discord_id BIGINT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -859,7 +866,6 @@ CREATE TABLE IF NOT EXISTS distribution_batches (
     fee_rate NUMERIC(8, 6) NOT NULL DEFAULT 0,
     fee_amount NUMERIC(18, 2) NOT NULL DEFAULT 0,
     status TEXT NOT NULL DEFAULT 'draft',
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     closed_at TEXT
 );
 
@@ -894,8 +900,7 @@ CREATE TABLE IF NOT EXISTS member_payout_groups (
     fee_rate NUMERIC(8, 6) NOT NULL DEFAULT 0,
     fee_amount NUMERIC(18, 2) NOT NULL DEFAULT 0,
     per_member_amount NUMERIC(18, 2) NOT NULL DEFAULT 0,
-    status TEXT NOT NULL DEFAULT 'draft',
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    status TEXT NOT NULL DEFAULT 'draft'
 );
 
 CREATE TABLE IF NOT EXISTS member_payout_items (
