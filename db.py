@@ -711,6 +711,35 @@ CREATE TABLE IF NOT EXISTS bot_command_queue (
     error_message TEXT
 );
 
+CREATE TABLE IF NOT EXISTS scheduled_report_settings (
+    report_setting_id BIGSERIAL PRIMARY KEY,
+    guild_id BIGINT NOT NULL REFERENCES guilds(guild_id) ON DELETE CASCADE,
+    created_by_discord_id BIGINT NOT NULL,
+    updated_by_discord_id BIGINT,
+    report_name TEXT,
+    frequency TEXT NOT NULL,
+    period_type TEXT NOT NULL,
+    subject_type TEXT NOT NULL,
+    result_type TEXT NOT NULL,
+    channel_id BIGINT NOT NULL,
+    channel_name TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'off',
+    last_sent_at TEXT,
+    next_run_at TEXT,
+    memo TEXT,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT chk_scheduled_report_frequency
+        CHECK (frequency IN ('daily', 'every_3_days', 'weekly')),
+    CONSTRAINT chk_scheduled_report_period_type
+        CHECK (period_type IN ('recent_7_days', 'yesterday', 'recent_3_days')),
+    CONSTRAINT chk_scheduled_report_subject_type
+        CHECK (subject_type IN ('user', 'alliance')),
+    CONSTRAINT chk_scheduled_report_result_type
+        CHECK (result_type IN ('ranking', 'all')),
+    CONSTRAINT chk_scheduled_report_status
+        CHECK (status IN ('on', 'off', 'delete'))
+);
+
 CREATE TABLE IF NOT EXISTS attendance_live_sessions (
     live_session_id BIGSERIAL PRIMARY KEY,
     guild_id BIGINT NOT NULL REFERENCES guilds(guild_id) ON DELETE CASCADE,
@@ -992,6 +1021,10 @@ CREATE INDEX IF NOT EXISTS idx_attendance_sessions_guild_started ON attendance_s
 CREATE INDEX IF NOT EXISTS idx_attendance_entries_user_id ON attendance_entries(user_id);
 CREATE INDEX IF NOT EXISTS idx_attendance_entries_attendance_id ON attendance_entries(attendance_id);
 CREATE INDEX IF NOT EXISTS idx_bot_command_queue_status ON bot_command_queue(status, created_at);
+CREATE INDEX IF NOT EXISTS idx_scheduled_report_settings_guild_status
+ON scheduled_report_settings(guild_id, status);
+CREATE INDEX IF NOT EXISTS idx_scheduled_report_settings_next_run
+ON scheduled_report_settings(status, next_run_at);
 CREATE INDEX IF NOT EXISTS idx_attendance_live_sessions_guild_status ON attendance_live_sessions(guild_id, status);
 CREATE INDEX IF NOT EXISTS idx_items_name ON items(item_name);
 CREATE INDEX IF NOT EXISTS idx_loot_events_date ON loot_events(event_date);
