@@ -37,6 +37,10 @@ SESSION_SECRET = os.getenv("WEB_SESSION_SECRET", "lineage-local-web-session")
 DISCORD_BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN", "")
 GLOBAL_OWNER_DISCORD_ID = os.getenv("GLOBAL_OWNER_DISCORD_ID") or "238978205078388747"
 DISCORD_ADMINISTRATOR_PERMISSION = 0x8
+DISCORD_MANAGE_GUILD_PERMISSION = 0x20
+DISCORD_WEB_ADMIN_PERMISSION_MASK = (
+    DISCORD_ADMINISTRATOR_PERMISSION | DISCORD_MANAGE_GUILD_PERMISSION
+)
 LOG_TABS = (
     {"value": "all", "label": "전체"},
     {"value": "attendance", "label": "출석"},
@@ -171,10 +175,40 @@ def _server_role(
         return "owner"
     if discord_guild and (
         bool(discord_guild.get("owner"))
-        or bool(_discord_permissions(discord_guild) & DISCORD_ADMINISTRATOR_PERMISSION)
+        or bool(_discord_permissions(discord_guild) & DISCORD_WEB_ADMIN_PERMISSION_MASK)
     ):
         return "admin"
     return "user"
+
+
+def _role_from_bot_member_permissions(
+    guild_id: int,
+    discord_user_id: str,
+) -> str | None:
+    if str(discord_user_id) == GLOBAL_OWNER_DISCORD_ID:
+        return "owner"
+    if not DISCORD_BOT_TOKEN:
+        return None
+
+    try:
+        guild = _discord_bot_get(f"/guilds/{guild_id}")
+        if str(guild.get("owner_id")) == str(discord_user_id):
+            return "admin"
+
+        member = _discord_bot_get(f"/guilds/{guild_id}/members/{discord_user_id}")
+        roles = _discord_bot_get(f"/guilds/{guild_id}/roles")
+    except Exception:
+        return None
+
+    member_role_ids = {str(role_id) for role_id in member.get("roles", [])}
+    member_role_ids.add(str(guild_id))
+    permissions = 0
+    for role in roles:
+        if str(role.get("id")) not in member_role_ids:
+            continue
+        permissions |= _discord_permissions(role)
+
+    return "admin" if permissions & DISCORD_WEB_ADMIN_PERMISSION_MASK else "user"
 
 
 def _load_accessible_servers(
@@ -244,6 +278,8 @@ def _load_accessible_servers(
                 "name": str(
                     (discord_guild or {}).get("name") or f"Discord 서버 {guild_id}"
                 ),
+                "permissions": _discord_permissions(discord_guild),
+                "discord_owner": bool((discord_guild or {}).get("owner")),
                 "role": role,
                 "can_manage": role in {"admin", "owner"},
                 "session_count": int(row["session_count"] or 0),
@@ -273,11 +309,31 @@ def _auth_context_from_session(
     if selected_guild_id not in allowed_servers:
         selected_guild_id = str(servers[0]["guild_id"])
 
+    selected_server = dict(allowed_servers[selected_guild_id])
+    verified_role = _role_from_bot_member_permissions(
+        int(selected_guild_id),
+        str(user["id"]),
+    )
+    if verified_role is None:
+        verified_role = _server_role(
+            str(user["id"]),
+            {
+                "owner": selected_server.get("discord_owner"),
+                "permissions": selected_server.get("permissions"),
+            },
+        )
+    selected_server["role"] = verified_role
+    selected_server["can_manage"] = verified_role in {"admin", "owner"}
+    returned_servers = [
+        selected_server if str(server["guild_id"]) == selected_guild_id else server
+        for server in servers
+    ]
+
     return {
         "user": user,
-        "servers": servers,
+        "servers": returned_servers,
         "selected_guild_id": selected_guild_id,
-        "selected_server": allowed_servers[selected_guild_id],
+        "selected_server": selected_server,
     }
 
 
