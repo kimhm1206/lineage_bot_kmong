@@ -645,6 +645,26 @@ button,
   line-height: 1.7;
 }
 
+.login-form {
+  display: grid;
+  gap: 14px;
+}
+
+.remember-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.remember-row input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--discord);
+}
+
 .discord-login-button {
   display: inline-flex;
   align-items: center;

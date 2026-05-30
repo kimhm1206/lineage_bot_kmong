@@ -36,10 +36,19 @@
         <div class="alert error">{{ error_message }}</div>
       {% endif %}
 
-      <a class="discord-login-button" href="/auth/discord/login">
-        <span class="discord-login-icon" aria-hidden="true">D</span>
-        Discord로 로그인
-      </a>
+      <form class="login-form" method="get" action="/auth/discord/login">
+        {% if next_url %}
+          <input type="hidden" name="next" value="{{ next_url }}">
+        {% endif %}
+        <label class="remember-row">
+          <input type="checkbox" name="remember_me" value="1" checked>
+          <span>Remember me: 이 PC에서 로그인 유지</span>
+        </label>
+        <button class="discord-login-button" type="submit">
+          <span class="discord-login-icon" aria-hidden="true">D</span>
+          Discord로 로그인
+        </button>
+      </form>
 
       {% if not config_ready %}
         <p class="login-config-note">

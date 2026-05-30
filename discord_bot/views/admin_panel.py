@@ -1,4 +1,7 @@
-﻿from __future__ import annotations
+from __future__ import annotations
+
+import os
+from urllib.parse import urlencode
 
 import discord
 
@@ -17,18 +20,20 @@ class AdminPanelView(discord.ui.View):
         self.bot = bot
         self.guild_id = guild_id
         self._apply_attendance_button_state()
+        self.add_item(
+            discord.ui.Button(
+                label="통계",
+                style=discord.ButtonStyle.link,
+                url=_build_web_statistics_url(guild_id),
+                row=0,
+            )
+        )
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         guild = interaction.guild
         if guild is None or not is_supported_guild(self.bot, guild.id):
             await _safe_response(interaction, "권한이 없습니다.")
             return False
-
-        custom_id = None
-        if isinstance(interaction.data, dict):
-            custom_id = interaction.data.get("custom_id")
-        if custom_id == "attendance:stats":
-            return True
 
         if not is_admin_member(interaction.user):
             await _safe_response(interaction, "권한이 없습니다.")
@@ -100,30 +105,6 @@ class AdminPanelView(discord.ui.View):
             ephemeral=True,
         )
 
-    @discord.ui.button(
-        label="통계",
-        style=discord.ButtonStyle.secondary,
-        custom_id="attendance:stats",
-        row=0,
-    )
-    async def stats_button(
-        self, button: discord.ui.Button, interaction: discord.Interaction
-    ) -> None:
-        from discord_bot.views.db_check import (
-            StatisticsDashboardView,
-            build_statistics_dashboard_embed,
-        )
-
-        guild = interaction.guild
-        if guild is None:
-            await _safe_response(interaction, "서버에서만 사용할 수 있습니다.")
-            return
-
-        await interaction.response.send_message(
-            embed=build_statistics_dashboard_embed(guild, self.guild_id),
-            view=StatisticsDashboardView(self.bot, self.guild_id),
-            ephemeral=True,
-        )
 
 async def _safe_response(
     interaction: discord.Interaction, message: str
@@ -132,3 +113,8 @@ async def _safe_response(
         await interaction.followup.send(message, ephemeral=True)
     else:
         await interaction.response.send_message(message, ephemeral=True)
+
+
+def _build_web_statistics_url(guild_id: int) -> str:
+    base_url = os.getenv("WEB_BASE_URL", "http://localhost:8000").rstrip("/")
+    return f"{base_url}/dashboard?{urlencode({'guild_id': str(guild_id)})}"

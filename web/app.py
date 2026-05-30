@@ -9,14 +9,14 @@ from urllib.parse import urlencode
 
 import requests
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from psycopg2.extras import Json
-from starlette.middleware.sessions import SessionMiddleware
 
 from common import database
+from web.session import RememberMeSessionMiddleware
 
 
 load_dotenv()
@@ -37,7 +37,7 @@ SESSION_SECRET = os.getenv("WEB_SESSION_SECRET", "lineage-local-web-session")
 
 app = FastAPI(title="Lineage Ops Web")
 app.add_middleware(
-    SessionMiddleware,
+    RememberMeSessionMiddleware,
     secret_key=SESSION_SECRET,
     same_site="lax",
     https_only=False,
@@ -202,8 +202,23 @@ def _auth_context(
     return _auth_context_from_session(request.session, guild_id)
 
 
-def _auth_redirect() -> RedirectResponse:
-    return RedirectResponse("/login", status_code=303)
+def _safe_redirect_path(value: str | None) -> str | None:
+    if not value or not value.startswith("/") or value.startswith("//"):
+        return None
+    return value
+
+
+def _request_path_with_query(request: Request) -> str:
+    path = request.url.path
+    return f"{path}?{request.url.query}" if request.url.query else path
+
+
+def _auth_redirect(request: Request) -> RedirectResponse:
+    next_url = _request_path_with_query(request)
+    return RedirectResponse(
+        f"/login?{urlencode({'next': next_url})}",
+        status_code=303,
+    )
 
 
 def _render(
@@ -343,21 +358,30 @@ def index(request: Request):
 
 
 @app.get("/login", response_class=HTMLResponse)
-def login(request: Request):
+def login(
+    request: Request,
+    next_url: str | None = Query(None, alias="next"),
+):
+    redirect_to = _safe_redirect_path(next_url)
     if _auth_context(request):
-        return RedirectResponse("/attendance", status_code=303)
+        return RedirectResponse(redirect_to or "/attendance", status_code=303)
     return _render(
         request,
         "login.html",
         {
             "config_ready": _oauth_ready(),
             "redirect_uri": DISCORD_REDIRECT_URI,
+            "next_url": redirect_to or "",
         },
     )
 
 
 @app.get("/auth/discord/login")
-def discord_login(request: Request):
+def discord_login(
+    request: Request,
+    remember_me: str | None = None,
+    next_url: str | None = Query(None, alias="next"),
+):
     if not _oauth_ready():
         return _render(
             request,
@@ -365,12 +389,17 @@ def discord_login(request: Request):
             {
                 "config_ready": False,
                 "redirect_uri": DISCORD_REDIRECT_URI,
+                "next_url": _safe_redirect_path(next_url) or "",
                 "error_message": "Discord OAuth 환경변수가 아직 설정되지 않았습니다.",
             },
             status_code=500,
         )
     state = secrets.token_urlsafe(32)
     request.session["oauth_state"] = state
+    request.session["remember_me"] = remember_me == "1"
+    redirect_to = _safe_redirect_path(next_url)
+    if redirect_to:
+        request.session["login_next"] = redirect_to
     return RedirectResponse(_discord_authorize_url(state), status_code=303)
 
 
@@ -426,7 +455,8 @@ def discord_callback(
 
     request.session["discord_user"] = _normalize_discord_user(discord_user)
     request.session["servers"] = servers
-    return RedirectResponse("/attendance", status_code=303)
+    redirect_to = _safe_redirect_path(request.session.pop("login_next", None))
+    return RedirectResponse(redirect_to or "/attendance", status_code=303)
 
 
 @app.get("/logout")
@@ -442,7 +472,7 @@ def dashboard(
 ):
     auth = _auth_context(request, guild_id)
     if not auth:
-        return _auth_redirect()
+        return _auth_redirect(request)
 
     selected_guild_id = int(auth["selected_guild_id"])
     overview = database.get_attendance_overview(selected_guild_id)
@@ -472,7 +502,7 @@ def attendance(
 ):
     auth = _auth_context(request, guild_id)
     if not auth:
-        return _auth_redirect()
+        return _auth_redirect(request)
 
     selected_guild_id = int(auth["selected_guild_id"])
     return _render(
@@ -496,7 +526,7 @@ def start_attendance(
 ):
     auth = _auth_context(request, guild_id)
     if not auth:
-        return _auth_redirect()
+        return _auth_redirect(request)
 
     selected_guild_id = int(auth["selected_guild_id"])
     user_id = int(auth["user"]["id"])
@@ -514,7 +544,7 @@ def stop_attendance(
 ):
     auth = _auth_context(request, guild_id)
     if not auth:
-        return _auth_redirect()
+        return _auth_redirect(request)
 
     selected_guild_id = int(auth["selected_guild_id"])
     user_id = int(auth["user"]["id"])
