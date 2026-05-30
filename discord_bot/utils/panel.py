@@ -24,7 +24,7 @@ def build_admin_panel_embed(
 ) -> discord.Embed:
     embed = discord.Embed(
         title="출석 패널",
-        description="출석 시스템 설정 통계를 관리합니다.",
+        description="출석 시작은 여기서, 설정과 통계는 웹에서 관리합니다.",
         color=discord.Color.blurple(),
     )
     embed.add_field(

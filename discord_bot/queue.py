@@ -13,6 +13,7 @@ from discord_bot.utils.attendance import (
     start_attendance,
     stop_attendance,
 )
+from discord_bot.utils.panel import clear_old_admin_panel, rebuild_admin_panel
 
 
 POLL_INTERVAL_SECONDS = 2
@@ -51,6 +52,8 @@ async def _process_command(bot: discord.Bot, row: dict[str, Any]) -> None:
             result = await _process_start_attendance(bot, row)
         elif command_type == "stop_attendance":
             result = await _process_stop_attendance(bot, row)
+        elif command_type == "refresh_admin_panel":
+            result = await _process_refresh_admin_panel(bot, row)
         else:
             raise RuntimeError(f"Unsupported command_type: {command_type}")
     except Exception as exc:
@@ -109,6 +112,26 @@ async def _process_stop_attendance(
     }
 
 
+async def _process_refresh_admin_panel(
+    bot: discord.Bot,
+    row: dict[str, Any],
+) -> dict[str, Any]:
+    guild = _get_guild(bot, row)
+    payload = row.get("payload_json") or {}
+    previous_admin_channel_id = _optional_int(payload.get("previous_admin_channel_id"))
+    current_settings = database.get_settings(guild.id)
+    if (
+        previous_admin_channel_id is not None
+        and previous_admin_channel_id != current_settings.admin_channel_id
+    ):
+        await clear_old_admin_panel(bot, guild, previous_admin_channel_id)
+    message = await rebuild_admin_panel(bot, guild.id)
+    return {
+        "message": "settings refreshed",
+        "panel_message_id": message.id if message is not None else None,
+    }
+
+
 def _get_guild(bot: discord.Bot, row: dict[str, Any]) -> discord.Guild:
     guild_id = row.get("guild_id")
     if guild_id is None:
@@ -133,3 +156,9 @@ async def _resolve_member(
         return await guild.fetch_member(member_id)
     except (discord.Forbidden, discord.HTTPException, discord.NotFound):
         return None
+
+
+def _optional_int(value: object) -> int | None:
+    if value is None or value == "":
+        return None
+    return int(value)

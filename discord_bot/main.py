@@ -6,19 +6,15 @@ import discord
 from dotenv import load_dotenv
 
 from common import database
+from discord_bot.queue import start_command_queue_worker
 from discord_bot.utils.attendance import (
     AttendanceActionView,
     register_attendance,
     seed_voice_entry_times,
     sync_voice_entry_time,
 )
-from discord_bot.utils.guild import is_admin_member, is_supported_guild
-from discord_bot.utils.panel import (
-    clear_old_admin_panel,
-    rebuild_admin_panel,
-    update_admin_panel,
-)
-from discord_bot.queue import start_command_queue_worker
+from discord_bot.utils.guild import is_supported_guild
+from discord_bot.utils.panel import update_admin_panel
 from discord_bot.views.admin_panel import AdminPanelView
 
 
@@ -72,42 +68,6 @@ def _register_persistent_views() -> None:
     for guild in bot.guilds:
         bot.add_view(AdminPanelView(bot, guild.id))
         bot.add_view(AttendanceActionView(bot, guild.id))
-
-
-@bot.slash_command(
-    name="관리자채널",
-    description="출석 채널을 설정합니다.",
-)
-async def set_admin_channel(
-    ctx: discord.ApplicationContext,
-    channel: discord.Option(discord.TextChannel, description="출석 채널"),
-) -> None:
-    guild = ctx.guild
-    if guild is None:
-        await ctx.respond("서버에서만 사용할 수 있습니다.", ephemeral=True)
-        return
-
-    if not is_supported_guild(bot, guild.id):
-        await ctx.respond("이 서버에서는 사용할 수 없습니다.", ephemeral=True)
-        return
-
-    if not is_admin_member(ctx.author):
-        await ctx.respond("권한이 없습니다.", ephemeral=True)
-        return
-
-    await ctx.defer(ephemeral=True)
-
-    previous_settings = database.get_settings(guild.id)
-    previous_admin_channel_id = previous_settings.admin_channel_id
-
-    database.update_setting(guild.id, "admin_channel_id", channel.id)
-    await clear_old_admin_panel(bot, guild, previous_admin_channel_id)
-    await rebuild_admin_panel(bot, guild.id)
-
-    await ctx.followup.send(
-        f"출석 채널이 {channel.mention}으로 설정되었습니다.",
-        ephemeral=True,
-    )
 
 
 @bot.slash_command(
@@ -167,10 +127,9 @@ async def on_voice_state_update(
     before: discord.VoiceState,
     after: discord.VoiceState,
 ) -> None:
-    guild = member.guild
     sync_voice_entry_time(
         bot,
-        guild.id,
+        member.guild.id,
         member.id,
         getattr(before.channel, "id", None),
         getattr(after.channel, "id", None),

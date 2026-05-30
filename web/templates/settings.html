@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+
+{% block title %}서버 설정{% endblock %}
+
+{% block content %}
+  <section class="ops-hero">
+    <div>
+      <p class="eyebrow">{{ auth.selected_server.name }}</p>
+      <h1>서버 설정</h1>
+      <p class="hero-copy">Discord 봇이 사용하는 출석 채널, 로그 채널, 타이머 값을 웹에서 관리합니다.</p>
+    </div>
+    <div class="server-summary">
+      {{ auth.selected_server.role }}
+    </div>
+  </section>
+
+  {% if saved == "1" %}
+    <div class="alert success">설정을 저장했고 봇 패널 새로고침 요청을 등록했습니다.</div>
+  {% elif saved == "forbidden" %}
+    <div class="alert error">이 서버의 관리자 권한이 있는 계정만 설정을 변경할 수 있습니다.</div>
+  {% endif %}
+
+  {% if channel_error %}
+    <div class="alert error">{{ channel_error }}</div>
+  {% endif %}
+
+  {% if errors %}
+    <div class="alert error">
+      {% for error in errors %}
+        <div>{{ error }}</div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  <section class="settings-layout">
+    <form class="panel settings-form" method="post" action="/settings?guild_id={{ auth.selected_guild_id }}">
+      <header class="panel-header">
+        <h2>채널 설정</h2>
+        <span class="panel-caption">봇 토큰으로 서버 채널 목록을 불러옵니다</span>
+      </header>
+
+      <div class="settings-section">
+        <label class="field">
+          <span>출석 패널 채널</span>
+          <select name="admin_channel_id" {% if not auth.selected_server.can_manage %}disabled{% endif %}>
+            <option value="" {% if not form.admin_channel_id %}selected{% endif %}>선택 안함</option>
+            {% for channel in channels.text %}
+              <option value="{{ channel.id }}" {% if form.admin_channel_id|string == channel.id %}selected{% endif %}>
+                # {{ channel.label }}
+              </option>
+            {% endfor %}
+          </select>
+          <small>출석 시작 버튼과 웹 이동 버튼이 있는 봇 패널을 올릴 텍스트 채널입니다.</small>
+        </label>
+
+        <label class="field">
+          <span>출석 음성채널</span>
+          <select name="attendance_voice_channel_id" {% if not auth.selected_server.can_manage %}disabled{% endif %}>
+            <option value="" {% if not form.attendance_voice_channel_id %}selected{% endif %}>선택 안함</option>
+            {% for channel in channels.voice %}
+              <option value="{{ channel.id }}" {% if form.attendance_voice_channel_id|string == channel.id %}selected{% endif %}>
+                {{ channel.label }}
+              </option>
+            {% endfor %}
+          </select>
+          <small>출석 대상자가 실제로 들어와 있어야 하는 음성채널입니다.</small>
+        </label>
+
+        <label class="field">
+          <span>로그 채널</span>
+          <select name="log_channel_id" {% if not auth.selected_server.can_manage %}disabled{% endif %}>
+            <option value="" {% if not form.log_channel_id %}selected{% endif %}>선택 안함</option>
+            {% for channel in channels.text %}
+              <option value="{{ channel.id }}" {% if form.log_channel_id|string == channel.id %}selected{% endif %}>
+                # {{ channel.label }}
+              </option>
+            {% endfor %}
+          </select>
+          <small>출석 종료 요약과 저장 결과를 보낼 텍스트 채널입니다.</small>
+        </label>
+      </div>
+
+      <header class="panel-header panel-subheader">
+        <h2>타이머 설정</h2>
+        <span class="panel-caption">초 단위</span>
+      </header>
+
+      <div class="settings-section timer-grid">
+        <label class="field">
+          <span>출석 진행 시간</span>
+          <input
+            name="timer"
+            type="number"
+            min="1"
+            max="86400"
+            step="1"
+            value="{{ form.timer or '' }}"
+            placeholder="예: 600"
+            {% if not auth.selected_server.can_manage %}disabled{% endif %}
+          >
+          <small>출석 시작 후 자동 종료까지의 시간입니다. 600초는 10분입니다.</small>
+        </label>
+
+        <label class="field">
+          <span>출석 가능 대기 시간</span>
+          <input
+            name="attendance_available_timer"
+            type="number"
+            min="1"
+            max="86400"
+            step="1"
+            value="{{ form.attendance_available_timer or '' }}"
+            placeholder="예: 30"
+            {% if not auth.selected_server.can_manage %}disabled{% endif %}
+          >
+          <small>음성채널 입장 후 이 시간이 지나야 출석 버튼을 누를 수 있습니다.</small>
+        </label>
+      </div>
+
+      <div class="form-actions">
+        <button class="primary-button" type="submit" {% if not auth.selected_server.can_manage %}disabled{% endif %}>
+          설정 저장
+        </button>
+        {% if not auth.selected_server.can_manage %}
+          <span class="muted">관리자 권한이 없어 읽기 전용으로 표시됩니다.</span>
+        {% endif %}
+      </div>
+    </form>
+  </section>
+{% endblock %}

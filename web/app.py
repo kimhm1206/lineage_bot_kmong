@@ -5,7 +5,7 @@ import os
 import secrets
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import parse_qs, urlencode
 
 import requests
 from dotenv import load_dotenv
@@ -34,6 +34,7 @@ DISCORD_CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET") or os.getenv(
     "DISCORD_OAUTH_CLIENT_SECRET", ""
 )
 SESSION_SECRET = os.getenv("WEB_SESSION_SECRET", "lineage-local-web-session")
+DISCORD_BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN", "")
 GLOBAL_OWNER_DISCORD_ID = os.getenv("GLOBAL_OWNER_DISCORD_ID") or "238978205078388747"
 DISCORD_ADMINISTRATOR_PERMISSION = 0x8
 LOG_TABS = (
@@ -95,6 +96,18 @@ def _discord_get(path: str, access_token: str) -> Any:
     response = requests.get(
         f"{DISCORD_API_BASE}{path}",
         headers={"Authorization": f"Bearer {access_token}"},
+        timeout=15,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+def _discord_bot_get(path: str) -> Any:
+    if not DISCORD_BOT_TOKEN:
+        raise RuntimeError("DISCORD_BOT_TOKEN is not configured.")
+    response = requests.get(
+        f"{DISCORD_API_BASE}{path}",
+        headers={"Authorization": f"Bot {DISCORD_BOT_TOKEN}"},
         timeout=15,
     )
     response.raise_for_status()
@@ -282,6 +295,102 @@ def _render(
     )
 
 
+def _settings_to_dict(settings: Any) -> dict[str, int | None]:
+    return {
+        "guild_id": settings.guild_id,
+        "admin_channel_id": settings.admin_channel_id,
+        "attendance_voice_channel_id": settings.attendance_voice_channel_id,
+        "log_channel_id": settings.log_channel_id,
+        "timer": settings.timer,
+        "attendance_available_timer": settings.attendance_available_timer,
+    }
+
+
+def _normalize_discord_channel(channel: dict[str, Any]) -> dict[str, Any]:
+    channel_id = str(channel["id"])
+    name = str(channel.get("name") or channel_id)
+    parent_id = channel.get("parent_id")
+    return {
+        "id": channel_id,
+        "name": name,
+        "label": name,
+        "type": int(channel.get("type") or 0),
+        "parent_id": str(parent_id) if parent_id else "",
+        "position": int(channel.get("position") or 0),
+    }
+
+
+def _load_guild_channels(guild_id: int) -> dict[str, Any]:
+    channels = _discord_bot_get(f"/guilds/{guild_id}/channels")
+    normalized = [_normalize_discord_channel(channel) for channel in channels]
+    normalized.sort(key=lambda channel: (channel["position"], channel["name"].lower()))
+    return {
+        "text": [
+            channel
+            for channel in normalized
+            if channel["type"] in {0, 5}
+        ],
+        "voice": [
+            channel
+            for channel in normalized
+            if channel["type"] == 2
+        ],
+    }
+
+
+def _channel_ids(channels: list[dict[str, Any]]) -> set[int]:
+    return {int(channel["id"]) for channel in channels}
+
+
+def _parse_optional_int(value: str | None) -> int | None:
+    if value is None or value.strip() == "":
+        return None
+    return int(value)
+
+
+def _validate_channel_value(
+    field_label: str,
+    raw_value: str | None,
+    allowed_ids: set[int],
+    errors: list[str],
+) -> int | None:
+    try:
+        channel_id = _parse_optional_int(raw_value)
+    except ValueError:
+        errors.append(f"{field_label} 값이 올바르지 않습니다.")
+        return None
+    if channel_id is not None and channel_id not in allowed_ids:
+        errors.append(f"{field_label}은 이 서버의 선택 가능한 채널이어야 합니다.")
+        return None
+    return channel_id
+
+
+def _validate_timer_value(
+    field_label: str,
+    raw_value: str | None,
+    errors: list[str],
+) -> int | None:
+    try:
+        timer_value = _parse_optional_int(raw_value)
+    except ValueError:
+        errors.append(f"{field_label}은 숫자로 입력해야 합니다.")
+        return None
+    if timer_value is not None and not 1 <= timer_value <= 86400:
+        errors.append(f"{field_label}은 1초부터 86400초 사이로 입력해야 합니다.")
+        return None
+    return timer_value
+
+
+def _settings_form_from_values(values: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "admin_channel_id": values.get("admin_channel_id"),
+        "attendance_voice_channel_id": values.get("attendance_voice_channel_id"),
+        "log_channel_id": values.get("log_channel_id"),
+        "timer": values.get("timer"),
+        "attendance_available_timer": values.get("attendance_available_timer"),
+    }
+
+
 def _latest_attendance_sessions(guild_id: int, limit: int = 20) -> list[dict[str, Any]]:
     rows = database.fetchall(
         """
@@ -328,7 +437,7 @@ def _command_category(command_type: str) -> str:
         return "attendance"
     if "stat" in normalized or "report" in normalized:
         return "statistics"
-    if "setting" in normalized or "config" in normalized:
+    if "setting" in normalized or "config" in normalized or "panel" in normalized:
         return "settings"
     return "logs"
 
@@ -396,10 +505,11 @@ def _live_attendance_state(guild_id: int) -> dict[str, Any]:
     }
 
 
-def _enqueue_attendance_command(
+def _enqueue_bot_command(
     guild_id: int,
     command_type: str,
     requested_by_discord_id: int,
+    payload: dict[str, Any] | None = None,
 ) -> None:
     with database.connect() as connection:
         with connection.cursor() as cursor:
@@ -416,11 +526,19 @@ def _enqueue_attendance_command(
                 (
                     guild_id,
                     command_type,
-                    Json({"source": "web"}),
+                    Json({"source": "web", **(payload or {})}),
                     requested_by_discord_id,
                 ),
             )
         connection.commit()
+
+
+def _enqueue_attendance_command(
+    guild_id: int,
+    command_type: str,
+    requested_by_discord_id: int,
+) -> None:
+    _enqueue_bot_command(guild_id, command_type, requested_by_discord_id)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -588,6 +706,142 @@ def attendance(
             "queued": queued,
             "active_page": "attendance",
         },
+    )
+
+
+@app.get("/settings", response_class=HTMLResponse)
+def settings(
+    request: Request,
+    guild_id: str | None = None,
+    saved: str | None = None,
+):
+    auth = _auth_context(request, guild_id)
+    if not auth:
+        return _auth_redirect(request)
+
+    selected_guild_id = int(auth["selected_guild_id"])
+    guild_settings = database.get_settings(selected_guild_id)
+    channel_error = ""
+    channels = {"text": [], "voice": []}
+    try:
+        channels = _load_guild_channels(selected_guild_id)
+    except Exception as exc:
+        channel_error = f"Discord 채널 목록을 불러오지 못했습니다. {exc}"
+
+    return _render(
+        request,
+        "settings.html",
+        {
+            "auth": auth,
+            "settings": _settings_to_dict(guild_settings),
+            "form": _settings_to_dict(guild_settings),
+            "channels": channels,
+            "channel_error": channel_error,
+            "saved": saved,
+            "errors": [],
+            "active_page": "settings",
+        },
+    )
+
+
+@app.post("/settings", response_class=HTMLResponse)
+async def update_settings(
+    request: Request,
+    guild_id: str | None = None,
+):
+    auth = _auth_context(request, guild_id)
+    if not auth:
+        return _auth_redirect(request)
+
+    selected_guild_id = int(auth["selected_guild_id"])
+    if not _can_manage_selected_server(auth):
+        return RedirectResponse(
+            f"/settings?guild_id={selected_guild_id}&saved=forbidden",
+            status_code=303,
+        )
+
+    body = (await request.body()).decode("utf-8")
+    form_data = {
+        key: values[-1] if values else ""
+        for key, values in parse_qs(body, keep_blank_values=True).items()
+    }
+
+    channel_error = ""
+    channels = {"text": [], "voice": []}
+    try:
+        channels = _load_guild_channels(selected_guild_id)
+    except Exception as exc:
+        channel_error = f"Discord 채널 목록을 불러오지 못했습니다. {exc}"
+
+    errors: list[str] = []
+    text_channel_ids = _channel_ids(channels["text"])
+    voice_channel_ids = _channel_ids(channels["voice"])
+    settings_values = {
+        "admin_channel_id": _validate_channel_value(
+            "출석 패널 채널",
+            form_data.get("admin_channel_id"),
+            text_channel_ids,
+            errors,
+        ),
+        "attendance_voice_channel_id": _validate_channel_value(
+            "출석 음성채널",
+            form_data.get("attendance_voice_channel_id"),
+            voice_channel_ids,
+            errors,
+        ),
+        "log_channel_id": _validate_channel_value(
+            "로그 채널",
+            form_data.get("log_channel_id"),
+            text_channel_ids,
+            errors,
+        ),
+        "timer": _validate_timer_value(
+            "출석 진행 시간",
+            form_data.get("timer"),
+            errors,
+        ),
+        "attendance_available_timer": _validate_timer_value(
+            "출석 가능 대기 시간",
+            form_data.get("attendance_available_timer"),
+            errors,
+        ),
+    }
+    if channel_error:
+        errors.append("채널 목록 확인이 필요합니다. Discord 봇 토큰과 서버 권한을 확인해주세요.")
+
+    previous_settings = database.get_settings(selected_guild_id)
+    if errors:
+        return _render(
+            request,
+            "settings.html",
+            {
+                "auth": auth,
+                "settings": _settings_to_dict(previous_settings),
+                "form": _settings_form_from_values(form_data),
+                "channels": channels,
+                "channel_error": channel_error,
+                "saved": "",
+                "errors": errors,
+                "active_page": "settings",
+            },
+            status_code=400,
+        )
+
+    for column, value in settings_values.items():
+        database.update_setting(selected_guild_id, column, value)
+
+    _enqueue_bot_command(
+        selected_guild_id,
+        "refresh_admin_panel",
+        int(auth["user"]["id"]),
+        {
+            "previous_admin_channel_id": previous_settings.admin_channel_id,
+            "updated_columns": list(settings_values),
+        },
+    )
+    return RedirectResponse(
+        f"/settings?guild_id={selected_guild_id}&saved=1",
+        status_code=303,
     )
 
 

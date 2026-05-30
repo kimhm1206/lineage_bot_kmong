@@ -28,6 +28,14 @@ class AdminPanelView(discord.ui.View):
                 row=0,
             )
         )
+        self.add_item(
+            discord.ui.Button(
+                label="설정",
+                style=discord.ButtonStyle.link,
+                url=_build_web_settings_url(guild_id),
+                row=0,
+            )
+        )
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         guild = interaction.guild
@@ -44,7 +52,7 @@ class AdminPanelView(discord.ui.View):
     def _apply_attendance_button_state(self) -> None:
         state = get_attendance_state(self.bot, self.guild_id)
         is_active = bool(state.get("active"))
-        self.start_button.label = "출석 중지"
+        self.start_button.label = "출석 종료"
         self.start_button.style = discord.ButtonStyle.danger
         if not is_active:
             self.start_button.label = "출석 시작"
@@ -88,23 +96,6 @@ class AdminPanelView(discord.ui.View):
         ok, message = await start_attendance(self.bot, guild, user)
         await interaction.response.send_message(message, ephemeral=True)
 
-    @discord.ui.button(
-        label="설정",
-        style=discord.ButtonStyle.primary,
-        custom_id="attendance:settings",
-        row=0,
-    )
-    async def settings_button(
-        self, button: discord.ui.Button, interaction: discord.Interaction
-    ) -> None:
-        from discord_bot.views.settings import SettingsMenuView
-
-        await interaction.response.send_message(
-            "변경할 설정 항목을 선택해주세요.",
-            view=SettingsMenuView(self.bot, self.guild_id),
-            ephemeral=True,
-        )
-
 
 async def _safe_response(
     interaction: discord.Interaction, message: str
@@ -118,3 +109,8 @@ async def _safe_response(
 def _build_web_statistics_url(guild_id: int) -> str:
     base_url = os.getenv("WEB_BASE_URL", "http://localhost:8000").rstrip("/")
     return f"{base_url}/dashboard?{urlencode({'guild_id': str(guild_id)})}"
+
+
+def _build_web_settings_url(guild_id: int) -> str:
+    base_url = os.getenv("WEB_BASE_URL", "http://localhost:8000").rstrip("/")
+    return f"{base_url}/settings?{urlencode({'guild_id': str(guild_id)})}"

@@ -94,6 +94,17 @@ select {
   font: inherit;
 }
 
+input {
+  width: 100%;
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+
 .account {
   display: flex;
   align-items: center;
@@ -546,6 +557,56 @@ button:disabled {
   padding: 60px 12px;
 }
 
+.settings-layout {
+  display: grid;
+  gap: 18px;
+}
+
+.settings-form {
+  overflow: hidden;
+}
+
+.settings-section {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+}
+
+.timer-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.panel-subheader {
+  border-top: 1px solid var(--line);
+}
+
+.field {
+  display: grid;
+  gap: 8px;
+}
+
+.field > span {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.field select {
+  width: 100%;
+}
+
+.field small {
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.form-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 18px 18px;
+}
+
 .log-tabs {
   display: flex;
   flex-wrap: wrap;
@@ -849,6 +910,10 @@ button:disabled {
   }
 
   .live-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .timer-grid {
     grid-template-columns: 1fr;
   }
 
