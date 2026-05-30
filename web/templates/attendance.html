@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+
+{% block title %}출석{% endblock %}
+
+{% block content %}
+  <section class="page-heading">
+    <div>
+      <p class="eyebrow">{{ auth.selected_server.name }}</p>
+      <h1>출석 관리</h1>
+    </div>
+    <div class="actions">
+      <form method="post" action="/attendance/start?guild_id={{ auth.selected_guild_id }}">
+        <button class="primary-button" type="submit">출석 시작</button>
+      </form>
+      <form method="post" action="/attendance/stop?guild_id={{ auth.selected_guild_id }}">
+        <button class="secondary-button" type="submit">출석 종료</button>
+      </form>
+    </div>
+  </section>
+
+  {% if queued == "start" %}
+    <div class="alert success">출석 시작 요청을 큐에 등록했습니다.</div>
+  {% elif queued == "stop" %}
+    <div class="alert success">출석 종료 요청을 큐에 등록했습니다.</div>
+  {% endif %}
+
+  <section class="content-grid">
+    <article class="panel wide">
+      <header class="panel-header">
+        <h2>최근 출석 회차</h2>
+      </header>
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>시작</th>
+            <th>종료</th>
+            <th>인원</th>
+            <th>시작자</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in sessions %}
+            <tr>
+              <td>{{ row.attendance_id }}</td>
+              <td>{{ row.started_at }}</td>
+              <td>{{ row.ended_at }}</td>
+              <td>{{ row.participant_count }}</td>
+              <td>{{ row.started_by_discord_id or "-" }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="5" class="empty">출석 회차가 없습니다.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </article>
+
+    <article class="panel wide">
+      <header class="panel-header">
+        <h2>웹 요청 큐</h2>
+      </header>
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>명령</th>
+            <th>상태</th>
+            <th>요청자</th>
+            <th>요청시각</th>
+            <th>오류</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in commands %}
+            <tr>
+              <td>{{ row.command_id }}</td>
+              <td>{{ row.command_type }}</td>
+              <td><span class="status status-{{ row.status }}">{{ row.status }}</span></td>
+              <td>{{ row.requested_by_discord_id or "-" }}</td>
+              <td>{{ row.created_at }}</td>
+              <td>{{ row.error_message or "-" }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="6" class="empty">등록된 웹 요청이 없습니다.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </article>
+  </section>
+{% endblock %}

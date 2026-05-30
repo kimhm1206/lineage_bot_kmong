@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}Lineage Ops{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}">
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/dashboard">Lineage Ops</a>
+      {% if auth %}
+        <nav class="nav">
+          <a class="nav-link {% if active_page == 'dashboard' %}is-active{% endif %}" href="/dashboard?guild_id={{ auth.selected_guild_id }}">통계</a>
+          <a class="nav-link {% if active_page == 'attendance' %}is-active{% endif %}" href="/attendance?guild_id={{ auth.selected_guild_id }}">출석</a>
+        </nav>
+        <div class="topbar-spacer"></div>
+        <label class="server-picker">
+          <span>서버</span>
+          <select onchange="changeServer(this)">
+            {% for server in auth.servers %}
+              <option value="{{ server.guild_id }}" {% if server.guild_id == auth.selected_guild_id %}selected{% endif %}>
+                {{ server.name }}
+              </option>
+            {% endfor %}
+          </select>
+        </label>
+        <div class="account">
+          <span>{{ auth.user.display_name }}</span>
+          <a href="/logout">로그아웃</a>
+        </div>
+      {% endif %}
+    </header>
+
+    <main class="page">
+      {% block content %}{% endblock %}
+    </main>
+
+    <script>
+      function changeServer(select) {
+        const url = new URL(window.location.href);
+        url.searchParams.set("guild_id", select.value);
+        url.searchParams.delete("queued");
+        window.location.href = url.pathname + url.search;
+      }
+    </script>
+  </body>
+</html>

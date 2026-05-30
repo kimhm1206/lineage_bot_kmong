@@ -2,3 +2,7 @@ py-cord
 python-dotenv
 requests
 psycopg2-binary
+fastapi
+uvicorn
+jinja2
+itsdangerous

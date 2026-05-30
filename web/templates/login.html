@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block title %}Discord 로그인{% endblock %}
+
+{% block content %}
+  <section class="login-panel">
+    <div>
+      <p class="eyebrow">Discord OAuth</p>
+      <h1>관리 서버 로그인</h1>
+      <p class="muted">가입 중인 Discord 서버가 DB의 관리 서버와 일치하면 접속됩니다.</p>
+    </div>
+
+    {% if error_message %}
+      <div class="alert error">{{ error_message }}</div>
+    {% endif %}
+
+    {% if config_ready %}
+      <a class="primary-action" href="/auth/discord/login">Discord로 로그인</a>
+    {% else %}
+      <div class="alert error">
+        DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET 설정이 필요합니다.
+      </div>
+    {% endif %}
+
+    <dl class="meta-list">
+      <div>
+        <dt>Callback URL</dt>
+        <dd>{{ redirect_uri }}</dd>
+      </div>
+    </dl>
+  </section>
+{% endblock %}
