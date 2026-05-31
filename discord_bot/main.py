@@ -90,9 +90,8 @@ async def attend(ctx: discord.ApplicationContext) -> None:
         await ctx.respond("서버에서만 사용할 수 있습니다.", ephemeral=True)
         return
 
-    await ctx.defer(ephemeral=True)
     _, message = await register_attendance(bot, guild.id, author)
-    await ctx.followup.send(message, ephemeral=True)
+    await ctx.respond(message, ephemeral=True)
 
 
 @bot.slash_command(

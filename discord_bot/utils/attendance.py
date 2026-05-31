@@ -68,9 +68,6 @@ class AttendanceActionView(discord.ui.View):
             )
             return
 
-        if not await _safe_interaction_defer(interaction):
-            return
-
         _, message = await register_attendance(self.bot, guild.id, user)
         await _safe_interaction_response(interaction, message, ephemeral=True)
 
