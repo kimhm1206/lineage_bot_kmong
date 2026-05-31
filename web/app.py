@@ -43,6 +43,10 @@ DISCORD_CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET") or os.getenv(
     "DISCORD_OAUTH_CLIENT_SECRET", ""
 )
 SESSION_SECRET = os.getenv("WEB_SESSION_SECRET", "lineage-local-web-session")
+BOT_BRIDGE_TOKEN = os.getenv("BOT_BRIDGE_TOKEN", SESSION_SECRET)
+BOT_BRIDGE_COMMAND_TIMEOUT_SECONDS = float(
+    os.getenv("BOT_BRIDGE_COMMAND_TIMEOUT_SECONDS", "8")
+)
 DISCORD_BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN", "")
 GLOBAL_DEVELOPER_DISCORD_ID = (
     os.getenv("GLOBAL_DEVELOPER_DISCORD_ID")
@@ -61,6 +65,13 @@ LOG_TABS = (
     {"value": "settings", "label": "설정"},
     {"value": "logs", "label": "로그"},
 )
+
+_BOT_BRIDGE_WEBSOCKET: WebSocket | None = None
+_BOT_BRIDGE_LOCK = asyncio.Lock()
+_BOT_BRIDGE_WAITERS: dict[str, asyncio.Future[dict[str, Any]]] = {}
+_ATTENDANCE_STATE_CACHE: dict[int, dict[str, Any]] = {}
+_ATTENDANCE_BROWSER_CLIENTS: dict[int, set[WebSocket]] = {}
+_ATTENDANCE_COMMANDS_IN_FLIGHT: dict[tuple[int, str], str] = {}
 REPORT_FREQUENCY_OPTIONS = (
     {"value": "daily", "label": "매일"},
     {"value": "every_3_days", "label": "3일마다"},
@@ -1927,51 +1938,105 @@ def _latest_command_queue(guild_id: int, limit: int = 10) -> list[dict[str, Any]
 
 
 def _pending_attendance_command(guild_id: int) -> dict[str, Any] | None:
-    row = database.fetchone(
-        """
-        SELECT command_id, command_type, status, created_at
-        FROM bot_command_queue
-        WHERE guild_id = %s
-          AND command_type IN ('start_attendance', 'stop_attendance')
-          AND status IN ('pending', 'processing')
-        ORDER BY created_at DESC
-        LIMIT 1
-        """,
-        (guild_id,),
-    )
-    if row is None:
-        return None
+    for (
+        pending_guild_id,
+        command_type,
+    ), request_id in _ATTENDANCE_COMMANDS_IN_FLIGHT.items():
+        if pending_guild_id != guild_id:
+            continue
+        label = "출석 시작" if command_type == "attendance.start" else "출석 종료"
+        return {
+            "command_id": request_id,
+            "command_type": command_type,
+            "status": "processing",
+            "label": label,
+            "created_at": "",
+        }
+    return None
 
-    command_type = str(row["command_type"])
+
+def _empty_live_attendance_state() -> dict[str, Any]:
     return {
-        "command_id": int(row["command_id"]),
-        "command_type": command_type,
-        "status": str(row["status"]),
-        "label": "출석 시작" if command_type == "start_attendance" else "출석 종료",
-        "created_at": row["created_at"],
+        "active": False,
+        "participant_count": 0,
+        "session": None,
+        "participants": [],
     }
 
 
 def _live_attendance_state(guild_id: int) -> dict[str, Any]:
-    state = database.get_live_attendance_state(guild_id)
-    participants = state.get("participants") or []
-    session = state.get("session") or {}
-    return {
-        "active": bool(state.get("active")),
-        "participant_count": len(participants),
-        "session": {
-            "live_session_id": session.get("live_session_id"),
-            "started_at": session.get("started_at") or "",
-            "expires_at": session.get("expires_at") or "",
-            "started_by_discord_id": session.get("started_by_discord_id"),
-            "discord_channel_id": session.get("discord_channel_id"),
-            "discord_message_id": session.get("discord_message_id"),
-            "status": session.get("status") or "idle",
-        }
-        if session
-        else None,
-        "participants": participants,
+    return _ATTENDANCE_STATE_CACHE.get(guild_id) or _empty_live_attendance_state()
+
+
+async def _broadcast_live_attendance_state(
+    guild_id: int,
+    state: dict[str, Any],
+) -> None:
+    clients = set(_ATTENDANCE_BROWSER_CLIENTS.get(guild_id) or set())
+    stale_clients: list[WebSocket] = []
+    for client in clients:
+        try:
+            await client.send_json(state)
+        except Exception:
+            stale_clients.append(client)
+
+    if stale_clients:
+        connected_clients = _ATTENDANCE_BROWSER_CLIENTS.get(guild_id)
+        if connected_clients is not None:
+            for client in stale_clients:
+                connected_clients.discard(client)
+
+
+async def _send_bot_bridge_message(payload: dict[str, Any]) -> bool:
+    websocket = _BOT_BRIDGE_WEBSOCKET
+    if websocket is None:
+        return False
+
+    try:
+        await websocket.send_json(payload)
+        return True
+    except Exception:
+        return False
+
+
+async def _send_attendance_bot_command(
+    guild_id: int,
+    command_type: str,
+    requested_by_discord_id: int,
+    payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    if _BOT_BRIDGE_WEBSOCKET is None:
+        return {"ok": False, "message": "봇 브리지가 연결되어 있지 않습니다."}
+
+    pending_key = (guild_id, command_type)
+    if _pending_attendance_command(guild_id) is not None:
+        return {"ok": False, "busy": True, "message": "이미 처리 중인 요청이 있습니다."}
+
+    request_id = secrets.token_urlsafe(12)
+    future: asyncio.Future[dict[str, Any]] = asyncio.get_running_loop().create_future()
+    _BOT_BRIDGE_WAITERS[request_id] = future
+    _ATTENDANCE_COMMANDS_IN_FLIGHT[pending_key] = request_id
+    message = {
+        "type": command_type,
+        "request_id": request_id,
+        "guild_id": str(guild_id),
+        "requested_by_discord_id": str(requested_by_discord_id),
+        **(payload or {}),
     }
+
+    try:
+        if not await _send_bot_bridge_message(message):
+            return {"ok": False, "message": "봇 브리지로 명령을 보낼 수 없습니다."}
+        return await asyncio.wait_for(
+            future,
+            timeout=BOT_BRIDGE_COMMAND_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        return {"ok": False, "message": "봇 응답 시간이 초과되었습니다."}
+    finally:
+        _BOT_BRIDGE_WAITERS.pop(request_id, None)
+        if _ATTENDANCE_COMMANDS_IN_FLIGHT.get(pending_key) == request_id:
+            _ATTENDANCE_COMMANDS_IN_FLIGHT.pop(pending_key, None)
 
 
 def _enqueue_bot_command(
@@ -3517,7 +3582,7 @@ def logs(
 
 
 @app.post("/attendance/start")
-def start_attendance(
+async def start_attendance(
     request: Request,
     guild_id: str | None = None,
 ):
@@ -3539,7 +3604,17 @@ def start_attendance(
             status_code=303,
         )
 
-    _enqueue_attendance_command(selected_guild_id, "start_attendance", user_id)
+    result = await _send_attendance_bot_command(
+        selected_guild_id,
+        "attendance.start",
+        user_id,
+    )
+    if not result.get("ok"):
+        status = "busy" if result.get("busy") else "bot_offline"
+        return RedirectResponse(
+            f"/attendance?guild_id={selected_guild_id}&queued={status}",
+            status_code=303,
+        )
     return RedirectResponse(
         f"/attendance?guild_id={selected_guild_id}&queued=start",
         status_code=303,
@@ -3547,7 +3622,7 @@ def start_attendance(
 
 
 @app.post("/attendance/stop")
-def stop_attendance(
+async def stop_attendance(
     request: Request,
     guild_id: str | None = None,
     save: str | None = "1",
@@ -3576,17 +3651,82 @@ def stop_attendance(
         "no",
         "off",
     }
-    _enqueue_attendance_command(
+    result = await _send_attendance_bot_command(
         selected_guild_id,
-        "stop_attendance",
+        "attendance.stop",
         user_id,
         {"save_attendance": should_save},
     )
+    if not result.get("ok"):
+        status = "busy" if result.get("busy") else "bot_offline"
+        return RedirectResponse(
+            f"/attendance?guild_id={selected_guild_id}&queued={status}",
+            status_code=303,
+        )
     queued_status = "stop_saved" if should_save else "stop_skipped"
     return RedirectResponse(
         f"/attendance?guild_id={selected_guild_id}&queued={queued_status}",
         status_code=303,
     )
+
+
+@app.websocket("/internal/bot/ws")
+async def bot_bridge_websocket(websocket: WebSocket) -> None:
+    token = websocket.query_params.get("token") or websocket.headers.get(
+        "x-internal-token"
+    )
+    if not BOT_BRIDGE_TOKEN or not secrets.compare_digest(token or "", BOT_BRIDGE_TOKEN):
+        await websocket.close(code=1008)
+        return
+
+    await websocket.accept()
+    global _BOT_BRIDGE_WEBSOCKET
+    async with _BOT_BRIDGE_LOCK:
+        previous_websocket = _BOT_BRIDGE_WEBSOCKET
+        _BOT_BRIDGE_WEBSOCKET = websocket
+        if previous_websocket is not None and previous_websocket is not websocket:
+            try:
+                await previous_websocket.close(code=1012)
+            except Exception:
+                pass
+
+    try:
+        while True:
+            message = await websocket.receive_json()
+            await _handle_bot_bridge_message(message)
+    except WebSocketDisconnect:
+        return
+    finally:
+        async with _BOT_BRIDGE_LOCK:
+            if _BOT_BRIDGE_WEBSOCKET is websocket:
+                _BOT_BRIDGE_WEBSOCKET = None
+
+
+async def _handle_bot_bridge_message(message: dict[str, Any]) -> None:
+    if not isinstance(message, dict):
+        return
+
+    message_type = str(message.get("type") or "")
+    guild_id = _parse_optional_int(message.get("guild_id"))
+    if message_type == "attendance.state" and guild_id is not None:
+        state = message.get("state")
+        if isinstance(state, dict):
+            _ATTENDANCE_STATE_CACHE[guild_id] = state
+            await _broadcast_live_attendance_state(guild_id, state)
+        return
+
+    if message_type == "attendance.command_result":
+        request_id = str(message.get("request_id") or "")
+        if guild_id is not None:
+            state = message.get("state")
+            if isinstance(state, dict):
+                _ATTENDANCE_STATE_CACHE[guild_id] = state
+                await _broadcast_live_attendance_state(guild_id, state)
+
+        waiter = _BOT_BRIDGE_WAITERS.get(request_id)
+        if waiter is not None and not waiter.done():
+            waiter.set_result(message)
+        return
 
 
 @app.websocket("/ws/attendance/{guild_id}")
@@ -3598,9 +3738,73 @@ async def attendance_websocket(websocket: WebSocket, guild_id: str) -> None:
 
     await websocket.accept()
     selected_guild_id = int(auth["selected_guild_id"])
+    clients = _ATTENDANCE_BROWSER_CLIENTS.setdefault(selected_guild_id, set())
+    clients.add(websocket)
+    await websocket.send_json(_live_attendance_state(selected_guild_id))
+    await _send_bot_bridge_message(
+        {
+            "type": "attendance.subscribe",
+            "guild_id": str(selected_guild_id),
+            "request_id": secrets.token_urlsafe(8),
+        }
+    )
+
     try:
         while True:
-            await websocket.send_json(_live_attendance_state(selected_guild_id))
-            await asyncio.sleep(1)
+            message = await websocket.receive_json()
+            await _handle_attendance_browser_message(
+                websocket,
+                auth,
+                selected_guild_id,
+                message,
+            )
     except WebSocketDisconnect:
         return
+    finally:
+        clients.discard(websocket)
+
+
+async def _handle_attendance_browser_message(
+    websocket: WebSocket,
+    auth: dict[str, Any],
+    guild_id: int,
+    message: dict[str, Any],
+) -> None:
+    if not isinstance(message, dict):
+        return
+
+    message_type = str(message.get("type") or "")
+    if message_type not in {"attendance.start", "attendance.stop"}:
+        return
+
+    if not _can_manage_selected_server(auth):
+        await websocket.send_json(
+            {
+                "type": "attendance.command_result",
+                "ok": False,
+                "message": "이 서버의 관리자 권한이 있는 계정만 출석을 제어할 수 있습니다.",
+                "state": _live_attendance_state(guild_id),
+            }
+        )
+        return
+
+    user_id = int(auth["user"]["id"])
+    command_payload: dict[str, Any] = {}
+    if message_type == "attendance.stop":
+        command_payload["save_attendance"] = bool(
+            message.get("save_attendance", True)
+        )
+
+    result = await _send_attendance_bot_command(
+        guild_id,
+        message_type,
+        user_id,
+        command_payload,
+    )
+    await websocket.send_json(
+        {
+            "type": "attendance.command_result",
+            **result,
+            "state": result.get("state") or _live_attendance_state(guild_id),
+        }
+    )

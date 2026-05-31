@@ -220,14 +220,6 @@ async def start_attendance(
         expires_at_text = (started_at + timedelta(seconds=settings.timer)).strftime(
             TIME_FORMAT
         )
-        live_session_id = database.start_live_attendance(
-            guild.id,
-            discord_channel_id=attendance_channel.id,
-            discord_message_id=attendance_message.id,
-            started_by_discord_id=starter.id,
-            started_at=started_at_text,
-            expires_at=expires_at_text,
-        )
 
         task = asyncio.create_task(
             _expire_attendance_after_timeout(bot, guild.id, settings.timer)
@@ -240,8 +232,12 @@ async def start_attendance(
             task=task,
             started_by=starter.id,
             started_at=started_at_text,
-            live_session_id=live_session_id,
+            expires_at=expires_at_text,
+            live_session_id=None,
+            voice_channel_id=settings.attendance_voice_channel_id,
+            attendance_available_timer=settings.attendance_available_timer,
         )
+        _schedule_attendance_state_publish(bot, guild.id)
     await update_admin_panel(bot, guild.id)
     return True, f"출석을 시작했습니다. {attendance_channel.mention}에 안내 메시지를 보냈습니다."
 
@@ -271,14 +267,9 @@ async def stop_attendance(
         )
         channel_id = _optional_int(state.get("channel_id"))
         message_id = _optional_int(state.get("message_id"))
-        live_session_id = _optional_int(state.get("live_session_id"))
         clear_attendance_state(bot, guild.id)
+        _schedule_attendance_state_publish(bot, guild.id)
 
-    database.finish_live_attendance(
-        live_session_id,
-        guild_id=guild.id,
-        ended_at=snapshot.ended_at,
-    )
     await delete_attendance_message(
         bot,
         guild.id,
@@ -307,14 +298,17 @@ async def register_attendance(
             f"출석 요청이 너무 빠릅니다. `{cooldown_remaining}`초 후 다시 시도해주세요.",
         )
 
-    settings = database.get_settings(guild_id)
-    voice_channel_id = settings.attendance_voice_channel_id
+    state = get_attendance_state(bot, guild_id)
+    if not bool(state.get("active")):
+        return False, "현재 출석이 진행 중이 아닙니다."
+
+    voice_channel_id = _optional_int(state.get("voice_channel_id"))
     current_voice = getattr(member.voice, "channel", None)
     current_voice_id = getattr(current_voice, "id", None)
     if voice_channel_id is None or current_voice_id != voice_channel_id:
         return False, "설정된 출석 음성채널에 들어가 있어야 출석할 수 있습니다."
 
-    available_timer = settings.attendance_available_timer
+    available_timer = _optional_int(state.get("attendance_available_timer"))
     if available_timer is not None and available_timer > 0:
         joined_at = get_voice_entry_time(bot, guild_id, member.id)
         if joined_at is None:
@@ -336,6 +330,7 @@ async def register_attendance(
             return False, "현재 출석이 진행 중이 아닙니다."
 
         participants = _participant_ids(state)
+        participant_times = _participant_times(state)
         previous_count = len(participants)
         participants.add(member.id)
 
@@ -343,22 +338,9 @@ async def register_attendance(
             return True, "이미 출석이 완료되었습니다."
 
         attended_at = _now_kst()
-        joined_at = get_voice_entry_time(bot, guild_id, member.id)
-        live_session_id = _optional_int(state.get("live_session_id"))
-        if live_session_id is not None:
-            database.add_live_attendance_participant(
-                live_session_id,
-                discord_id=member.id,
-                display_name=member.display_name,
-                alliance_id=_resolve_alliance_id_from_nickname(member.display_name),
-                joined_voice_at=joined_at.strftime(TIME_FORMAT)
-                if joined_at is not None
-                else None,
-                attended_at=attended_at.strftime(TIME_FORMAT),
-                source="discord",
-            )
-
+        participant_times[member.id] = attended_at.strftime(TIME_FORMAT)
         set_voice_entry_time(bot, guild_id, member.id, attended_at)
+        _schedule_attendance_state_publish(bot, guild_id)
 
     return True, "출석이 완료되었습니다."
 
@@ -450,6 +432,7 @@ async def _expire_attendance_after_timeout(
         guild = bot.get_guild(guild_id)
         if guild is None:
             clear_attendance_state(bot, guild_id)
+            _schedule_attendance_state_publish(bot, guild_id)
             await update_admin_panel(bot, guild_id)
             return
 
@@ -485,6 +468,70 @@ def _participant_ids(state: dict[str, Any]) -> set[int]:
     return participants
 
 
+def _participant_times(state: dict[str, Any]) -> dict[int, str]:
+    participant_times = state.get("participant_times")
+    if isinstance(participant_times, dict):
+        return participant_times
+
+    participant_times = {}
+    state["participant_times"] = participant_times
+    return participant_times
+
+
+def build_live_attendance_state(bot: discord.Bot, guild_id: int) -> dict[str, Any]:
+    guild = bot.get_guild(guild_id)
+    state = get_attendance_state(bot, guild_id)
+    if not bool(state.get("active")):
+        return {
+            "active": False,
+            "participant_count": 0,
+            "session": None,
+            "participants": [],
+        }
+
+    participant_times = _participant_times(state)
+    participants: list[dict[str, Any]] = []
+    for discord_id in sorted(_participant_ids(state)):
+        member = guild.get_member(discord_id) if guild is not None else None
+        display_name = member.display_name if member is not None else str(discord_id)
+        participants.append(
+            {
+                "discord_id": discord_id,
+                "display_name": display_name,
+                "alliance_name": _resolve_alliance_name_from_nickname(display_name),
+                "joined_voice_at": "",
+                "attended_at": participant_times.get(discord_id, ""),
+                "source": "discord",
+            }
+        )
+
+    return {
+        "active": True,
+        "participant_count": len(participants),
+        "session": {
+            "live_session_id": state.get("live_session_id"),
+            "started_at": state.get("started_at") or "",
+            "expires_at": state.get("expires_at") or "",
+            "started_by_discord_id": state.get("started_by"),
+            "discord_channel_id": state.get("channel_id"),
+            "discord_message_id": state.get("message_id"),
+            "status": "active",
+        },
+        "participants": participants,
+    }
+
+
+def _schedule_attendance_state_publish(bot: discord.Bot, guild_id: int) -> None:
+    publisher = getattr(bot, "attendance_state_publisher", None)
+    if not callable(publisher):
+        return
+
+    try:
+        asyncio.create_task(publisher(guild_id))
+    except RuntimeError:
+        return
+
+
 def sync_voice_entry_time(
     bot: discord.Bot,
     guild_id: int,
@@ -492,8 +539,15 @@ def sync_voice_entry_time(
     before_channel_id: int | None,
     after_channel_id: int | None,
 ) -> None:
-    settings = database.get_settings(guild_id)
-    tracked_channel_id = settings.attendance_voice_channel_id
+    attendance_state = get_attendance_state(bot, guild_id)
+    tracked_channel_id = (
+        _optional_int(attendance_state.get("voice_channel_id"))
+        if bool(attendance_state.get("active"))
+        else None
+    )
+    if tracked_channel_id is None:
+        settings = database.get_settings(guild_id)
+        tracked_channel_id = settings.attendance_voice_channel_id
     if tracked_channel_id is None:
         clear_voice_entry_time(bot, guild_id, member_id)
         return

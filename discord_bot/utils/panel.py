@@ -261,8 +261,12 @@ def get_attendance_state(bot: discord.Bot, guild_id: int) -> dict[str, object | 
             "task": None,
             "started_by": None,
             "started_at": None,
+            "expires_at": None,
             "live_session_id": None,
+            "voice_channel_id": None,
+            "attendance_available_timer": None,
             "participants": set(),
+            "participant_times": {},
         }
         attendance_state_by_guild[guild_id] = state
     return state
@@ -277,7 +281,10 @@ def set_attendance_state(
     task: asyncio.Task[None] | None,
     started_by: int | None,
     started_at: object | None,
+    expires_at: object | None = None,
     live_session_id: int | None = None,
+    voice_channel_id: int | None = None,
+    attendance_available_timer: int | None = None,
 ) -> None:
     state = get_attendance_state(bot, guild_id)
     state["active"] = True
@@ -286,8 +293,12 @@ def set_attendance_state(
     state["task"] = task
     state["started_by"] = started_by
     state["started_at"] = started_at
+    state["expires_at"] = expires_at
     state["live_session_id"] = live_session_id
+    state["voice_channel_id"] = voice_channel_id
+    state["attendance_available_timer"] = attendance_available_timer
     state["participants"] = set()
+    state["participant_times"] = {}
 
 
 def clear_attendance_state(bot: discord.Bot, guild_id: int) -> None:
@@ -307,8 +318,12 @@ def clear_attendance_state(bot: discord.Bot, guild_id: int) -> None:
     state["task"] = None
     state["started_by"] = None
     state["started_at"] = None
+    state["expires_at"] = None
     state["live_session_id"] = None
+    state["voice_channel_id"] = None
+    state["attendance_available_timer"] = None
     state["participants"] = set()
+    state["participant_times"] = {}
 
 
 async def get_panel_message(

@@ -54,13 +54,15 @@
   </section>
 
   {% if queued == "start" %}
-    <div class="alert success">출석 시작 요청을 봇 큐에 등록했습니다.</div>
+    <div class="alert success">출석 시작 요청을 봇으로 전달했습니다.</div>
   {% elif queued == "stop" or queued == "stop_saved" %}
-    <div class="alert success">출석 종료 및 DB 저장 요청을 봇 큐에 등록했습니다.</div>
+    <div class="alert success">출석 종료 및 DB 저장 요청을 봇으로 전달했습니다.</div>
   {% elif queued == "stop_skipped" %}
-    <div class="alert success">출석 종료 요청을 등록했습니다. 이번 회차는 DB에 저장하지 않습니다.</div>
+    <div class="alert success">출석 종료 요청을 봇으로 전달했습니다. 이번 회차는 DB에 저장하지 않습니다.</div>
   {% elif queued == "busy" %}
     <div class="alert success">이미 처리 중인 출석 요청이 있습니다. 잠시만 기다려주세요.</div>
+  {% elif queued == "bot_offline" %}
+    <div class="alert error">봇 브리지가 연결되어 있지 않습니다. 봇 프로세스를 확인해주세요.</div>
   {% elif queued == "forbidden" %}
     <div class="alert error">이 서버의 관리자 권한이 있는 계정만 출석을 제어할 수 있습니다.</div>
   {% endif %}
@@ -184,6 +186,14 @@
         if (submitterAction) {
           form.action = submitterAction;
         }
+        if (liveSocket.readyState === WebSocket.OPEN && submitterAction) {
+          event.preventDefault();
+          const isStop = submitterAction.includes("/attendance/stop");
+          liveSocket.send(JSON.stringify({
+            type: isStop ? "attendance.stop" : "attendance.start",
+            save_attendance: !submitterAction.includes("save=0"),
+          }));
+        }
         attendanceCommandPending = true;
         updateAttendanceControls(Boolean(latestLiveState.active));
       });
@@ -200,17 +210,17 @@
     });
 
     liveSocket.addEventListener("message", (event) => {
-      renderLiveAttendance(JSON.parse(event.data));
+      const payload = JSON.parse(event.data);
+      if (payload.type === "attendance.command_result") {
+        renderAttendanceCommandResult(payload);
+        return;
+      }
+      renderLiveAttendance(payload);
     });
 
     setInterval(renderRemainingTime, 1000);
     renderRemainingTime();
     updateAttendanceControls(Boolean(latestLiveState.active));
-    setTimeout(() => {
-      if (attendanceCommandPending) {
-        window.location.reload();
-      }
-    }, 5000);
 
     function renderLiveAttendance(state) {
       const wasActive = Boolean(latestLiveState?.active);
@@ -227,6 +237,18 @@
       updateAttendanceControls(state.active);
       renderRemainingTime();
       renderRoster(state);
+    }
+
+    function renderAttendanceCommandResult(payload) {
+      attendanceCommandPending = false;
+      pendingAlert?.remove();
+      liveConnection.textContent = payload.message || (payload.ok ? "요청 처리 완료" : "요청 처리 실패");
+      liveConnection.classList.toggle("is-connected", liveSocket.readyState === WebSocket.OPEN);
+      if (payload.state) {
+        renderLiveAttendance(payload.state);
+      } else {
+        updateAttendanceControls(Boolean(latestLiveState.active));
+      }
     }
 
     function updateAttendanceControls(active) {

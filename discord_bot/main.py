@@ -6,6 +6,7 @@ import discord
 from dotenv import load_dotenv
 
 from common import database
+from discord_bot.bridge import start_web_bridge
 from discord_bot.queue import start_command_queue_worker
 from discord_bot.reports import start_report_scheduler
 from discord_bot.utils.attendance import (
@@ -41,6 +42,9 @@ bot.persistent_views_registered = False
 bot.command_queue_task = None
 bot.report_scheduler = None
 bot.report_scheduler_reload_task = None
+bot.web_bridge_task = None
+bot.web_bridge_ws = None
+bot.attendance_state_publisher = None
 bot.runtime_label = (
     f"{datetime.now(timezone(timedelta(hours=9))).strftime('%Y-%m-%d %H:%M')} "
     "구동 Ver1.3"
@@ -59,6 +63,7 @@ async def on_ready() -> None:
 
     start_command_queue_worker(bot)
     start_report_scheduler(bot)
+    start_web_bridge(bot)
 
     for guild in bot.guilds:
         seed_voice_entry_times(bot, guild)

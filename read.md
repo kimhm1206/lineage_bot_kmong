@@ -62,9 +62,13 @@ DISCORD_CLIENT_ID=...
 DISCORD_CLIENT_SECRET=...
 DISCORD_REDIRECT_URI=https://test.meetloa.online/auth/discord/callback
 WEB_SESSION_SECRET=충분히_긴_랜덤_문자열
+BOT_BRIDGE_TOKEN=충분히_긴_랜덤_문자열
+BOT_BRIDGE_WS_URL=ws://127.0.0.1:8000/internal/bot/ws
 WEB_BASE_URL=https://test.meetloa.online
 GLOBAL_DEVELOPER_DISCORD_ID=개발자_DISCORD_ID
 ```
+
+`BOT_BRIDGE_TOKEN`은 웹과 봇이 내부 WebSocket으로 통신할 때 쓰는 토큰입니다. `WEB_SESSION_SECRET`과 같은 값으로 둬도 됩니다.
 
 로컬/테스트용 `LINEAGE_DB_TARGET=test`는 운영 실행에 넣지 마세요.
 
@@ -86,7 +90,8 @@ discord_bot/venv/bin/python -m discord_bot.main
 
 봇 프로세스에는 아래 기능이 같이 붙어 있습니다.
 
-- 웹에서 넣은 출석 시작/종료 큐 처리
+- 웹과 내부 WebSocket 브리지 연결
+- 웹에서 보낸 출석 시작/종료 명령 처리
 - Discord 관리자 패널 갱신
 - 통계 알림 APScheduler Worker
 
@@ -183,6 +188,7 @@ curl -I https://test.meetloa.online/login
 
 - Discord 봇이 온라인인지 확인
 - 관리자 패널 메시지가 설정 채널에 갱신되는지 확인
+- 웹 출석 페이지에서 실시간 연결이 되는지 확인
 - 웹에서 설정 저장 시 봇 큐가 처리되는지 확인
 
 ## 8. 하면 안 되는 작업
