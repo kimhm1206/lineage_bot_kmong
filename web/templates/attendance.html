@@ -179,6 +179,7 @@
     const pendingAlert = document.querySelector("[data-attendance-pending-alert]");
     let attendanceCommandPending = {{ "true" if attendance_command_pending else "false" }};
     let latestLiveState = {{ live_state | tojson }};
+    let serverClockOffsetMs = 0;
 
     commandForms.forEach((form) => {
       form.addEventListener("submit", (event) => {
@@ -219,12 +220,14 @@
     });
 
     setInterval(renderRemainingTime, 1000);
+    syncServerClock(latestLiveState.server_now);
     renderRemainingTime();
     updateAttendanceControls(Boolean(latestLiveState.active));
 
     function renderLiveAttendance(state) {
       const wasActive = Boolean(latestLiveState?.active);
       latestLiveState = state;
+      syncServerClock(state.server_now);
       liveStatus.textContent = state.active ? "진행 중" : "대기 중";
       liveStatus.classList.toggle("is-active", state.active);
       liveCount.textContent = state.participant_count;
@@ -237,6 +240,14 @@
       updateAttendanceControls(state.active);
       renderRemainingTime();
       renderRoster(state);
+    }
+
+    function syncServerClock(serverNow) {
+      const parsedServerNow = parseServerTime(serverNow);
+      if (!parsedServerNow) {
+        return;
+      }
+      serverClockOffsetMs = parsedServerNow.getTime() - Date.now();
     }
 
     function renderAttendanceCommandResult(payload) {
@@ -283,7 +294,8 @@
         liveRemaining.textContent = "-";
         return;
       }
-      const totalSeconds = Math.max(0, Math.floor((expiresAt.getTime() - Date.now()) / 1000));
+      const serverNowMs = Date.now() + serverClockOffsetMs;
+      const totalSeconds = Math.max(0, Math.floor((expiresAt.getTime() - serverNowMs) / 1000));
       const hours = Math.floor(totalSeconds / 3600);
       const minutes = Math.floor((totalSeconds % 3600) / 60);
       const seconds = totalSeconds % 60;

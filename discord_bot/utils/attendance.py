@@ -485,6 +485,7 @@ def build_live_attendance_state(bot: discord.Bot, guild_id: int) -> dict[str, An
         return {
             "active": False,
             "participant_count": 0,
+            "server_now": _now_kst().strftime(TIME_FORMAT),
             "session": None,
             "participants": [],
         }
@@ -508,6 +509,7 @@ def build_live_attendance_state(bot: discord.Bot, guild_id: int) -> dict[str, An
     return {
         "active": True,
         "participant_count": len(participants),
+        "server_now": _now_kst().strftime(TIME_FORMAT),
         "session": {
             "live_session_id": state.get("live_session_id"),
             "started_at": state.get("started_at") or "",

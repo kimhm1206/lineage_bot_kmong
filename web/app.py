@@ -1959,13 +1959,20 @@ def _empty_live_attendance_state() -> dict[str, Any]:
     return {
         "active": False,
         "participant_count": 0,
+        "server_now": datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S"),
         "session": None,
         "participants": [],
     }
 
 
 def _live_attendance_state(guild_id: int) -> dict[str, Any]:
-    return _ATTENDANCE_STATE_CACHE.get(guild_id) or _empty_live_attendance_state()
+    state = _ATTENDANCE_STATE_CACHE.get(guild_id)
+    if not state:
+        return _empty_live_attendance_state()
+
+    refreshed_state = dict(state)
+    refreshed_state["server_now"] = datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
+    return refreshed_state
 
 
 async def _broadcast_live_attendance_state(
