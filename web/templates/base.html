@@ -4,7 +4,17 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}Lineage Ops{% endblock %}</title>
-    <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}?v=20260601-full-bg">
+    <script>
+      (() => {
+        try {
+          const theme = localStorage.getItem("lineage-theme") === "dark" ? "dark" : "light";
+          document.documentElement.dataset.theme = theme;
+        } catch (error) {
+          document.documentElement.dataset.theme = "light";
+        }
+      })();
+    </script>
+    <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}?v=20260601-theme">
   </head>
   <body class="{% block body_class %}{% endblock %}">
     <header class="topbar {% if not auth %}topbar-public{% endif %}">
@@ -40,6 +50,22 @@
           <span class="role-pill role-{{ auth.selected_server.role }}">{{ auth.selected_server.role_label }}</span>
           <span class="account-name">{{ auth.selected_server.member_display_name }}</span>
           <a href="/logout">로그아웃</a>
+          <button
+            class="theme-toggle"
+            type="button"
+            data-theme-toggle
+            onclick="toggleTheme()"
+            aria-label="다크 모드로 변경"
+            title="테마 변경"
+          >
+            <svg class="theme-toggle-icon theme-toggle-icon-sun" viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="4"></circle>
+              <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path>
+            </svg>
+            <svg class="theme-toggle-icon theme-toggle-icon-moon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5 7 7 0 1 0 20.5 14.5Z"></path>
+            </svg>
+          </button>
         </div>
       {% endif %}
     </header>
@@ -72,6 +98,29 @@
         url.searchParams.delete("queued");
         window.location.href = url.pathname + url.search;
       }
+
+      function applyTheme(theme) {
+        const selectedTheme = theme === "dark" ? "dark" : "light";
+        document.documentElement.dataset.theme = selectedTheme;
+        try {
+          localStorage.setItem("lineage-theme", selectedTheme);
+        } catch (error) {
+        }
+
+        const toggle = document.querySelector("[data-theme-toggle]");
+        if (toggle) {
+          const nextThemeLabel = selectedTheme === "dark" ? "라이트" : "다크";
+          toggle.setAttribute("aria-label", `${nextThemeLabel} 모드로 변경`);
+          toggle.setAttribute("title", `${nextThemeLabel} 모드로 변경`);
+        }
+      }
+
+      function toggleTheme() {
+        const currentTheme = document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+        applyTheme(currentTheme === "dark" ? "light" : "dark");
+      }
+
+      applyTheme(document.documentElement.dataset.theme);
     </script>
     {% block scripts %}{% endblock %}
   </body>

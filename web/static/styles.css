@@ -11,6 +11,49 @@
   --green: #12805c;
   --red: #b42318;
   --shadow: 0 16px 40px rgba(23, 32, 42, 0.08);
+  --body-gradient-start: rgba(255, 255, 255, 0.82);
+  --body-gradient-end: rgba(243, 246, 248, 0.92);
+  --topbar-bg: rgba(255, 255, 255, 0.78);
+  --brand-text: #111827;
+  --glass-bg: rgba(255, 255, 255, 0.88);
+  --glass-bg-soft: rgba(255, 255, 255, 0.72);
+  --glass-bg-muted: rgba(246, 247, 249, 0.78);
+  --glass-border: rgba(217, 224, 232, 0.9);
+  --control-bg: #ffffff;
+  --control-bg-soft: rgba(255, 255, 255, 0.94);
+  --hover-bg: rgba(20, 108, 148, 0.11);
+  --hover-border: rgba(20, 108, 148, 0.24);
+  --text-on-accent: #ffffff;
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  --bg: #0d131a;
+  --surface: #151d27;
+  --surface-muted: #202a36;
+  --line: #2d3948;
+  --text: #edf4fb;
+  --muted: #a3b0bf;
+  --accent: #50b7dd;
+  --accent-strong: #8ddfff;
+  --discord: #7c8aff;
+  --green: #55d99f;
+  --red: #ff7b73;
+  --shadow: 0 18px 42px rgba(0, 0, 0, 0.38);
+  --body-gradient-start: rgba(21, 29, 39, 0.92);
+  --body-gradient-end: rgba(13, 19, 26, 0.96);
+  --topbar-bg: rgba(15, 22, 31, 0.86);
+  --brand-text: #f4f8fc;
+  --glass-bg: rgba(21, 29, 39, 0.9);
+  --glass-bg-soft: rgba(24, 33, 44, 0.78);
+  --glass-bg-muted: rgba(31, 41, 55, 0.78);
+  --glass-border: rgba(65, 78, 96, 0.72);
+  --control-bg: #111923;
+  --control-bg-soft: rgba(18, 27, 38, 0.96);
+  --hover-bg: rgba(80, 183, 221, 0.16);
+  --hover-border: rgba(80, 183, 221, 0.34);
+  --text-on-accent: #071019;
+  color-scheme: dark;
 }
 
 * {
@@ -26,7 +69,7 @@ body {
   margin: 0;
   min-height: 100vh;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(243, 246, 248, 0.92)),
+    linear-gradient(180deg, var(--body-gradient-start), var(--body-gradient-end)),
     var(--bg);
   background-attachment: fixed;
   background-repeat: no-repeat;
@@ -49,7 +92,7 @@ a {
   gap: 18px;
   min-height: 64px;
   padding: 0 28px;
-  background: rgba(255, 255, 255, 0.78);
+  background: var(--topbar-bg);
   border-bottom: 1px solid var(--line);
   backdrop-filter: blur(18px) saturate(140%);
 }
@@ -57,7 +100,7 @@ a {
 .brand {
   font-weight: 800;
   letter-spacing: 0;
-  color: #111827;
+  color: var(--brand-text);
 }
 
 .nav {
@@ -74,7 +117,7 @@ a {
 
 .nav-link.is-active,
 .nav-link:hover {
-  background: rgba(20, 108, 148, 0.11);
+  background: var(--hover-bg);
   color: var(--text);
 }
 
@@ -113,6 +156,17 @@ input {
   font: inherit;
 }
 
+textarea {
+  width: 100%;
+  min-height: 92px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+
 .account {
   display: flex;
   align-items: center;
@@ -124,6 +178,48 @@ input {
 
 .account a {
   color: var(--accent);
+}
+
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.theme-toggle:hover {
+  border-color: var(--hover-border);
+  background: var(--hover-bg);
+  color: var(--text);
+}
+
+.theme-toggle-icon {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+.theme-toggle-icon-sun {
+  display: none;
+}
+
+:root[data-theme="dark"] .theme-toggle-icon-sun {
+  display: block;
+}
+
+:root[data-theme="dark"] .theme-toggle-icon-moon {
+  display: none;
 }
 
 .support-side-banner {
@@ -2268,6 +2364,179 @@ button:disabled {
   margin: 0;
   overflow-wrap: anywhere;
   color: var(--text);
+}
+
+:root[data-theme="dark"] input,
+:root[data-theme="dark"] select,
+:root[data-theme="dark"] textarea {
+  border-color: var(--line);
+  background: var(--control-bg);
+  color: var(--text);
+}
+
+:root[data-theme="dark"] input::placeholder,
+:root[data-theme="dark"] textarea::placeholder {
+  color: #728196;
+}
+
+:root[data-theme="dark"] .ops-hero,
+:root[data-theme="dark"] .filter-panel,
+:root[data-theme="dark"] .stat-card,
+:root[data-theme="dark"] .panel,
+:root[data-theme="dark"] .login-panel,
+:root[data-theme="dark"] .live-card,
+:root[data-theme="dark"] .support-side-banner {
+  border-color: var(--glass-border);
+  background: var(--glass-bg);
+  box-shadow: var(--shadow);
+}
+
+:root[data-theme="dark"] .quick-filter,
+:root[data-theme="dark"] .filter-grid .field,
+:root[data-theme="dark"] .my-alliance-filter-grid .field,
+:root[data-theme="dark"] .live-metrics div,
+:root[data-theme="dark"] .roster-row,
+:root[data-theme="dark"] .page-control,
+:root[data-theme="dark"] .settings-sidebar,
+:root[data-theme="dark"] .settings-menu-item,
+:root[data-theme="dark"] .buyer-picker-menu,
+:root[data-theme="dark"] .report-card,
+:root[data-theme="dark"] .session-summary-card,
+:root[data-theme="dark"] .item-price-card,
+:root[data-theme="dark"] .loot-tab-button,
+:root[data-theme="dark"] .loot-preview-summary,
+:root[data-theme="dark"] .loot-preview-group,
+:root[data-theme="dark"] .loot-member-group,
+:root[data-theme="dark"] .loot-event-metrics div,
+:root[data-theme="dark"] .loot-summary-status,
+:root[data-theme="dark"] .loot-update-form,
+:root[data-theme="dark"] .loot-delete-form,
+:root[data-theme="dark"] .loot-fee-summary div,
+:root[data-theme="dark"] .loot-breakdown-card,
+:root[data-theme="dark"] .rank-strip,
+:root[data-theme="dark"] .mini-rank-row,
+:root[data-theme="dark"] .log-tab {
+  border-color: var(--glass-border);
+  background: var(--glass-bg-soft);
+}
+
+:root[data-theme="dark"] .filter-panel input,
+:root[data-theme="dark"] .filter-panel select,
+:root[data-theme="dark"] .buyer-search-input {
+  border-color: var(--line);
+  background: var(--control-bg-soft);
+  color: var(--text);
+}
+
+:root[data-theme="dark"] .filter-grid .field > span,
+:root[data-theme="dark"] .login-copy h1,
+:root[data-theme="dark"] .login-panel h2,
+:root[data-theme="dark"] .meta-list dd {
+  color: var(--text);
+}
+
+:root[data-theme="dark"] .quick-filter.is-active,
+:root[data-theme="dark"] .quick-filter:hover,
+:root[data-theme="dark"] .settings-menu-item:hover,
+:root[data-theme="dark"] .settings-menu-item.is-active,
+:root[data-theme="dark"] .buyer-option:hover,
+:root[data-theme="dark"] .buyer-option.is-selected,
+:root[data-theme="dark"] .loot-tab-button:hover,
+:root[data-theme="dark"] .loot-tab-button.is-active,
+:root[data-theme="dark"] .log-tab.is-active,
+:root[data-theme="dark"] .log-tab:hover,
+:root[data-theme="dark"] .page-control:hover {
+  border-color: var(--hover-border);
+  background: var(--hover-bg);
+  color: var(--text);
+}
+
+:root[data-theme="dark"] .report-preview-rail,
+:root[data-theme="dark"] .loot-event-body {
+  background: var(--glass-bg-muted);
+}
+
+:root[data-theme="dark"] .status-pending,
+:root[data-theme="dark"] .status-off {
+  background: rgba(245, 158, 11, 0.16);
+  color: #f8cf73;
+}
+
+:root[data-theme="dark"] .status-processing {
+  background: rgba(80, 183, 221, 0.16);
+  color: #8ddfff;
+}
+
+:root[data-theme="dark"] .status-completed,
+:root[data-theme="dark"] .status-on,
+:root[data-theme="dark"] .alert.success,
+:root[data-theme="dark"] .live-state.is-active,
+:root[data-theme="dark"] .loot-summary-status.is-paid,
+:root[data-theme="dark"] .payout-status-badge.is-paid,
+:root[data-theme="dark"] .alliance-chip.is-paid {
+  background: rgba(85, 217, 159, 0.14);
+  color: var(--green);
+}
+
+:root[data-theme="dark"] .status-failed,
+:root[data-theme="dark"] .alert.error,
+:root[data-theme="dark"] .error-row td,
+:root[data-theme="dark"] .loot-summary-status.is-unpaid,
+:root[data-theme="dark"] .danger-text-button:hover {
+  background: rgba(255, 123, 115, 0.14);
+  color: var(--red);
+}
+
+:root[data-theme="dark"] .status-delete {
+  background: rgba(163, 176, 191, 0.14);
+  color: var(--muted);
+}
+
+:root[data-theme="dark"] .page-control.is-active,
+:root[data-theme="dark"] .primary-action,
+:root[data-theme="dark"] .primary-button {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--text-on-accent);
+}
+
+:root[data-theme="dark"] .secondary-button,
+:root[data-theme="dark"] .tiny-button,
+:root[data-theme="dark"] .buyer-picker-button {
+  border-color: var(--line);
+  background: var(--surface-muted);
+  color: var(--text);
+}
+
+:root[data-theme="dark"] .switch-toggle span {
+  background: #f4f8fc;
+}
+
+:root[data-theme="dark"] .login-body {
+  background:
+    linear-gradient(135deg, rgba(80, 183, 221, 0.18), transparent 34%),
+    linear-gradient(225deg, rgba(85, 217, 159, 0.14), transparent 36%),
+    linear-gradient(180deg, #111923 0%, #0d131a 100%);
+}
+
+:root[data-theme="dark"] .login-body::before {
+  background-image:
+    linear-gradient(rgba(237, 244, 251, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(237, 244, 251, 0.05) 1px, transparent 1px);
+}
+
+:root[data-theme="dark"] .login-copy p:not(.eyebrow),
+:root[data-theme="dark"] .login-description,
+:root[data-theme="dark"] .remember-row,
+:root[data-theme="dark"] .meta-list dt,
+:root[data-theme="dark"] .meta-list dd {
+  color: var(--muted);
+}
+
+:root[data-theme="dark"] .login-chips span,
+:root[data-theme="dark"] .remember-row {
+  border-color: var(--glass-border);
+  background: var(--glass-bg-soft);
 }
 
 @media (max-width: 1040px) {
