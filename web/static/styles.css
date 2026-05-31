@@ -2415,6 +2415,8 @@ button:disabled {
 :root[data-theme="dark"] .loot-breakdown-card,
 :root[data-theme="dark"] .rank-strip,
 :root[data-theme="dark"] .mini-rank-row,
+:root[data-theme="dark"] .alliance-detail,
+:root[data-theme="dark"] .member-pill,
 :root[data-theme="dark"] .log-tab {
   border-color: var(--glass-border);
   background: var(--glass-bg-soft);
@@ -2452,8 +2454,29 @@ button:disabled {
 }
 
 :root[data-theme="dark"] .report-preview-rail,
+:root[data-theme="dark"] .status-detail-grid,
 :root[data-theme="dark"] .loot-event-body {
   background: var(--glass-bg-muted);
+}
+
+:root[data-theme="dark"] .alliance-chip {
+  background: rgba(80, 183, 221, 0.16);
+  color: var(--accent-strong);
+}
+
+:root[data-theme="dark"] .alliance-chip.is-empty,
+:root[data-theme="dark"] .payout-status-badge.is-unpaid {
+  background: rgba(163, 176, 191, 0.14);
+  color: var(--muted);
+}
+
+:root[data-theme="dark"] .alliance-detail h2,
+:root[data-theme="dark"] .member-pill {
+  color: var(--text);
+}
+
+:root[data-theme="dark"] .alliance-detail header span {
+  color: var(--muted);
 }
 
 :root[data-theme="dark"] .status-pending,
