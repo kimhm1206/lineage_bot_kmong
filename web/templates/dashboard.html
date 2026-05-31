@@ -67,6 +67,7 @@
         </a>
       {% endfor %}
       <a class="quick-filter" href="{{ filters.reset_href }}">초기화</a>
+      <a class="quick-filter download-filter" href="{{ filters.export_href }}">CSV 다운로드</a>
     </div>
   </form>
 
@@ -179,31 +180,32 @@
 
     <article class="panel">
       <header class="panel-header">
-        <h2>출석 로그</h2>
-        <span class="panel-caption">최근 {{ attendance_rows|length }}건</span>
+        <h2>최근 회차 요약</h2>
+        <span class="panel-caption">최근 {{ recent_sessions|length }}회</span>
       </header>
-      <table>
-        <thead>
-          <tr>
-            <th>시간</th>
-            <th>유저</th>
-            <th>혈맹</th>
-            <th>Discord ID</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for row in attendance_rows %}
-            <tr>
-              <td>{{ row.started_at }}</td>
-              <td>{{ row.discord_nickname or "-" }}</td>
-              <td>{{ row.alliance_name }}</td>
-              <td>{{ row.discord_id or "-" }}</td>
-            </tr>
-          {% else %}
-            <tr><td colspan="4" class="empty">조건에 맞는 출석 로그가 없습니다.</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
+      <div class="session-summary-list">
+        {% for session in recent_sessions %}
+          <div class="session-summary-card">
+            <div>
+              <span class="status-id">#{{ session.attendance_id }}</span>
+              <strong>{{ session.started_at }}</strong>
+              <span>총 {{ session.participant_count }}명 · 시작자 {{ session.started_by_name or "-" }}</span>
+            </div>
+            <div class="alliance-chip-row">
+              {% for alliance in session.alliances[:4] %}
+                <span class="alliance-chip">{{ alliance.alliance_name }} {{ alliance.count }}명</span>
+              {% else %}
+                <span class="alliance-chip is-empty">출석 없음</span>
+              {% endfor %}
+              {% if session.alliances|length > 4 %}
+                <span class="alliance-chip is-empty">+{{ session.alliances|length - 4 }}</span>
+              {% endif %}
+            </div>
+          </div>
+        {% else %}
+          <div class="empty report-empty">최근 출석 회차가 없습니다.</div>
+        {% endfor %}
+      </div>
     </article>
   </section>
 {% endblock %}

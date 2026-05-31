@@ -68,6 +68,9 @@ class AttendanceActionView(discord.ui.View):
             )
             return
 
+        if not await _safe_interaction_defer(interaction):
+            return
+
         _, message = await register_attendance(self.bot, guild.id, user)
         await _safe_interaction_response(interaction, message, ephemeral=True)
 
@@ -802,7 +805,24 @@ async def _safe_interaction_response(
     *,
     ephemeral: bool = True,
 ) -> None:
+    try:
+        if interaction.response.is_done():
+            await interaction.followup.send(message, ephemeral=ephemeral)
+        else:
+            await interaction.response.send_message(message, ephemeral=ephemeral)
+    except discord.NotFound:
+        return
+
+
+async def _safe_interaction_defer(
+    interaction: discord.Interaction,
+    *,
+    ephemeral: bool = True,
+) -> bool:
     if interaction.response.is_done():
-        await interaction.followup.send(message, ephemeral=ephemeral)
-    else:
-        await interaction.response.send_message(message, ephemeral=ephemeral)
+        return True
+    try:
+        await interaction.response.defer(ephemeral=ephemeral)
+        return True
+    except discord.NotFound:
+        return False

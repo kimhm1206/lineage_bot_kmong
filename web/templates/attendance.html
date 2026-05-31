@@ -9,29 +9,27 @@
       <h1>출석 관리</h1>
       <p class="hero-copy">웹에서 출석을 시작하고, Discord 봇이 받는 참여자를 실시간으로 확인합니다.</p>
     </div>
-    <div class="hero-actions">
-      <form
-        method="post"
-        action="{% if live_state.active %}/attendance/stop{% else %}/attendance/start{% endif %}?guild_id={{ auth.selected_guild_id }}"
-        data-attendance-toggle-form
-        data-can-manage="{% if auth.selected_server.can_manage %}1{% else %}0{% endif %}"
-      >
-        <button
-          class="{% if live_state.active %}danger-button{% else %}primary-button{% endif %}"
-          type="submit"
-          data-attendance-toggle-button
-          {% if not auth.selected_server.can_manage %}disabled{% endif %}
+    {% if auth.selected_server.can_manage %}
+      <div class="hero-actions">
+        <form
+          method="post"
+          action="{% if live_state.active %}/attendance/stop{% else %}/attendance/start{% endif %}?guild_id={{ auth.selected_guild_id }}"
+          data-attendance-toggle-form
         >
-          {% if not auth.selected_server.can_manage %}
-            관리자 권한 필요
-          {% elif live_state.active %}
-            출석 종료
-          {% else %}
-            출석 시작
-          {% endif %}
-        </button>
-      </form>
-    </div>
+          <button
+            class="{% if live_state.active %}danger-button{% else %}primary-button{% endif %}"
+            type="submit"
+            data-attendance-toggle-button
+          >
+            {% if live_state.active %}
+              출석 종료
+            {% else %}
+              출석 시작
+            {% endif %}
+          </button>
+        </form>
+      </div>
+    {% endif %}
   </section>
 
   {% if queued == "start" %}
@@ -84,7 +82,6 @@
       <div class="roster-list" data-live-roster>
         {% for row in live_state.participants %}
           <div class="roster-row">
-            <span class="roster-rank">{{ loop.index }}</span>
             <div>
               <strong>{{ row.display_name }}</strong>
               <span>{{ row.alliance_name }} · {{ row.attended_at }}</span>
@@ -145,7 +142,6 @@
     const liveConnection = document.querySelector("[data-live-connection]");
     const toggleForm = document.querySelector("[data-attendance-toggle-form]");
     const toggleButton = document.querySelector("[data-attendance-toggle-button]");
-    const canManage = toggleForm?.dataset.canManage === "1";
     let latestLiveState = {{ live_state | tojson }};
 
     liveSocket.addEventListener("open", () => {
@@ -179,7 +175,7 @@
     }
 
     function updateToggleButton(active) {
-      if (!toggleForm || !toggleButton || !canManage) {
+      if (!toggleForm || !toggleButton) {
         return;
       }
       toggleForm.action = active
@@ -231,13 +227,9 @@
         return;
       }
 
-      state.participants.forEach((participant, index) => {
+      state.participants.forEach((participant) => {
         const row = document.createElement("div");
         row.className = "roster-row";
-
-        const rank = document.createElement("span");
-        rank.className = "roster-rank";
-        rank.textContent = String(index + 1);
 
         const body = document.createElement("div");
         const name = document.createElement("strong");
@@ -247,7 +239,6 @@
 
         body.appendChild(name);
         body.appendChild(meta);
-        row.appendChild(rank);
         row.appendChild(body);
         liveRoster.appendChild(row);
       });

@@ -6,6 +6,7 @@ from typing import Any
 import discord
 
 from common import database
+from discord_bot.reports import reload_report_schedules
 from discord_bot.utils.attendance import (
     persist_attendance_snapshot,
     send_attendance_summary,
@@ -54,6 +55,8 @@ async def _process_command(bot: discord.Bot, row: dict[str, Any]) -> None:
             result = await _process_stop_attendance(bot, row)
         elif command_type == "refresh_admin_panel":
             result = await _process_refresh_admin_panel(bot, row)
+        elif command_type == "refresh_report_schedules":
+            result = await reload_report_schedules(bot)
         else:
             raise RuntimeError(f"Unsupported command_type: {command_type}")
     except Exception as exc:

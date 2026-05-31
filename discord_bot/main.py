@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 
 from common import database
 from discord_bot.queue import start_command_queue_worker
+from discord_bot.reports import start_report_scheduler
 from discord_bot.utils.attendance import (
     AttendanceActionView,
     register_attendance,
@@ -38,6 +39,8 @@ bot.voice_entry_times_by_guild = {}
 bot.commands_synced = False
 bot.persistent_views_registered = False
 bot.command_queue_task = None
+bot.report_scheduler = None
+bot.report_scheduler_reload_task = None
 bot.runtime_label = (
     f"{datetime.now(timezone(timedelta(hours=9))).strftime('%Y-%m-%d %H:%M')} "
     "구동 Ver1.3"
@@ -55,6 +58,7 @@ async def on_ready() -> None:
         bot.commands_synced = True
 
     start_command_queue_worker(bot)
+    start_report_scheduler(bot)
 
     for guild in bot.guilds:
         seed_voice_entry_times(bot, guild)
@@ -81,8 +85,9 @@ async def attend(ctx: discord.ApplicationContext) -> None:
         await ctx.respond("서버에서만 사용할 수 있습니다.", ephemeral=True)
         return
 
+    await ctx.defer(ephemeral=True)
     _, message = await register_attendance(bot, guild.id, author)
-    await ctx.respond(message, ephemeral=True)
+    await ctx.followup.send(message, ephemeral=True)
 
 
 @bot.slash_command(

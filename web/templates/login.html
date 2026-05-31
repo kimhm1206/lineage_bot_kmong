@@ -6,31 +6,16 @@
 {% block content %}
   <section class="login-shell">
     <div class="login-copy">
-      <p class="eyebrow">Lineage Ops Console</p>
-      <h1>Discord 서버 운영을 한 화면에서.</h1>
-      <p>
-        출석 시작, 출석 현황, 유저별 통계까지 웹에서 확인하고
-        Discord 봇과 바로 연결합니다.
-      </p>
-      <div class="login-chips" aria-label="주요 기능">
-        <span>출석 관리</span>
-        <span>서버 선택</span>
-        <span>통계 조회</span>
-      </div>
+      <h1>하이네 연합 통합 관리 툴</h1>
     </div>
 
     <section class="login-panel" aria-labelledby="login-title">
       <div class="login-card-top">
         <div class="discord-mark" aria-hidden="true">D</div>
         <div>
-          <p class="eyebrow">Discord OAuth</p>
           <h2 id="login-title">관리 서버 로그인</h2>
         </div>
       </div>
-
-      <p class="login-description">
-        가입 중인 Discord 서버가 DB의 관리 서버와 일치하면 접속됩니다.
-      </p>
 
       {% if error_message %}
         <div class="alert error">{{ error_message }}</div>
@@ -55,13 +40,6 @@
           OAuth 사용 전 `.env`에 `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET` 설정이 필요합니다.
         </p>
       {% endif %}
-
-      <dl class="meta-list">
-        <div>
-          <dt>Callback URL</dt>
-          <dd>{{ redirect_uri }}</dd>
-        </div>
-      </dl>
     </section>
   </section>
 {% endblock %}

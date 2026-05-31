@@ -1,17 +1,21 @@
 from __future__ import annotations
 
 import asyncio
+import csv
+import io
 import os
 import secrets
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
+from time import monotonic
 from typing import Any
 from urllib.parse import parse_qs, urlencode
 
 import requests
 from dotenv import load_dotenv
 from fastapi import FastAPI, Query, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from psycopg2.extras import Json
@@ -25,6 +29,9 @@ load_dotenv()
 BASE_DIR = Path(__file__).resolve().parent
 DISCORD_API_BASE = "https://discord.com/api/v10"
 KST = timezone(timedelta(hours=9))
+DISCORD_SETTINGS_CACHE_TTL_SECONDS = int(
+    os.getenv("DISCORD_SETTINGS_CACHE_TTL_SECONDS", "90")
+)
 DISCORD_REDIRECT_URI = os.getenv(
     "DISCORD_REDIRECT_URI",
     "http://localhost:8000/auth/discord/callback",
@@ -75,7 +82,6 @@ REPORT_RESULT_OPTIONS = (
 REPORT_STATUS_OPTIONS = (
     {"value": "on", "label": "on"},
     {"value": "off", "label": "off"},
-    {"value": "delete", "label": "delete"},
 )
 REPORT_OPTIONS = {
     "frequencies": REPORT_FREQUENCY_OPTIONS,
@@ -94,6 +100,7 @@ app.add_middleware(
 )
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
+_DISCORD_BOT_GET_CACHE: dict[str, tuple[float, Any]] = {}
 
 
 @app.on_event("startup")
@@ -159,6 +166,19 @@ def _discord_bot_get(path: str) -> Any:
     return response.json()
 
 
+def _discord_bot_get_cached(path: str) -> Any:
+    now = monotonic()
+    cached = _DISCORD_BOT_GET_CACHE.get(path)
+    if cached and cached[0] > now:
+        return cached[1]
+    value = _discord_bot_get(path)
+    _DISCORD_BOT_GET_CACHE[path] = (
+        now + DISCORD_SETTINGS_CACHE_TTL_SECONDS,
+        value,
+    )
+    return value
+
+
 def _normalize_discord_user(user: dict[str, Any]) -> dict[str, str]:
     username = str(user.get("username") or "")
     display_name = str(user.get("global_name") or username or user.get("id"))
@@ -202,13 +222,15 @@ def _role_from_bot_member_permissions(
         return None
 
     try:
-        guild = _discord_bot_get(f"/guilds/{guild_id}")
+        guild = _discord_bot_get_cached(f"/guilds/{guild_id}")
         if str(guild.get("owner_id")) == str(discord_user_id):
             return "admin"
 
-        member = _discord_bot_get(f"/guilds/{guild_id}/members/{discord_user_id}")
-        roles = _discord_bot_get(f"/guilds/{guild_id}/roles")
+        member = _discord_guild_member(guild_id, discord_user_id)
+        roles = _discord_bot_get_cached(f"/guilds/{guild_id}/roles")
     except Exception:
+        return None
+    if member is None:
         return None
 
     member_role_ids = {str(role_id) for role_id in member.get("roles", [])}
@@ -220,6 +242,164 @@ def _role_from_bot_member_permissions(
         permissions |= _discord_permissions(role)
 
     return "admin" if permissions & DISCORD_WEB_ADMIN_PERMISSION_MASK else "user"
+
+
+def _discord_guild_member(
+    guild_id: int,
+    discord_user_id: str,
+) -> dict[str, Any] | None:
+    if not DISCORD_BOT_TOKEN:
+        return None
+    try:
+        member = _discord_bot_get_cached(f"/guilds/{guild_id}/members/{discord_user_id}")
+    except Exception:
+        return None
+    return member if isinstance(member, dict) else None
+
+
+def _guild_member_display_name(
+    guild_id: int,
+    discord_user_id: str,
+    fallback_name: str,
+) -> str:
+    member = _discord_guild_member(guild_id, discord_user_id)
+    if member is None:
+        return fallback_name
+
+    nick = str(member.get("nick") or "").strip()
+    if nick:
+        return nick
+
+    user = member.get("user") or {}
+    for key in ("global_name", "username"):
+        name = str(user.get(key) or "").strip()
+        if name:
+            return name
+    return fallback_name
+
+
+def _load_active_alliances() -> list[dict[str, Any]]:
+    rows = database.fetchall(
+        """
+        SELECT alliance_id, alliance_name
+        FROM alliances
+        WHERE is_active = TRUE
+        ORDER BY sort_order ASC NULLS LAST, alliance_name ASC
+        """
+    )
+    return [
+        {
+            "alliance_id": int(row["alliance_id"]),
+            "alliance_name": str(row["alliance_name"]),
+        }
+        for row in rows
+    ]
+
+
+def _discord_member_role_ids(guild_id: int, discord_user_id: str) -> set[str]:
+    member = _discord_guild_member(guild_id, discord_user_id)
+    if member is None:
+        return set()
+    return {str(role_id) for role_id in member.get("roles", [])}
+
+
+def _discord_member_role_ids_by_priority(
+    guild_id: int,
+    discord_user_id: str,
+) -> list[str]:
+    member_role_ids = _discord_member_role_ids(guild_id, discord_user_id)
+    if not member_role_ids:
+        return []
+
+    try:
+        roles = _discord_bot_get_cached(f"/guilds/{guild_id}/roles")
+    except Exception:
+        return sorted(member_role_ids)
+
+    role_positions = {
+        str(role.get("id")): int(role.get("position") or 0)
+        for role in roles
+        if str(role.get("id")) in member_role_ids
+    }
+    return sorted(
+        member_role_ids,
+        key=lambda role_id: (-role_positions.get(role_id, 0), role_id),
+    )
+
+
+def _unique_alliance_options(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    options_by_id: dict[int, dict[str, Any]] = {}
+    for row in rows:
+        alliance_id = int(row["alliance_id"])
+        options_by_id.setdefault(
+            alliance_id,
+            {
+                "alliance_id": alliance_id,
+                "alliance_name": str(row["alliance_name"]),
+            },
+        )
+    return sorted(options_by_id.values(), key=lambda item: item["alliance_name"])
+
+
+def _member_alliance_options(
+    guild_id: int,
+    discord_user_id: str,
+) -> list[dict[str, Any]]:
+    member_role_ids = _discord_member_role_ids_by_priority(guild_id, discord_user_id)
+    if not member_role_ids:
+        return []
+
+    mappings_by_role_id = {
+        str(mapping["role_id"]): mapping
+        for mapping in database.get_guild_alliance_role_mappings(guild_id)
+    }
+    options: list[dict[str, Any]] = []
+    seen_alliance_ids: set[int] = set()
+    for role_id in member_role_ids:
+        mapping = mappings_by_role_id.get(role_id)
+        if mapping is None:
+            continue
+
+        alliance_id = int(mapping["alliance_id"])
+        if alliance_id in seen_alliance_ids:
+            continue
+        seen_alliance_ids.add(alliance_id)
+        options.append(
+            {
+                "alliance_id": alliance_id,
+                "alliance_name": str(mapping["alliance_name"]),
+            }
+        )
+    return options
+
+
+def _role_display_label(server_role: str, alliance_options: list[dict[str, Any]]) -> str:
+    if server_role == "developer":
+        return "developer"
+
+    alliance_name = (
+        str(alliance_options[0]["alliance_name"]) if alliance_options else ""
+    )
+    if server_role == "admin":
+        return f"{alliance_name} admin" if alliance_name else "admin"
+    return alliance_name or "user"
+
+
+def _my_alliance_access(
+    guild_id: int,
+    discord_user_id: str,
+    server_role: str,
+) -> dict[str, Any]:
+    if server_role == "developer":
+        options = _load_active_alliances()
+    else:
+        options = _member_alliance_options(guild_id, discord_user_id)
+
+    return {
+        "can_view": bool(options),
+        "can_select": len(options) > 1,
+        "options": options,
+    }
 
 
 def _load_accessible_servers(
@@ -335,6 +515,20 @@ def _auth_context_from_session(
         )
     selected_server["role"] = verified_role
     selected_server["can_manage"] = verified_role in {"admin", "developer"}
+    selected_server["member_display_name"] = _guild_member_display_name(
+        int(selected_guild_id),
+        str(user["id"]),
+        str(user.get("display_name") or user.get("username") or user["id"]),
+    )
+    selected_server["my_alliance"] = _my_alliance_access(
+        int(selected_guild_id),
+        str(user["id"]),
+        verified_role,
+    )
+    selected_server["role_label"] = _role_display_label(
+        verified_role,
+        selected_server["my_alliance"]["options"],
+    )
     returned_servers = [
         selected_server if str(server["guild_id"]) == selected_guild_id else server
         for server in servers
@@ -355,8 +549,26 @@ def _auth_context(
     return _auth_context_from_session(request.session, guild_id)
 
 
+def _wants_json(request: Request) -> bool:
+    return (
+        request.headers.get("x-requested-with") == "fetch"
+        or "application/json" in request.headers.get("accept", "")
+    )
+
+
 def _can_manage_selected_server(auth: dict[str, Any]) -> bool:
     return bool(auth["selected_server"].get("can_manage"))
+
+
+def _is_developer_auth(auth: dict[str, Any]) -> bool:
+    return str(auth["selected_server"].get("role")) == "developer"
+
+
+def _settings_forbidden_redirect(selected_guild_id: int) -> RedirectResponse:
+    return RedirectResponse(
+        f"/attendance?guild_id={selected_guild_id}",
+        status_code=303,
+    )
 
 
 def _safe_redirect_path(value: str | None) -> str | None:
@@ -452,6 +664,62 @@ def _dashboard_url(
     if limit:
         params["limit"] = limit
     return f"/dashboard?{urlencode(params)}"
+
+
+def _dashboard_csv_url(
+    guild_id: int,
+    *,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    search: str | None = None,
+    alliance: str | None = None,
+) -> str:
+    params: dict[str, Any] = {"guild_id": guild_id}
+    if start_date:
+        params["start_date"] = start_date
+    if end_date:
+        params["end_date"] = end_date
+    if search:
+        params["search"] = search
+    if alliance:
+        params["alliance"] = alliance
+    return f"/dashboard/export.csv?{urlencode(params)}"
+
+
+def _status_url(guild_id: int, page: int) -> str:
+    return f"/status?{urlencode({'guild_id': guild_id, 'page': page})}"
+
+
+def _pagination_items(
+    guild_id: int,
+    current_page: int,
+    total_pages: int,
+) -> list[dict[str, Any]]:
+    if total_pages <= 1:
+        return []
+
+    pages = {total_pages, current_page}
+    pages.update(range(1, min(5, total_pages) + 1))
+    for page in range(current_page - 2, current_page + 3):
+        if 1 <= page <= total_pages:
+            pages.add(page)
+
+    items: list[dict[str, Any]] = []
+    previous_page = 0
+    for page in sorted(pages):
+        if previous_page and page - previous_page > 1:
+            items.append({"type": "ellipsis", "label": "..."})
+        items.append(
+            {
+                "type": "page",
+                "label": str(page),
+                "page": page,
+                "href": _status_url(guild_id, page),
+                "active": page == current_page,
+            }
+        )
+        previous_page = page
+    return items
 
 
 def _quick_dashboard_filters(
@@ -563,6 +831,316 @@ def _alliance_stats_from_attendance_rows(
     )
 
 
+def _percent(value: int | float | Decimal, total: int | float | Decimal) -> float:
+    total_decimal = Decimal(str(total or 0))
+    if total_decimal <= 0:
+        return 0.0
+    value_decimal = Decimal(str(value or 0))
+    return float((value_decimal / total_decimal) * Decimal("100"))
+
+
+def _percent_text(value: int | float | Decimal, total: int | float | Decimal) -> str:
+    return f"{_percent(value, total):.1f}%"
+
+
+def _attendance_where(
+    guild_id: int,
+    start_at: str | None,
+    end_at: str | None,
+) -> tuple[str, list[Any]]:
+    clauses = ["s.guild_id = %s"]
+    params: list[Any] = [guild_id]
+    if start_at:
+        clauses.append("s.started_at >= %s")
+        params.append(start_at)
+    if end_at:
+        clauses.append("s.started_at <= %s")
+        params.append(end_at)
+    return " AND ".join(clauses), params
+
+
+def _count_period_sessions(
+    guild_id: int,
+    start_at: str | None,
+    end_at: str | None,
+) -> int:
+    where_sql, params = _attendance_where(guild_id, start_at, end_at)
+    row = database.fetchone(
+        f"""
+        SELECT COUNT(*) AS session_count
+        FROM attendance_sessions s
+        WHERE {where_sql}
+        """,
+        tuple(params),
+    )
+    return int(row["session_count"] or 0) if row else 0
+
+
+def _alliance_attendance_member_rows(
+    guild_id: int,
+    start_at: str | None,
+    end_at: str | None,
+) -> list[dict[str, Any]]:
+    where_sql, params = _attendance_where(guild_id, start_at, end_at)
+    rows = database.fetchall(
+        f"""
+        SELECT
+            s.attendance_id,
+            s.started_at,
+            u.user_id,
+            u.discord_id,
+            u.discord_nickname,
+            u.alliance_id,
+            COALESCE(a.alliance_name, '미분류') AS alliance_name
+        FROM attendance_sessions s
+        INNER JOIN attendance_entries e ON e.attendance_id = s.attendance_id
+        INNER JOIN users u ON u.user_id = e.user_id
+        LEFT JOIN alliances a ON a.alliance_id = u.alliance_id
+        WHERE {where_sql}
+        """,
+        tuple(params),
+    )
+    return [
+        {
+            "attendance_id": int(row["attendance_id"]),
+            "started_at": str(row["started_at"] or ""),
+            "user_id": int(row["user_id"]),
+            "discord_id": int(row["discord_id"]),
+            "discord_nickname": str(row["discord_nickname"]),
+            "alliance_id": _parse_optional_int(row["alliance_id"]),
+            "alliance_name": str(row["alliance_name"] or "미분류"),
+        }
+        for row in rows
+    ]
+
+
+def _filter_alliance_rows(
+    rows: list[dict[str, Any]],
+    alliance_id: int,
+) -> list[dict[str, Any]]:
+    return [row for row in rows if row.get("alliance_id") == alliance_id]
+
+
+def _alliance_overview(
+    guild_id: int,
+    alliance_id: int,
+    start_at: str | None,
+    end_at: str | None,
+) -> dict[str, Any]:
+    total_sessions = _count_period_sessions(guild_id, start_at, end_at)
+    rows = _filter_alliance_rows(
+        _alliance_attendance_member_rows(guild_id, start_at, end_at),
+        alliance_id,
+    )
+    alliance_sessions = len({row["attendance_id"] for row in rows})
+    attendance_count = len(rows)
+    unique_users = len({row["user_id"] for row in rows})
+    average_count = round(attendance_count / alliance_sessions, 1) if alliance_sessions else 0
+    return {
+        "total_sessions": total_sessions,
+        "alliance_session_count": alliance_sessions,
+        "attendance_count": attendance_count,
+        "unique_user_count": unique_users,
+        "average_count": average_count,
+        "session_rate": _percent_text(alliance_sessions, total_sessions),
+    }
+
+
+def _alliance_user_rankings(
+    guild_id: int,
+    alliance_id: int,
+    start_at: str | None,
+    end_at: str | None,
+    *,
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    total_sessions = _count_period_sessions(guild_id, start_at, end_at)
+    rows = _filter_alliance_rows(
+        _alliance_attendance_member_rows(guild_id, start_at, end_at),
+        alliance_id,
+    )
+    grouped: dict[int, dict[str, Any]] = {}
+    for row in rows:
+        bucket = grouped.setdefault(
+            int(row["user_id"]),
+            {
+                "user_id": int(row["user_id"]),
+                "discord_nickname": str(row["discord_nickname"]),
+                "attendance_ids": set(),
+                "last_attended_at": "",
+            },
+        )
+        bucket["attendance_ids"].add(int(row["attendance_id"]))
+        started_at = str(row["started_at"] or "")
+        if started_at > str(bucket["last_attended_at"] or ""):
+            bucket["last_attended_at"] = started_at
+
+    ranked_rows = sorted(
+        grouped.values(),
+        key=lambda row: (-len(row["attendance_ids"]), row["discord_nickname"]),
+    )[: int(limit)]
+    return [
+        {
+            "rank": index,
+            "user_id": int(row["user_id"]),
+            "discord_nickname": str(row["discord_nickname"]),
+            "attendance_count": len(row["attendance_ids"]),
+            "participation_rate": _percent(
+                len(row["attendance_ids"]),
+                total_sessions,
+            ),
+            "participation_rate_text": _percent_text(
+                len(row["attendance_ids"]),
+                total_sessions,
+            ),
+            "last_attended_at": row["last_attended_at"] or "",
+        }
+        for index, row in enumerate(ranked_rows, start=1)
+    ]
+
+
+def _alliance_hour_stats(
+    guild_id: int,
+    alliance_id: int,
+    start_at: str | None,
+    end_at: str | None,
+) -> list[dict[str, Any]]:
+    rows = _filter_alliance_rows(
+        _alliance_attendance_member_rows(guild_id, start_at, end_at),
+        alliance_id,
+    )
+    grouped: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        started_at = str(row["started_at"] or "")
+        hour_label = started_at[11:13] if len(started_at) >= 13 else ""
+        if not hour_label.isdigit():
+            continue
+        bucket = grouped.setdefault(
+            hour_label,
+            {"attendance_count": 0, "sessions": set(), "users": set()},
+        )
+        bucket["attendance_count"] += 1
+        bucket["sessions"].add(int(row["attendance_id"]))
+        bucket["users"].add(int(row["user_id"]))
+    ranked_rows = sorted(
+        grouped.items(),
+        key=lambda item: (-int(item[1]["attendance_count"]), item[0]),
+    )[:24]
+    return [
+        {
+            "hour": hour_label,
+            "label": f"{int(hour_label):02d}:00",
+            "attendance_count": int(values["attendance_count"]),
+            "session_count": len(values["sessions"]),
+            "unique_user_count": len(values["users"]),
+            "average_count": (
+                round(int(values["attendance_count"]) / len(values["sessions"]), 1)
+                if values["sessions"]
+                else 0
+            ),
+        }
+        for hour_label, values in ranked_rows
+    ]
+
+
+def _alliance_daily_rows(
+    guild_id: int,
+    alliance_id: int,
+    start_at: str | None,
+    end_at: str | None,
+) -> list[dict[str, Any]]:
+    rows = _filter_alliance_rows(
+        _alliance_attendance_member_rows(guild_id, start_at, end_at),
+        alliance_id,
+    )
+    grouped: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        started_at = str(row["started_at"] or "")
+        attendance_date = started_at[:10]
+        if not attendance_date:
+            continue
+        bucket = grouped.setdefault(
+            attendance_date,
+            {"attendance_count": 0, "sessions": set(), "users": set()},
+        )
+        bucket["attendance_count"] += 1
+        bucket["sessions"].add(int(row["attendance_id"]))
+        bucket["users"].add(int(row["user_id"]))
+    ranked_rows = sorted(grouped.items(), key=lambda item: item[0], reverse=True)[:90]
+    return [
+        {
+            "attendance_date": attendance_date,
+            "attendance_count": int(values["attendance_count"]),
+            "session_count": len(values["sessions"]),
+            "unique_user_count": len(values["users"]),
+        }
+        for attendance_date, values in ranked_rows
+    ]
+
+
+def _alliance_weekday_stats(daily_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    weekday_labels = ("월", "화", "수", "목", "금", "토", "일")
+    grouped = {
+        index: {"attendance_count": 0, "session_count": 0, "unique_user_total": 0}
+        for index in range(7)
+    }
+    for row in daily_rows:
+        try:
+            day = datetime.strptime(str(row["attendance_date"]), "%Y-%m-%d").date()
+        except ValueError:
+            continue
+        bucket = grouped[day.weekday()]
+        bucket["attendance_count"] += int(row["attendance_count"])
+        bucket["session_count"] += int(row["session_count"])
+        bucket["unique_user_total"] += int(row["unique_user_count"])
+    return [
+        {
+            "label": weekday_labels[index],
+            "attendance_count": values["attendance_count"],
+            "session_count": values["session_count"],
+            "average_count": (
+                round(values["attendance_count"] / values["session_count"], 1)
+                if values["session_count"]
+                else 0
+            ),
+        }
+        for index, values in sorted(
+            grouped.items(),
+            key=lambda item: (-item[1]["attendance_count"], item[0]),
+        )
+        if values["attendance_count"] > 0
+    ]
+
+
+def _current_week_bounds() -> tuple[str, str]:
+    today = datetime.now(KST).date()
+    start = today - timedelta(days=today.weekday())
+    return f"{start.isoformat()} 00:00:00", f"{today.isoformat()} 23:59:59"
+
+
+def _current_month_bounds() -> tuple[str, str]:
+    today = datetime.now(KST).date()
+    start = today.replace(day=1)
+    return f"{start.isoformat()} 00:00:00", f"{today.isoformat()} 23:59:59"
+
+
+def _my_alliance_url(
+    guild_id: int,
+    *,
+    alliance_id: int | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> str:
+    params: dict[str, Any] = {"guild_id": guild_id}
+    if alliance_id:
+        params["alliance_id"] = alliance_id
+    if start_date:
+        params["start_date"] = start_date
+    if end_date:
+        params["end_date"] = end_date
+    return f"/my-alliance?{urlencode(params)}"
+
+
 def _settings_to_dict(settings: Any) -> dict[str, int | None]:
     return {
         "guild_id": settings.guild_id,
@@ -589,7 +1167,7 @@ def _normalize_discord_channel(channel: dict[str, Any]) -> dict[str, Any]:
 
 
 def _load_guild_channels(guild_id: int) -> dict[str, Any]:
-    channels = _discord_bot_get(f"/guilds/{guild_id}/channels")
+    channels = _discord_bot_get_cached(f"/guilds/{guild_id}/channels")
     normalized = [_normalize_discord_channel(channel) for channel in channels]
     normalized.sort(key=lambda channel: (channel["position"], channel["name"].lower()))
     return {
@@ -606,12 +1184,46 @@ def _load_guild_channels(guild_id: int) -> dict[str, Any]:
     }
 
 
+def _normalize_discord_role(role: dict[str, Any]) -> dict[str, Any]:
+    role_id = str(role["id"])
+    name = str(role.get("name") or role_id)
+    return {
+        "id": role_id,
+        "name": name,
+        "label": name,
+        "position": int(role.get("position") or 0),
+        "managed": bool(role.get("managed")),
+    }
+
+
+def _load_guild_roles(guild_id: int) -> list[dict[str, Any]]:
+    roles = _discord_bot_get_cached(f"/guilds/{guild_id}/roles")
+    normalized = [
+        _normalize_discord_role(role)
+        for role in roles
+        if str(role.get("id")) != str(guild_id)
+    ]
+    normalized.sort(key=lambda role: (-role["position"], role["name"].lower()))
+    return normalized
+
+
 def _channel_ids(channels: list[dict[str, Any]]) -> set[int]:
     return {int(channel["id"]) for channel in channels}
 
 
-def _parse_optional_int(value: str | None) -> int | None:
-    if value is None or value.strip() == "":
+def _role_ids(roles: list[dict[str, Any]]) -> set[int]:
+    return {int(role["id"]) for role in roles}
+
+
+def _find_role_name(roles: list[dict[str, Any]], role_id: int) -> str | None:
+    for role in roles:
+        if int(role["id"]) == role_id:
+            return str(role["label"])
+    return None
+
+
+def _parse_optional_int(value: Any) -> int | None:
+    if value is None or str(value).strip() == "":
         return None
     return int(value)
 
@@ -659,6 +1271,82 @@ def _settings_form_from_values(values: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _alliance_role_form_from_values(values: dict[str, Any]) -> dict[str, str]:
+    return {
+        "alliance_name": str(values.get("alliance_name") or ""),
+        "role_id": str(values.get("role_id") or ""),
+    }
+
+
+def _settings_discord_options(
+    guild_id: int,
+) -> tuple[dict[str, list[dict[str, Any]]], list[dict[str, Any]], str, str]:
+    channel_error = ""
+    role_error = ""
+    channels = {"text": [], "voice": []}
+    roles: list[dict[str, Any]] = []
+    try:
+        channels = _load_guild_channels(guild_id)
+    except Exception as exc:
+        channel_error = f"Discord 채널 목록을 불러오지 못했습니다. {exc}"
+    try:
+        roles = _load_guild_roles(guild_id)
+    except Exception as exc:
+        role_error = f"Discord 역할 목록을 불러오지 못했습니다. {exc}"
+    return channels, roles, channel_error, role_error
+
+
+def _settings_template_context(
+    auth: dict[str, Any],
+    guild_id: int,
+    *,
+    guild_settings: Any,
+    form: dict[str, Any],
+    channels: dict[str, list[dict[str, Any]]],
+    roles: list[dict[str, Any]],
+    channel_error: str,
+    role_error: str,
+    saved: str | None,
+    errors: list[str],
+    report_form: dict[str, str],
+    alliance_role_form: dict[str, str] | None = None,
+    item_price_form: dict[str, str] | None = None,
+    settings_active_tab: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "auth": auth,
+        "settings": _settings_to_dict(guild_settings),
+        "form": form,
+        "channels": channels,
+        "roles": roles,
+        "channel_error": channel_error,
+        "role_error": role_error,
+        "saved": saved,
+        "errors": errors,
+        "report_options": REPORT_OPTIONS,
+        "report_form": report_form,
+        "report_settings": _load_report_settings(guild_id),
+        "alliance_role_form": alliance_role_form or {"alliance_name": "", "role_id": ""},
+        "alliance_role_mappings": database.get_guild_alliance_role_mappings(guild_id),
+        "item_price_form": item_price_form or _default_item_price_form(),
+        "item_prices": _decorate_item_prices(database.get_item_price_settings(guild_id)),
+        "settings_active_tab": settings_active_tab or _settings_active_tab(saved),
+        "active_page": "settings",
+    }
+
+
+def _settings_active_tab(saved: str | None) -> str:
+    if saved in {"report", "report_status", "report_deleted", "report_error"}:
+        return "reports"
+    if saved in {"alliance_role", "alliance_role_deleted", "alliance_role_error"}:
+        return "alliance"
+    if saved in {"item_price", "item_price_deleted", "item_price_error"}:
+        return "items"
+    if saved == "1":
+        return "channels"
+    return "alliance"
+
+
 def _default_report_form() -> dict[str, str]:
     return {
         "frequency": "daily",
@@ -668,6 +1356,20 @@ def _default_report_form() -> dict[str, str]:
         "result_type": "all",
         "channel_id": "",
         "status": "on",
+    }
+
+
+def _default_item_price_form() -> dict[str, str]:
+    return {
+        "item_name": "",
+        "default_price": "",
+    }
+
+
+def _item_price_form_from_values(values: dict[str, Any]) -> dict[str, str]:
+    return {
+        "item_name": str(values.get("item_name") or ""),
+        "default_price": str(values.get("default_price") or ""),
     }
 
 
@@ -691,6 +1393,197 @@ def _format_run_time(value: str | None) -> str:
     if minute == "00" or not minute:
         return f"{int(hour):02d}시"
     return f"{int(hour):02d}시 {int(minute):02d}분"
+
+
+def _decimal_from_form(
+    field_label: str,
+    raw_value: str | None,
+    errors: list[str],
+    *,
+    default: Decimal = Decimal("0"),
+    minimum: Decimal = Decimal("0"),
+) -> Decimal:
+    value = (raw_value or "").replace(",", "").strip()
+    if not value:
+        return default
+    try:
+        parsed = Decimal(value)
+    except InvalidOperation:
+        errors.append(f"{field_label}은 숫자로 입력해주세요.")
+        return default
+    if parsed < minimum:
+        errors.append(f"{field_label}은 {minimum} 이상이어야 합니다.")
+        return default
+    return parsed
+
+
+def _decimal_input(value: Any) -> str:
+    decimal_value = Decimal(str(value or "0"))
+    return format(decimal_value.normalize(), "f") if decimal_value else "0"
+
+
+def _money_text(value: Any, places: int = 2) -> str:
+    decimal_value = Decimal(str(value or "0"))
+    quantizer = Decimal("1") if places == 0 else Decimal(f"0.{'0' * (places - 1)}1")
+    rounded = decimal_value.quantize(quantizer)
+    if rounded == rounded.to_integral():
+        return f"{int(rounded):,}"
+    return f"{rounded:,.{places}f}".rstrip("0").rstrip(".")
+
+
+def _cash_price_to_game_money(cash_price: Any, adena_rate: Any) -> Decimal:
+    cash = Decimal(str(cash_price or "0"))
+    rate = Decimal(str(adena_rate or "0"))
+    if rate <= 0:
+        return Decimal("0")
+    return cash / rate * Decimal("10000")
+
+
+def _item_cash_price(item_id: int, items: list[dict[str, Any]]) -> Decimal | None:
+    for item in items:
+        if int(item["item_id"]) == int(item_id):
+            return Decimal(str(item.get("default_price") or "0"))
+    return None
+
+
+def _loot_prices_from_form(
+    form_data: dict[str, Any],
+    item_prices: list[dict[str, Any]],
+    item_id: int | None,
+    errors: list[str],
+) -> tuple[Decimal, Decimal, Decimal]:
+    adena_rate = _decimal_from_form(
+        "머니 시세",
+        form_data.get("adena_rate"),
+        errors,
+    )
+    cash_price = _decimal_from_form(
+        "원화 시세",
+        form_data.get("cash_price_krw"),
+        errors,
+    )
+    if cash_price <= 0 and item_id is not None:
+        cash_price = _item_cash_price(item_id, item_prices) or Decimal("0")
+
+    if cash_price > 0 and adena_rate > 0:
+        return cash_price, _cash_price_to_game_money(cash_price, adena_rate), adena_rate
+    if cash_price > 0 and adena_rate <= 0:
+        errors.append("원화 시세를 입력한 경우 머니 시세도 입력해주세요.")
+
+    sale_price = _decimal_from_form(
+        "게임머니 판매금",
+        form_data.get("sale_price"),
+        errors,
+    )
+    return cash_price, sale_price, adena_rate
+
+
+def _decorate_item_prices(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    decorated = []
+    for item in items:
+        row = dict(item)
+        row["default_price_input"] = _decimal_input(item.get("default_price"))
+        row["default_price_text"] = _money_text(item.get("default_price"))
+        decorated.append(row)
+    return decorated
+
+
+def _decorate_loot_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    decorated_events = []
+    for event in events:
+        row = dict(event)
+        row["cash_price_input"] = _decimal_input(event.get("cash_price_krw"))
+        row["cash_price_text"] = _money_text(event.get("cash_price_krw"), places=0)
+        row["sale_price_input"] = _decimal_input(event.get("sale_price"))
+        row["sale_price_text"] = _money_text(event.get("sale_price"))
+        row["adena_rate_input"] = _decimal_input(event.get("adena_rate"))
+        row["adena_rate_text"] = _money_text(event.get("adena_rate"), places=6)
+        row["per_member_text"] = _money_text(event.get("per_member_amount"))
+        row["total_sale_text"] = _money_text(event.get("total_sale_amount"))
+        row["total_net_text"] = _money_text(event.get("total_net_amount"))
+        row["fee_amount_text"] = _money_text(event.get("fee_amount"))
+        row["fee_rate_percent_text"] = _money_text(
+            Decimal(str(event.get("fee_rate") or "0")) * Decimal("100"),
+        )
+        row["converted_text"] = _money_text(
+            Decimal(str(event.get("total_net_amount") or "0"))
+            * Decimal(str(event.get("adena_rate") or "0")),
+            places=2,
+        )
+        payouts = []
+        for payout in event.get("alliance_payouts", []):
+            payout_row = dict(payout)
+            payout_row["net_amount_text"] = _money_text(payout.get("net_amount"))
+            payout_row["per_member_text"] = _money_text(payout.get("per_member_amount"))
+            payout_row["status_label"] = (
+                "분배완료" if payout.get("payout_status") == "paid" else "미완료"
+            )
+            payout_row["next_status"] = (
+                "unpaid" if payout.get("payout_status") == "paid" else "paid"
+            )
+            payout_row["next_status_label"] = (
+                "미완료로 변경" if payout.get("payout_status") == "paid" else "완료 처리"
+            )
+            payouts.append(payout_row)
+        row["alliance_payouts"] = payouts
+        payout_total = len(payouts)
+        unpaid_count = sum(
+            1
+            for payout in payouts
+            if payout.get("payout_status") != "paid"
+        )
+        paid_count = payout_total - unpaid_count
+        if payout_total == 0:
+            row["payout_summary_label"] = "분배 없음"
+            row["payout_summary_meta"] = "혈맹 0개"
+            row["payout_summary_class"] = "is-empty"
+        elif unpaid_count == 0:
+            row["payout_summary_label"] = "분배완료"
+            row["payout_summary_meta"] = f"{paid_count}/{payout_total} 혈맹"
+            row["payout_summary_class"] = "is-paid"
+        else:
+            row["payout_summary_label"] = "미완료"
+            row["payout_summary_meta"] = f"{unpaid_count}개 미완료"
+            row["payout_summary_class"] = "is-unpaid"
+        buyer_options = []
+        for alliance in event.get("alliances", []):
+            alliance_name = str(alliance.get("alliance_name") or "미분류")
+            for member in alliance.get("members", []):
+                member_name = str(member).strip()
+                if member_name:
+                    buyer_options.append(
+                        {
+                            "name": member_name,
+                            "alliance": alliance_name,
+                        }
+                    )
+        row["buyer_options"] = buyer_options
+        decorated_events.append(row)
+    return decorated_events
+
+
+def _loot_payout_payload(guild_id: int, distribution_id: int) -> dict[str, Any]:
+    for event in _decorate_loot_events(database.get_loot_drop_events(guild_id, limit=100)):
+        if int(event.get("distribution_id") or 0) != distribution_id:
+            continue
+        return {
+            "summary": {
+                "label": event["payout_summary_label"],
+                "meta": event["payout_summary_meta"],
+                "class_name": event["payout_summary_class"],
+            },
+            "payouts": [
+                {
+                    "alliance_id": str(payout["alliance_id"]),
+                    "payout_status": payout["payout_status"],
+                    "status_label": payout["status_label"],
+                    "next_status": payout["next_status"],
+                    "next_status_label": payout["next_status_label"],
+                }
+                for payout in event.get("alliance_payouts", [])
+            ],
+        }
+    raise ValueError("Distribution was not found.")
 
 
 def _validate_run_time(raw_value: str | None, errors: list[str]) -> str:
@@ -741,8 +1634,9 @@ def _load_report_settings(guild_id: int) -> list[dict[str, Any]]:
         LEFT JOIN users updated_user
             ON updated_user.discord_id = r.updated_by_discord_id
         WHERE r.guild_id = %s
+          AND r.status <> 'delete'
         ORDER BY
-            CASE r.status WHEN 'on' THEN 0 WHEN 'off' THEN 1 ELSE 2 END,
+            CASE r.status WHEN 'on' THEN 0 ELSE 1 END,
             r.updated_at DESC,
             r.report_setting_id DESC
         """,
@@ -848,6 +1742,62 @@ def _latest_attendance_sessions(guild_id: int, limit: int = 20) -> list[dict[str
         }
         for row in rows
     ]
+
+
+def _loot_attendance_options(guild_id: int) -> list[dict[str, Any]]:
+    sessions = database.get_attendance_status_sessions(guild_id, 50, 0)
+    for session in sessions:
+        alliance_summary = ", ".join(
+            f"{alliance['alliance_name']} {alliance['count']}명"
+            for alliance in session.get("alliances", [])
+        )
+        session["label"] = (
+            f"#{session['attendance_id']} · {session['started_at']} · "
+            f"총 {session['participant_count']}명"
+        )
+        session["alliance_summary"] = alliance_summary or "출석 없음"
+    return sessions
+
+
+def _default_loot_form(guild_id: int) -> dict[str, str]:
+    latest_adena_rate = database.get_latest_adena_rate(guild_id)
+    return {
+        "attendance_id": "",
+        "item_id": "",
+        "cash_price_krw": "",
+        "sale_price": "",
+        "adena_rate": _decimal_input(latest_adena_rate),
+        "buyer_name": "",
+        "memo": "",
+    }
+
+
+def _loot_form_from_values(values: dict[str, Any], guild_id: int) -> dict[str, str]:
+    form = _default_loot_form(guild_id)
+    for key in form:
+        if key in values:
+            form[key] = str(values.get(key) or "")
+    return form
+
+
+def _loot_template_context(
+    auth: dict[str, Any],
+    guild_id: int,
+    *,
+    saved: str | None,
+    errors: list[str],
+    loot_form: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    return {
+        "auth": auth,
+        "saved": saved,
+        "errors": errors,
+        "loot_form": loot_form or _default_loot_form(guild_id),
+        "attendance_options": _loot_attendance_options(guild_id),
+        "item_prices": _decorate_item_prices(database.get_item_price_settings(guild_id)),
+        "loot_events": _decorate_loot_events(database.get_loot_drop_events(guild_id)),
+        "active_page": "loot",
+    }
 
 
 def _command_category(command_type: str) -> str:
@@ -958,6 +1908,17 @@ def _enqueue_attendance_command(
     requested_by_discord_id: int,
 ) -> None:
     _enqueue_bot_command(guild_id, command_type, requested_by_discord_id)
+
+
+def _enqueue_report_scheduler_refresh(
+    guild_id: int,
+    requested_by_discord_id: int,
+) -> None:
+    _enqueue_bot_command(
+        guild_id,
+        "refresh_report_schedules",
+        requested_by_discord_id,
+    )
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -1131,7 +2092,7 @@ def dashboard(
         alliance_value or None,
         limit_value,
     )
-    attendance_rows = filtered_rows[:200]
+    recent_sessions = database.get_attendance_status_sessions(selected_guild_id, 8, 0)
     alliance_options = database.get_alliance_names()
 
     return _render(
@@ -1143,13 +2104,20 @@ def dashboard(
             "daily_stats": daily_stats,
             "top_users": top_users,
             "alliance_stats": alliance_stats,
-            "attendance_rows": attendance_rows,
+            "recent_sessions": recent_sessions,
             "alliance_options": alliance_options,
             "filters": {
                 "start_date": start_value,
                 "end_date": end_value,
                 "search": search_value,
                 "alliance": alliance_value,
+                "export_href": _dashboard_csv_url(
+                    selected_guild_id,
+                    start_date=start_value,
+                    end_date=end_value,
+                    search=search_value,
+                    alliance=alliance_value,
+                ),
                 "limit": limit_value,
                 "quick": _quick_dashboard_filters(
                     selected_guild_id,
@@ -1172,6 +2140,193 @@ def dashboard(
                 ),
             },
             "active_page": "dashboard",
+        },
+    )
+
+
+@app.get("/dashboard/export.csv")
+def dashboard_export_csv(
+    request: Request,
+    guild_id: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    search: str | None = None,
+    alliance: str | None = None,
+    period: str | None = None,
+):
+    auth = _auth_context(request, guild_id)
+    if not auth:
+        return _auth_redirect(request)
+
+    selected_guild_id = int(auth["selected_guild_id"])
+    if period:
+        start_date, end_date = _dashboard_period_dates(period)
+    start_at, end_at, start_value, end_value = _date_bounds(start_date, end_date)
+    search_value = (search or "").strip()
+    alliance_value = (alliance or "").strip()
+    rows = database.get_attendance_export_rows(
+        selected_guild_id,
+        start_at,
+        end_at,
+        search_value or None,
+        alliance_value or None,
+    )
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["출석시간", "혈맹", "닉네임", "Discord ID"])
+    for row in rows:
+        writer.writerow(
+            [
+                row["started_at"],
+                row["alliance_name"],
+                row["discord_nickname"] or "",
+                row["discord_id"] or "",
+            ]
+        )
+
+    filename_parts = ["attendance"]
+    if start_value or end_value:
+        filename_parts.append(start_value or "start")
+        filename_parts.append(end_value or "end")
+    filename = "-".join(filename_parts) + ".csv"
+    return Response(
+        "\ufeff" + output.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.get("/my-alliance", response_class=HTMLResponse)
+def my_alliance(
+    request: Request,
+    guild_id: str | None = None,
+    alliance_id: int | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+):
+    auth = _auth_context(request, guild_id)
+    if not auth:
+        return _auth_redirect(request)
+
+    selected_guild_id = int(auth["selected_guild_id"])
+    access = auth["selected_server"].get("my_alliance") or {}
+    alliance_options = access.get("options") or []
+    if not alliance_options:
+        return RedirectResponse(
+            f"/attendance?guild_id={selected_guild_id}",
+            status_code=303,
+        )
+
+    allowed_by_id = {int(option["alliance_id"]): option for option in alliance_options}
+    selected_alliance_id = (
+        int(alliance_id)
+        if alliance_id is not None and int(alliance_id) in allowed_by_id
+        else int(alliance_options[0]["alliance_id"])
+    )
+    selected_alliance = allowed_by_id[selected_alliance_id]
+    start_at, end_at, start_value, end_value = _date_bounds(start_date, end_date)
+
+    overview = _alliance_overview(
+        selected_guild_id,
+        selected_alliance_id,
+        start_at,
+        end_at,
+    )
+    user_rankings = _alliance_user_rankings(
+        selected_guild_id,
+        selected_alliance_id,
+        start_at,
+        end_at,
+        limit=200,
+    )
+    hour_stats = _alliance_hour_stats(
+        selected_guild_id,
+        selected_alliance_id,
+        start_at,
+        end_at,
+    )
+    daily_rows = _alliance_daily_rows(
+        selected_guild_id,
+        selected_alliance_id,
+        start_at,
+        end_at,
+    )
+    week_start_at, week_end_at = _current_week_bounds()
+    month_start_at, month_end_at = _current_month_bounds()
+    weekly_rankings = _alliance_user_rankings(
+        selected_guild_id,
+        selected_alliance_id,
+        week_start_at,
+        week_end_at,
+        limit=10,
+    )
+    monthly_rankings = _alliance_user_rankings(
+        selected_guild_id,
+        selected_alliance_id,
+        month_start_at,
+        month_end_at,
+        limit=10,
+    )
+
+    today = datetime.now(KST).date()
+    week_start = today - timedelta(days=today.weekday())
+    month_start = today.replace(day=1)
+    filters = {
+        "start_date": start_value,
+        "end_date": end_value,
+        "alliance_id": selected_alliance_id,
+        "quick": [
+            {
+                "label": "전체",
+                "href": _my_alliance_url(
+                    selected_guild_id,
+                    alliance_id=selected_alliance_id,
+                ),
+                "active": not start_value and not end_value,
+            },
+            {
+                "label": "이번 주",
+                "href": _my_alliance_url(
+                    selected_guild_id,
+                    alliance_id=selected_alliance_id,
+                    start_date=week_start.isoformat(),
+                    end_date=today.isoformat(),
+                ),
+                "active": start_value == week_start.isoformat()
+                and end_value == today.isoformat(),
+            },
+            {
+                "label": "이번 달",
+                "href": _my_alliance_url(
+                    selected_guild_id,
+                    alliance_id=selected_alliance_id,
+                    start_date=month_start.isoformat(),
+                    end_date=today.isoformat(),
+                ),
+                "active": start_value == month_start.isoformat()
+                and end_value == today.isoformat(),
+            },
+        ],
+    }
+
+    return _render(
+        request,
+        "my_alliance.html",
+        {
+            "auth": auth,
+            "selected_alliance": selected_alliance,
+            "alliance_options": alliance_options,
+            "can_select_alliance": bool(access.get("can_select")),
+            "overview": overview,
+            "user_rankings": user_rankings,
+            "hour_stats": hour_stats,
+            "weekday_stats": _alliance_weekday_stats(daily_rows),
+            "daily_rows": daily_rows[:30],
+            "weekly_rankings": weekly_rankings,
+            "monthly_rankings": monthly_rankings,
+            "filters": filters,
+            "active_page": "my_alliance",
         },
     )
 
@@ -1200,6 +2355,362 @@ def attendance(
     )
 
 
+@app.get("/status", response_class=HTMLResponse)
+def attendance_status(
+    request: Request,
+    guild_id: str | None = None,
+    page: int = 1,
+):
+    auth = _auth_context(request, guild_id)
+    if not auth:
+        return _auth_redirect(request)
+
+    selected_guild_id = int(auth["selected_guild_id"])
+    page_size = 10
+    total_count = database.count_attendance_status_sessions(selected_guild_id)
+    total_pages = max(1, (total_count + page_size - 1) // page_size)
+    current_page = min(max(1, page), total_pages)
+    offset = (current_page - 1) * page_size
+    sessions = database.get_attendance_status_sessions(
+        selected_guild_id,
+        page_size,
+        offset,
+    )
+    return _render(
+        request,
+        "status.html",
+        {
+            "auth": auth,
+            "sessions": sessions,
+            "pagination": {
+                "current_page": current_page,
+                "total_pages": total_pages,
+                "total_count": total_count,
+                "page_size": page_size,
+                "first_href": _status_url(selected_guild_id, 1),
+                "prev_href": _status_url(selected_guild_id, max(1, current_page - 1)),
+                "next_href": _status_url(
+                    selected_guild_id,
+                    min(total_pages, current_page + 1),
+                ),
+                "last_href": _status_url(selected_guild_id, total_pages),
+                "has_previous": current_page > 1,
+                "has_next": current_page < total_pages,
+                "items": _pagination_items(
+                    selected_guild_id,
+                    current_page,
+                    total_pages,
+                ),
+            },
+            "active_page": "status",
+        },
+    )
+
+
+@app.get("/loot", response_class=HTMLResponse)
+def loot_drops(
+    request: Request,
+    guild_id: str | None = None,
+    saved: str | None = None,
+):
+    auth = _auth_context(request, guild_id)
+    if not auth:
+        return _auth_redirect(request)
+
+    selected_guild_id = int(auth["selected_guild_id"])
+    return _render(
+        request,
+        "loot.html",
+        _loot_template_context(
+            auth,
+            selected_guild_id,
+            saved=saved,
+            errors=[],
+        ),
+    )
+
+
+@app.post("/loot", response_class=HTMLResponse)
+async def create_loot_drop(
+    request: Request,
+    guild_id: str | None = None,
+):
+    auth = _auth_context(request, guild_id)
+    if not auth:
+        return _auth_redirect(request)
+
+    selected_guild_id = int(auth["selected_guild_id"])
+    if not _can_manage_selected_server(auth):
+        return RedirectResponse(
+            f"/loot?guild_id={selected_guild_id}&saved=forbidden",
+            status_code=303,
+        )
+
+    body = (await request.body()).decode("utf-8")
+    form_data = {
+        key: values[-1] if values else ""
+        for key, values in parse_qs(body, keep_blank_values=True).items()
+    }
+    errors: list[str] = []
+    try:
+        attendance_id = int(form_data.get("attendance_id") or "")
+    except ValueError:
+        attendance_id = 0
+    if attendance_id <= 0:
+        errors.append("드랍 기준 출석 회차를 선택해주세요.")
+
+    try:
+        item_id = _parse_optional_int(form_data.get("item_id"))
+    except ValueError:
+        item_id = None
+        errors.append("아이템 선택값이 올바르지 않습니다.")
+    if item_id is None:
+        errors.append("설정에서 등록된 아이템을 선택해주세요.")
+
+    item_prices = database.get_item_price_settings(selected_guild_id)
+    cash_price_krw, sale_price, adena_rate = _loot_prices_from_form(
+        form_data,
+        item_prices,
+        item_id,
+        errors,
+    )
+    form_data["cash_price_krw"] = _decimal_input(cash_price_krw)
+    form_data["sale_price"] = _decimal_input(sale_price)
+
+    if errors:
+        return _render(
+            request,
+            "loot.html",
+            _loot_template_context(
+                auth,
+                selected_guild_id,
+                saved="",
+                errors=errors,
+                loot_form=_loot_form_from_values(form_data, selected_guild_id),
+            ),
+            status_code=400,
+        )
+
+    try:
+        database.create_loot_drop(
+            selected_guild_id,
+            attendance_id=attendance_id,
+            item_id=item_id,
+            item_name="",
+            cash_price_krw=cash_price_krw,
+            sale_price=sale_price,
+            adena_rate=adena_rate,
+            buyer_name=str(form_data.get("buyer_name") or ""),
+            memo=str(form_data.get("memo") or ""),
+            created_by_discord_id=int(auth["user"]["id"]),
+        )
+    except ValueError as exc:
+        return _render(
+            request,
+            "loot.html",
+            _loot_template_context(
+                auth,
+                selected_guild_id,
+                saved="",
+                errors=[str(exc)],
+                loot_form=_loot_form_from_values(form_data, selected_guild_id),
+            ),
+            status_code=400,
+        )
+
+    return RedirectResponse(
+        f"/loot?guild_id={selected_guild_id}&saved=created",
+        status_code=303,
+    )
+
+
+@app.post("/loot/update")
+async def update_loot_drop(
+    request: Request,
+    guild_id: str | None = None,
+):
+    auth = _auth_context(request, guild_id)
+    if not auth:
+        return _auth_redirect(request)
+
+    selected_guild_id = int(auth["selected_guild_id"])
+    if not _can_manage_selected_server(auth):
+        return RedirectResponse(
+            f"/loot?guild_id={selected_guild_id}&saved=forbidden",
+            status_code=303,
+        )
+
+    body = (await request.body()).decode("utf-8")
+    form_data = {
+        key: values[-1] if values else ""
+        for key, values in parse_qs(body, keep_blank_values=True).items()
+    }
+    errors: list[str] = []
+    try:
+        loot_event_id = int(form_data.get("loot_event_id") or "")
+    except ValueError:
+        loot_event_id = 0
+    if loot_event_id <= 0:
+        errors.append("드랍 기록 ID가 올바르지 않습니다.")
+    cash_price_krw, sale_price, adena_rate = _loot_prices_from_form(
+        form_data,
+        database.get_item_price_settings(selected_guild_id),
+        None,
+        errors,
+    )
+    if errors:
+        return RedirectResponse(
+            f"/loot?guild_id={selected_guild_id}&saved=error#payouts",
+            status_code=303,
+        )
+
+    try:
+        database.update_loot_drop(
+            selected_guild_id,
+            loot_event_id,
+            cash_price_krw=cash_price_krw,
+            sale_price=sale_price,
+            adena_rate=adena_rate,
+            buyer_name=str(form_data.get("buyer_name") or ""),
+            memo=str(form_data.get("memo") or ""),
+        )
+    except ValueError:
+        return RedirectResponse(
+            f"/loot?guild_id={selected_guild_id}&saved=error#payouts",
+            status_code=303,
+        )
+    return RedirectResponse(
+        f"/loot?guild_id={selected_guild_id}&saved=updated#payouts",
+        status_code=303,
+    )
+
+
+@app.post("/loot/payout-status")
+async def update_loot_payout_status(
+    request: Request,
+    guild_id: str | None = None,
+):
+    auth = _auth_context(request, guild_id)
+    if not auth:
+        if _wants_json(request):
+            return JSONResponse(
+                {"ok": False, "message": "로그인이 필요합니다."},
+                status_code=401,
+            )
+        return _auth_redirect(request)
+
+    selected_guild_id = int(auth["selected_guild_id"])
+    if not _can_manage_selected_server(auth):
+        if _wants_json(request):
+            return JSONResponse(
+                {"ok": False, "message": "관리자 권한이 필요합니다."},
+                status_code=403,
+            )
+        return RedirectResponse(
+            f"/loot?guild_id={selected_guild_id}&saved=forbidden#payouts",
+            status_code=303,
+        )
+
+    body = (await request.body()).decode("utf-8")
+    form_data = {
+        key: values[-1] if values else ""
+        for key, values in parse_qs(body, keep_blank_values=True).items()
+    }
+    try:
+        distribution_id = int(form_data.get("distribution_id") or "")
+        alliance_id = int(form_data.get("alliance_id") or "")
+    except ValueError:
+        if _wants_json(request):
+            return JSONResponse(
+                {"ok": False, "message": "분배 상태 값을 확인하지 못했습니다."},
+                status_code=400,
+            )
+        return RedirectResponse(
+            f"/loot?guild_id={selected_guild_id}&saved=error#payouts",
+            status_code=303,
+        )
+    payout_status = str(form_data.get("payout_status") or "")
+    try:
+        database.update_distribution_alliance_payout_status(
+            selected_guild_id,
+            distribution_id,
+            alliance_id,
+            payout_status,
+        )
+        payload = _loot_payout_payload(selected_guild_id, distribution_id)
+    except ValueError:
+        if _wants_json(request):
+            return JSONResponse(
+                {"ok": False, "message": "분배 상태를 변경하지 못했습니다."},
+                status_code=400,
+            )
+        return RedirectResponse(
+            f"/loot?guild_id={selected_guild_id}&saved=error#payouts",
+            status_code=303,
+        )
+    if _wants_json(request):
+        return JSONResponse({"ok": True, **payload})
+    return RedirectResponse(
+        f"/loot?guild_id={selected_guild_id}&saved=payout#payouts",
+        status_code=303,
+    )
+
+
+@app.post("/loot/delete")
+async def delete_loot_drop(
+    request: Request,
+    guild_id: str | None = None,
+):
+    auth = _auth_context(request, guild_id)
+    if not auth:
+        if _wants_json(request):
+            return JSONResponse(
+                {"ok": False, "message": "로그인이 필요합니다."},
+                status_code=401,
+            )
+        return _auth_redirect(request)
+
+    selected_guild_id = int(auth["selected_guild_id"])
+    if not _can_manage_selected_server(auth):
+        if _wants_json(request):
+            return JSONResponse(
+                {"ok": False, "message": "관리자 권한이 필요합니다."},
+                status_code=403,
+            )
+        return RedirectResponse(
+            f"/loot?guild_id={selected_guild_id}&saved=forbidden#payouts",
+            status_code=303,
+        )
+
+    body = (await request.body()).decode("utf-8")
+    form_data = {
+        key: values[-1] if values else ""
+        for key, values in parse_qs(body, keep_blank_values=True).items()
+    }
+    try:
+        loot_event_id = int(form_data.get("loot_event_id") or "")
+        if loot_event_id <= 0:
+            raise ValueError
+        database.delete_loot_drop(selected_guild_id, loot_event_id)
+    except ValueError:
+        if _wants_json(request):
+            return JSONResponse(
+                {"ok": False, "message": "드랍 기록을 삭제하지 못했습니다."},
+                status_code=400,
+            )
+        return RedirectResponse(
+            f"/loot?guild_id={selected_guild_id}&saved=error#payouts",
+            status_code=303,
+        )
+
+    if _wants_json(request):
+        return JSONResponse({"ok": True, "loot_event_id": str(loot_event_id)})
+    return RedirectResponse(
+        f"/loot?guild_id={selected_guild_id}&saved=deleted#payouts",
+        status_code=303,
+    )
+
+
 @app.get("/settings", response_class=HTMLResponse)
 def settings(
     request: Request,
@@ -1211,30 +2722,28 @@ def settings(
         return _auth_redirect(request)
 
     selected_guild_id = int(auth["selected_guild_id"])
+    if not _can_manage_selected_server(auth):
+        return _settings_forbidden_redirect(selected_guild_id)
+
     guild_settings = database.get_settings(selected_guild_id)
-    channel_error = ""
-    channels = {"text": [], "voice": []}
-    try:
-        channels = _load_guild_channels(selected_guild_id)
-    except Exception as exc:
-        channel_error = f"Discord 채널 목록을 불러오지 못했습니다. {exc}"
+    channels, roles, channel_error, role_error = _settings_discord_options(selected_guild_id)
 
     return _render(
         request,
         "settings.html",
-        {
-            "auth": auth,
-            "settings": _settings_to_dict(guild_settings),
-            "form": _settings_to_dict(guild_settings),
-            "channels": channels,
-            "channel_error": channel_error,
-            "saved": saved,
-            "errors": [],
-            "report_options": REPORT_OPTIONS,
-            "report_form": _default_report_form(),
-            "report_settings": _load_report_settings(selected_guild_id),
-            "active_page": "settings",
-        },
+        _settings_template_context(
+            auth,
+            selected_guild_id,
+            guild_settings=guild_settings,
+            form=_settings_to_dict(guild_settings),
+            channels=channels,
+            roles=roles,
+            channel_error=channel_error,
+            role_error=role_error,
+            saved=saved,
+            errors=[],
+            report_form=_default_report_form(),
+        ),
     )
 
 
@@ -1249,10 +2758,7 @@ async def update_settings(
 
     selected_guild_id = int(auth["selected_guild_id"])
     if not _can_manage_selected_server(auth):
-        return RedirectResponse(
-            f"/settings?guild_id={selected_guild_id}&saved=forbidden",
-            status_code=303,
-        )
+        return _settings_forbidden_redirect(selected_guild_id)
 
     body = (await request.body()).decode("utf-8")
     form_data = {
@@ -1260,12 +2766,7 @@ async def update_settings(
         for key, values in parse_qs(body, keep_blank_values=True).items()
     }
 
-    channel_error = ""
-    channels = {"text": [], "voice": []}
-    try:
-        channels = _load_guild_channels(selected_guild_id)
-    except Exception as exc:
-        channel_error = f"Discord 채널 목록을 불러오지 못했습니다. {exc}"
+    channels, roles, channel_error, role_error = _settings_discord_options(selected_guild_id)
 
     errors: list[str] = []
     text_channel_ids = _channel_ids(channels["text"])
@@ -1308,19 +2809,20 @@ async def update_settings(
         return _render(
             request,
             "settings.html",
-            {
-                "auth": auth,
-                "settings": _settings_to_dict(previous_settings),
-                "form": _settings_form_from_values(form_data),
-                "channels": channels,
-                "channel_error": channel_error,
-                "saved": "",
-                "errors": errors,
-                "report_options": REPORT_OPTIONS,
-                "report_form": _default_report_form(),
-                "report_settings": _load_report_settings(selected_guild_id),
-                "active_page": "settings",
-            },
+            _settings_template_context(
+                auth,
+                selected_guild_id,
+                guild_settings=previous_settings,
+                form=_settings_form_from_values(form_data),
+                channels=channels,
+                roles=roles,
+                channel_error=channel_error,
+                role_error=role_error,
+                saved="",
+                errors=errors,
+                report_form=_default_report_form(),
+                settings_active_tab="channels",
+            ),
             status_code=400,
         )
 
@@ -1342,6 +2844,271 @@ async def update_settings(
     )
 
 
+@app.post("/settings/alliance-roles", response_class=HTMLResponse)
+async def upsert_alliance_role_mapping(
+    request: Request,
+    guild_id: str | None = None,
+):
+    auth = _auth_context(request, guild_id)
+    if not auth:
+        return _auth_redirect(request)
+
+    selected_guild_id = int(auth["selected_guild_id"])
+    if not _can_manage_selected_server(auth):
+        return _settings_forbidden_redirect(selected_guild_id)
+
+    body = (await request.body()).decode("utf-8")
+    form_data = {
+        key: values[-1] if values else ""
+        for key, values in parse_qs(body, keep_blank_values=True).items()
+    }
+    channels, roles, channel_error, role_error = _settings_discord_options(selected_guild_id)
+    errors: list[str] = []
+    alliance_name = str(form_data.get("alliance_name") or "").strip()
+    if not alliance_name:
+        errors.append("혈맹 이름을 입력해주세요.")
+    try:
+        role_id = _parse_optional_int(form_data.get("role_id"))
+    except ValueError:
+        role_id = None
+        errors.append("Discord 역할을 선택해주세요.")
+    allowed_role_ids = _role_ids(roles)
+    if role_id is None:
+        errors.append("Discord 역할을 선택해주세요.")
+    elif role_id not in allowed_role_ids:
+        errors.append("선택한 Discord 역할을 서버에서 확인할 수 없습니다.")
+    role_name = _find_role_name(roles, role_id) if role_id is not None else None
+    if role_error:
+        errors.append("Discord 역할 목록 확인이 필요합니다. 봇 토큰과 서버 권한을 확인해주세요.")
+
+    if errors:
+        guild_settings = database.get_settings(selected_guild_id)
+        return _render(
+            request,
+            "settings.html",
+            _settings_template_context(
+                auth,
+                selected_guild_id,
+                guild_settings=guild_settings,
+                form=_settings_to_dict(guild_settings),
+                channels=channels,
+                roles=roles,
+                channel_error=channel_error,
+                role_error=role_error,
+                saved="",
+                errors=errors,
+                report_form=_default_report_form(),
+                alliance_role_form=_alliance_role_form_from_values(form_data),
+                settings_active_tab="alliance",
+            ),
+            status_code=400,
+        )
+
+    database.upsert_guild_alliance_role_mapping(
+        selected_guild_id,
+        int(role_id),
+        str(role_name or role_id),
+        alliance_name,
+    )
+    return RedirectResponse(
+        f"/settings?guild_id={selected_guild_id}&saved=alliance_role",
+        status_code=303,
+    )
+
+
+@app.post("/settings/alliance-roles/delete")
+async def delete_alliance_role_mapping(
+    request: Request,
+    guild_id: str | None = None,
+):
+    auth = _auth_context(request, guild_id)
+    if not auth:
+        return _auth_redirect(request)
+
+    selected_guild_id = int(auth["selected_guild_id"])
+    if not _can_manage_selected_server(auth):
+        return _settings_forbidden_redirect(selected_guild_id)
+
+    body = (await request.body()).decode("utf-8")
+    form_data = {
+        key: values[-1] if values else ""
+        for key, values in parse_qs(body, keep_blank_values=True).items()
+    }
+    try:
+        mapping_id = int(form_data.get("mapping_id") or "")
+    except ValueError:
+        return RedirectResponse(
+            f"/settings?guild_id={selected_guild_id}&saved=alliance_role_error",
+            status_code=303,
+        )
+
+    database.delete_guild_alliance_role_mapping(selected_guild_id, mapping_id)
+    return RedirectResponse(
+        f"/settings?guild_id={selected_guild_id}&saved=alliance_role_deleted",
+        status_code=303,
+    )
+
+
+@app.post("/settings/items", response_class=HTMLResponse)
+async def create_item_price(
+    request: Request,
+    guild_id: str | None = None,
+):
+    auth = _auth_context(request, guild_id)
+    if not auth:
+        return _auth_redirect(request)
+
+    selected_guild_id = int(auth["selected_guild_id"])
+    if not _can_manage_selected_server(auth):
+        return _settings_forbidden_redirect(selected_guild_id)
+
+    body = (await request.body()).decode("utf-8")
+    form_data = {
+        key: values[-1] if values else ""
+        for key, values in parse_qs(body, keep_blank_values=True).items()
+    }
+    errors: list[str] = []
+    item_name = str(form_data.get("item_name") or "").strip()
+    if not item_name:
+        errors.append("아이템 이름을 입력해주세요.")
+    default_price = _decimal_from_form(
+        "원화 시세",
+        form_data.get("default_price"),
+        errors,
+    )
+    if errors:
+        guild_settings = database.get_settings(selected_guild_id)
+        channels, roles, channel_error, role_error = _settings_discord_options(
+            selected_guild_id,
+        )
+        return _render(
+            request,
+            "settings.html",
+            _settings_template_context(
+                auth,
+                selected_guild_id,
+                guild_settings=guild_settings,
+                form=_settings_to_dict(guild_settings),
+                channels=channels,
+                roles=roles,
+                channel_error=channel_error,
+                role_error=role_error,
+                saved="",
+                errors=errors,
+                report_form=_default_report_form(),
+                item_price_form=_item_price_form_from_values(form_data),
+                settings_active_tab="items",
+            ),
+            status_code=400,
+        )
+
+    database.upsert_item_price(
+        selected_guild_id,
+        item_name=item_name,
+        default_price=default_price,
+        category="",
+        memo="",
+        is_bid_item=True,
+    )
+    return RedirectResponse(
+        f"/settings?guild_id={selected_guild_id}&saved=item_price",
+        status_code=303,
+    )
+
+
+@app.post("/settings/items/update")
+async def update_item_price(
+    request: Request,
+    guild_id: str | None = None,
+):
+    auth = _auth_context(request, guild_id)
+    if not auth:
+        return _auth_redirect(request)
+
+    selected_guild_id = int(auth["selected_guild_id"])
+    if not _can_manage_selected_server(auth):
+        return _settings_forbidden_redirect(selected_guild_id)
+
+    body = (await request.body()).decode("utf-8")
+    form_data = {
+        key: values[-1] if values else ""
+        for key, values in parse_qs(body, keep_blank_values=True).items()
+    }
+    errors: list[str] = []
+    try:
+        item_id = int(form_data.get("item_id") or "")
+    except ValueError:
+        item_id = 0
+        errors.append("아이템 ID가 올바르지 않습니다.")
+    item_name = str(form_data.get("item_name") or "").strip()
+    if not item_name:
+        errors.append("아이템 이름을 입력해주세요.")
+    default_price = _decimal_from_form(
+        "원화 시세",
+        form_data.get("default_price"),
+        errors,
+    )
+    if errors:
+        return RedirectResponse(
+            f"/settings?guild_id={selected_guild_id}&saved=item_price_error",
+            status_code=303,
+        )
+
+    try:
+        database.update_item_price(
+            selected_guild_id,
+            item_id,
+            item_name=item_name,
+            default_price=default_price,
+            category="",
+            memo="",
+            is_bid_item=True,
+        )
+    except ValueError:
+        return RedirectResponse(
+            f"/settings?guild_id={selected_guild_id}&saved=item_price_error",
+            status_code=303,
+        )
+    return RedirectResponse(
+        f"/settings?guild_id={selected_guild_id}&saved=item_price",
+        status_code=303,
+    )
+
+
+@app.post("/settings/items/delete")
+async def delete_item_price(
+    request: Request,
+    guild_id: str | None = None,
+):
+    auth = _auth_context(request, guild_id)
+    if not auth:
+        return _auth_redirect(request)
+
+    selected_guild_id = int(auth["selected_guild_id"])
+    if not _can_manage_selected_server(auth):
+        return _settings_forbidden_redirect(selected_guild_id)
+
+    body = (await request.body()).decode("utf-8")
+    form_data = {
+        key: values[-1] if values else ""
+        for key, values in parse_qs(body, keep_blank_values=True).items()
+    }
+    try:
+        item_id = int(form_data.get("item_id") or "")
+    except ValueError:
+        item_id = 0
+    if item_id <= 0:
+        return RedirectResponse(
+            f"/settings?guild_id={selected_guild_id}&saved=item_price_error",
+            status_code=303,
+        )
+    database.deactivate_item_price(selected_guild_id, item_id)
+    return RedirectResponse(
+        f"/settings?guild_id={selected_guild_id}&saved=item_price_deleted",
+        status_code=303,
+    )
+
+
 @app.post("/settings/reports", response_class=HTMLResponse)
 async def create_report_setting(
     request: Request,
@@ -1353,10 +3120,7 @@ async def create_report_setting(
 
     selected_guild_id = int(auth["selected_guild_id"])
     if not _can_manage_selected_server(auth):
-        return RedirectResponse(
-            f"/settings?guild_id={selected_guild_id}&saved=forbidden",
-            status_code=303,
-        )
+        return _settings_forbidden_redirect(selected_guild_id)
 
     body = (await request.body()).decode("utf-8")
     form_data = {
@@ -1364,12 +3128,8 @@ async def create_report_setting(
         for key, values in parse_qs(body, keep_blank_values=True).items()
     }
     errors: list[str] = []
-    channel_error = ""
-    channels = {"text": [], "voice": []}
-    try:
-        channels = _load_guild_channels(selected_guild_id)
-    except Exception as exc:
-        channel_error = f"Discord 채널 목록을 불러오지 못했습니다. {exc}"
+    channels, roles, channel_error, role_error = _settings_discord_options(selected_guild_id)
+    if channel_error:
         errors.append("알람을 받을 채널 목록을 확인할 수 없습니다.")
 
     frequency = _validate_report_option(
@@ -1397,12 +3157,7 @@ async def create_report_setting(
         REPORT_RESULT_OPTIONS,
         errors,
     )
-    status = _validate_report_option(
-        "상태",
-        form_data.get("status") or "on",
-        REPORT_STATUS_OPTIONS,
-        errors,
-    )
+    status = "on"
     channel_id = _validate_channel_value(
         "알람 채널",
         form_data.get("channel_id"),
@@ -1431,19 +3186,20 @@ async def create_report_setting(
         return _render(
             request,
             "settings.html",
-            {
-                "auth": auth,
-                "settings": _settings_to_dict(guild_settings),
-                "form": _settings_to_dict(guild_settings),
-                "channels": channels,
-                "channel_error": channel_error,
-                "saved": "",
-                "errors": errors,
-                "report_options": REPORT_OPTIONS,
-                "report_form": report_form,
-                "report_settings": _load_report_settings(selected_guild_id),
-                "active_page": "settings",
-            },
+            _settings_template_context(
+                auth,
+                selected_guild_id,
+                guild_settings=guild_settings,
+                form=_settings_to_dict(guild_settings),
+                channels=channels,
+                roles=roles,
+                channel_error=channel_error,
+                role_error=role_error,
+                saved="",
+                errors=errors,
+                report_form=report_form,
+                settings_active_tab="reports",
+            ),
             status_code=400,
         )
 
@@ -1482,6 +3238,7 @@ async def create_report_setting(
             )
         connection.commit()
 
+    _enqueue_report_scheduler_refresh(selected_guild_id, int(auth["user"]["id"]))
     return RedirectResponse(
         f"/settings?guild_id={selected_guild_id}&saved=report",
         status_code=303,
@@ -1499,10 +3256,7 @@ async def update_report_status(
 
     selected_guild_id = int(auth["selected_guild_id"])
     if not _can_manage_selected_server(auth):
-        return RedirectResponse(
-            f"/settings?guild_id={selected_guild_id}&saved=forbidden",
-            status_code=303,
-        )
+        return _settings_forbidden_redirect(selected_guild_id)
 
     body = (await request.body()).decode("utf-8")
     form_data = {
@@ -1535,12 +3289,14 @@ async def update_report_status(
                 UPDATE scheduled_report_settings
                 SET
                     status = %s,
+                    next_run_at = CASE WHEN %s = 'on' THEN NULL ELSE next_run_at END,
                     updated_by_discord_id = %s,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE report_setting_id = %s
                   AND guild_id = %s
                 """,
                 (
+                    status,
                     status,
                     int(auth["user"]["id"]),
                     report_setting_id,
@@ -1549,8 +3305,66 @@ async def update_report_status(
             )
         connection.commit()
 
+    _enqueue_report_scheduler_refresh(selected_guild_id, int(auth["user"]["id"]))
     return RedirectResponse(
         f"/settings?guild_id={selected_guild_id}&saved=report_status",
+        status_code=303,
+    )
+
+
+@app.post("/settings/reports/delete")
+async def delete_report_setting(
+    request: Request,
+    guild_id: str | None = None,
+):
+    auth = _auth_context(request, guild_id)
+    if not auth:
+        return _auth_redirect(request)
+
+    selected_guild_id = int(auth["selected_guild_id"])
+    if not _can_manage_selected_server(auth):
+        return _settings_forbidden_redirect(selected_guild_id)
+
+    body = (await request.body()).decode("utf-8")
+    form_data = {
+        key: values[-1] if values else ""
+        for key, values in parse_qs(body, keep_blank_values=True).items()
+    }
+    try:
+        report_setting_id = int(form_data.get("report_setting_id") or "")
+    except ValueError:
+        report_setting_id = 0
+
+    if report_setting_id <= 0:
+        return RedirectResponse(
+            f"/settings?guild_id={selected_guild_id}&saved=report_error",
+            status_code=303,
+        )
+
+    with database.connect() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE scheduled_report_settings
+                SET
+                    status = 'delete',
+                    next_run_at = NULL,
+                    updated_by_discord_id = %s,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE report_setting_id = %s
+                  AND guild_id = %s
+                """,
+                (
+                    int(auth["user"]["id"]),
+                    report_setting_id,
+                    selected_guild_id,
+                ),
+            )
+        connection.commit()
+
+    _enqueue_report_scheduler_refresh(selected_guild_id, int(auth["user"]["id"]))
+    return RedirectResponse(
+        f"/settings?guild_id={selected_guild_id}&saved=report_deleted",
         status_code=303,
     )
 
@@ -1566,6 +3380,12 @@ def logs(
         return _auth_redirect(request)
 
     selected_guild_id = int(auth["selected_guild_id"])
+    if not _is_developer_auth(auth):
+        return RedirectResponse(
+            f"/attendance?guild_id={selected_guild_id}",
+            status_code=303,
+        )
+
     selected_category = (
         category
         if category in {str(tab["value"]) for tab in LOG_TABS}

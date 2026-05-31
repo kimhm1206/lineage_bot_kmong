@@ -1,3 +1,4 @@
 -r ../common/requirements.txt
 py-cord
 requests
+apscheduler

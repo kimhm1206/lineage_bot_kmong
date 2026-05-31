@@ -18,8 +18,22 @@
     <div class="alert success">설정을 저장했고 봇 패널 새로고침 요청을 등록했습니다.</div>
   {% elif saved == "report" %}
     <div class="alert success">통계 알림 설정을 추가했습니다.</div>
+  {% elif saved == "item_price" %}
+    <div class="alert success">아이템을 저장했습니다.</div>
+  {% elif saved == "item_price_deleted" %}
+    <div class="alert success">아이템을 숨김 처리했습니다.</div>
+  {% elif saved == "item_price_error" %}
+    <div class="alert error">아이템을 변경하지 못했습니다.</div>
+  {% elif saved == "alliance_role" %}
+    <div class="alert success">혈맹 역할 매핑을 저장했습니다.</div>
+  {% elif saved == "alliance_role_deleted" %}
+    <div class="alert success">혈맹 역할 매핑을 삭제했습니다.</div>
+  {% elif saved == "alliance_role_error" %}
+    <div class="alert error">혈맹 역할 매핑을 변경하지 못했습니다.</div>
   {% elif saved == "report_status" %}
     <div class="alert success">통계 알림 상태를 변경했습니다.</div>
+  {% elif saved == "report_deleted" %}
+    <div class="alert success">통계 알림을 삭제했습니다.</div>
   {% elif saved == "report_error" %}
     <div class="alert error">통계 알림 상태를 변경하지 못했습니다.</div>
   {% elif saved == "forbidden" %}
@@ -30,6 +44,10 @@
     <div class="alert error">{{ channel_error }}</div>
   {% endif %}
 
+  {% if role_error %}
+    <div class="alert error">{{ role_error }}</div>
+  {% endif %}
+
   {% if errors %}
     <div class="alert error">
       {% for error in errors %}
@@ -38,157 +56,355 @@
     </div>
   {% endif %}
 
-  <section class="settings-layout">
-    <form
-      class="panel settings-form report-builder"
-      method="post"
-      action="/settings/reports?guild_id={{ auth.selected_guild_id }}"
-      data-report-builder
-    >
+  <section class="settings-layout" data-settings-tabs data-default-tab="{{ settings_active_tab }}">
+    <aside class="settings-sidebar" aria-label="설정 메뉴">
+      <a class="settings-menu-item {% if settings_active_tab == 'alliance' %}is-active{% endif %}" href="#alliance" data-settings-tab="alliance">
+        <strong>혈맹 관리</strong>
+        <span>역할 매핑</span>
+      </a>
+      <a class="settings-menu-item {% if settings_active_tab == 'items' %}is-active{% endif %}" href="#items" data-settings-tab="items">
+        <strong>아이템</strong>
+        <span>이름/원화 시세</span>
+      </a>
+      <a class="settings-menu-item {% if settings_active_tab == 'reports' %}is-active{% endif %}" href="#reports" data-settings-tab="reports">
+        <strong>통계 알림</strong>
+        <span>스케줄/발송</span>
+      </a>
+      <a class="settings-menu-item {% if settings_active_tab == 'channels' %}is-active{% endif %}" href="#channels" data-settings-tab="channels">
+        <strong>채널/타이머</strong>
+        <span>봇 패널/시간</span>
+      </a>
+    </aside>
+
+    <div class="settings-panel-list">
+
+    <article class="panel settings-form" id="alliance-roles" data-settings-panel="alliance" {% if settings_active_tab != "alliance" %}hidden{% endif %}>
       <header class="panel-header">
-        <h2>통계 알림 설정</h2>
-        <span class="panel-caption">발송 주기, 시간, 대상, 결과, 채널을 선택합니다</span>
+        <h2>혈맹 관리</h2>
+        <span class="panel-caption">Discord 역할을 혈맹 이름에 연결합니다</span>
       </header>
 
-      <div class="settings-section report-grid">
+      <form
+        class="settings-section alliance-role-grid"
+        method="post"
+        action="/settings/alliance-roles?guild_id={{ auth.selected_guild_id }}"
+      >
         <label class="field">
-          <span>발송 주기</span>
-          <select name="frequency" data-report-part {% if not auth.selected_server.can_manage %}disabled{% endif %}>
-            {% for option in report_options.frequencies %}
-              <option value="{{ option.value }}" data-label="{{ option.label }}" {% if report_form.frequency == option.value %}selected{% endif %}>
-                {{ option.label }}
-              </option>
-            {% endfor %}
-          </select>
-        </label>
-
-        <label class="field">
-          <span>발송 시간</span>
+          <span>혈맹 이름</span>
           <input
-            name="run_time"
-            type="time"
-            value="{{ report_form.run_time or '00:00' }}"
-            data-report-time
+            name="alliance_name"
+            value="{{ alliance_role_form.alliance_name }}"
+            placeholder="예: 랭커"
             {% if not auth.selected_server.can_manage %}disabled{% endif %}
           >
         </label>
 
         <label class="field">
-          <span>상태</span>
-          <select name="status" {% if not auth.selected_server.can_manage %}disabled{% endif %}>
-            {% for option in report_options.statuses %}
-              {% if option.value != "delete" %}
-                <option value="{{ option.value }}" {% if report_form.status == option.value %}selected{% endif %}>
-                  {{ option.label }}
-                </option>
-              {% endif %}
-            {% endfor %}
-          </select>
-        </label>
-
-        <label class="field">
-          <span>조회 기간</span>
-          <select name="period_type" data-report-part {% if not auth.selected_server.can_manage %}disabled{% endif %}>
-            {% for option in report_options.periods %}
-              <option value="{{ option.value }}" data-label="{{ option.label }}" {% if report_form.period_type == option.value %}selected{% endif %}>
-                {{ option.label }}
+          <span>Discord 역할</span>
+          <select name="role_id" {% if not auth.selected_server.can_manage %}disabled{% endif %}>
+            <option value="">역할 선택</option>
+            {% for role in roles %}
+              <option value="{{ role.id }}" {% if alliance_role_form.role_id == role.id %}selected{% endif %}>
+                @{{ role.label }}
               </option>
             {% endfor %}
           </select>
         </label>
 
-        <label class="field">
-          <span>통계 대상</span>
-          <select name="subject_type" data-report-part {% if not auth.selected_server.can_manage %}disabled{% endif %}>
-            {% for option in report_options.subjects %}
-              <option value="{{ option.value }}" data-label="{{ option.label }}" {% if report_form.subject_type == option.value %}selected{% endif %}>
-                {{ option.label }}
-              </option>
-            {% endfor %}
-          </select>
-        </label>
+        <div class="form-actions inline-form-actions">
+          <button class="primary-button" type="submit" {% if not auth.selected_server.can_manage %}disabled{% endif %}>
+            매핑 저장
+          </button>
+        </div>
+      </form>
 
-        <label class="field">
-          <span>결과 형태</span>
-          <select name="result_type" data-report-part {% if not auth.selected_server.can_manage %}disabled{% endif %}>
-            {% for option in report_options.results %}
-              <option value="{{ option.value }}" data-label="{{ option.label }}" {% if report_form.result_type == option.value %}selected{% endif %}>
-                {{ option.label }}
-              </option>
-            {% endfor %}
-          </select>
-        </label>
-
-        <label class="field wide-field">
-          <span>받을 채널</span>
-          <select name="channel_id" data-report-channel {% if not auth.selected_server.can_manage %}disabled{% endif %}>
-            <option value="" data-label="채널">채널 선택</option>
-            {% for channel in channels.text %}
-              <option value="{{ channel.id }}" data-label="{{ channel.label }}" {% if report_form.channel_id|string == channel.id %}selected{% endif %}>
-                # {{ channel.label }}
-              </option>
-            {% endfor %}
-          </select>
-        </label>
-      </div>
-
-      <div class="sentence-preview" data-report-preview>
-        매일 00시에 최근 일주일의 유저별 전체 통계를 #채널로 받습니다.
-      </div>
-
-      <div class="form-actions">
-        <button class="primary-button" type="submit" {% if not auth.selected_server.can_manage %}disabled{% endif %}>
-          알림 추가
-        </button>
-      </div>
-    </form>
-
-    <article class="panel">
-      <header class="panel-header">
-        <h2>등록된 통계 알림</h2>
-        <span class="panel-caption">상태는 이 목록에서 변경합니다</span>
-      </header>
       <table>
         <thead>
           <tr>
-            <th>ID</th>
-            <th>문장</th>
-            <th>상태</th>
-            <th>등록자</th>
+            <th>혈맹</th>
+            <th>Discord 역할</th>
             <th>수정</th>
           </tr>
         </thead>
         <tbody>
-          {% for report in report_settings %}
+          {% for mapping in alliance_role_mappings %}
             <tr>
-              <td>{{ report.report_setting_id }}</td>
-              <td>{{ report.sentence }}</td>
+              <td>{{ mapping.alliance_name }}</td>
+              <td>@{{ mapping.role_name }}</td>
               <td>
-                <form class="status-form" method="post" action="/settings/reports/status?guild_id={{ auth.selected_guild_id }}">
-                  <input type="hidden" name="report_setting_id" value="{{ report.report_setting_id }}">
-                  <select name="status" {% if not auth.selected_server.can_manage %}disabled{% endif %}>
-                    {% for option in report_options.statuses %}
-                      <option value="{{ option.value }}" {% if report.status == option.value %}selected{% endif %}>
-                        {{ option.label }}
-                      </option>
-                    {% endfor %}
-                  </select>
+                <form class="inline-actions" method="post" action="/settings/alliance-roles/delete?guild_id={{ auth.selected_guild_id }}">
+                  <input type="hidden" name="mapping_id" value="{{ mapping.mapping_id }}">
                   <button class="tiny-button" type="submit" {% if not auth.selected_server.can_manage %}disabled{% endif %}>
-                    적용
+                    삭제
                   </button>
                 </form>
               </td>
-              <td>{{ report.created_by_name }}</td>
-              <td>{{ report.updated_at }}</td>
             </tr>
           {% else %}
-            <tr><td colspan="5" class="empty">등록된 통계 알림이 없습니다.</td></tr>
+            <tr><td colspan="3" class="empty">등록된 혈맹 역할 매핑이 없습니다.</td></tr>
           {% endfor %}
         </tbody>
       </table>
     </article>
 
-    <form class="panel settings-form" method="post" action="/settings?guild_id={{ auth.selected_guild_id }}">
+    <article class="panel settings-form" data-settings-panel="items" {% if settings_active_tab != "items" %}hidden{% endif %}>
+      <header class="panel-header">
+        <h2>아이템 추가</h2>
+        <span class="panel-caption">전 서버 통합 원화 시세입니다</span>
+      </header>
+
+      <form
+        class="settings-section item-price-create-grid"
+        method="post"
+        action="/settings/items?guild_id={{ auth.selected_guild_id }}"
+      >
+        <label class="field">
+          <span>아이템 이름</span>
+          <input
+            name="item_name"
+            value="{{ item_price_form.item_name }}"
+            placeholder="예: 스턴"
+            {% if not auth.selected_server.can_manage %}disabled{% endif %}
+          >
+        </label>
+        <label class="field">
+          <span>원화 시세</span>
+          <input
+            name="default_price"
+            type="number"
+            min="0"
+            step="0.01"
+            value="{{ item_price_form.default_price }}"
+            placeholder="예: 5000000"
+            {% if not auth.selected_server.can_manage %}disabled{% endif %}
+          >
+        </label>
+        <div class="form-actions inline-form-actions">
+          <button class="primary-button" type="submit" {% if not auth.selected_server.can_manage %}disabled{% endif %}>
+            아이템 추가
+          </button>
+        </div>
+      </form>
+    </article>
+
+    <article class="panel" data-settings-panel="items" {% if settings_active_tab != "items" %}hidden{% endif %}>
+      <header class="panel-header">
+        <h2>등록된 아이템</h2>
+        <span class="panel-caption">전 서버 공통 {{ item_prices|length }}개</span>
+      </header>
+
+      <div class="item-price-list">
+        {% for item in item_prices %}
+          <div class="item-price-card">
+            <form class="item-price-edit-form" method="post" action="/settings/items/update?guild_id={{ auth.selected_guild_id }}">
+              <input type="hidden" name="item_id" value="{{ item.item_id }}">
+              <label class="field">
+                <span>아이템</span>
+                <input name="item_name" value="{{ item.item_name }}" {% if not auth.selected_server.can_manage %}disabled{% endif %}>
+              </label>
+              <label class="field">
+                <span>원화 시세</span>
+                <input
+                  name="default_price"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value="{{ item.default_price_input }}"
+                  {% if not auth.selected_server.can_manage %}disabled{% endif %}
+                >
+              </label>
+              <button class="tiny-button" type="submit" {% if not auth.selected_server.can_manage %}disabled{% endif %}>
+                저장
+              </button>
+            </form>
+            <form class="item-price-delete-form" method="post" action="/settings/items/delete?guild_id={{ auth.selected_guild_id }}">
+              <input type="hidden" name="item_id" value="{{ item.item_id }}">
+              <button class="tiny-button danger-text-button" type="submit" {% if not auth.selected_server.can_manage %}disabled{% endif %}>
+                삭제
+              </button>
+            </form>
+          </div>
+        {% else %}
+          <div class="empty report-empty">등록된 아이템이 없습니다.</div>
+        {% endfor %}
+      </div>
+    </article>
+
+    <form
+      id="report-settings"
+      class="panel settings-form report-builder"
+      method="post"
+      action="/settings/reports?guild_id={{ auth.selected_guild_id }}"
+      data-report-builder
+      data-settings-panel="reports"
+      {% if settings_active_tab != "reports" %}hidden{% endif %}
+    >
+      <header class="panel-header">
+        <h2>통계 알림 설정</h2>
+        <span class="panel-caption">새 알림</span>
+      </header>
+
+      <div class="report-builder-shell">
+        <div class="report-field-board">
+          <div class="report-field-group">
+            <div class="report-field-heading">스케줄</div>
+            <div class="report-field-grid compact-report-grid">
+              <label class="field">
+                <span>발송 주기</span>
+                <select name="frequency" data-report-part {% if not auth.selected_server.can_manage %}disabled{% endif %}>
+                  {% for option in report_options.frequencies %}
+                    <option value="{{ option.value }}" data-label="{{ option.label }}" {% if report_form.frequency == option.value %}selected{% endif %}>
+                      {{ option.label }}
+                    </option>
+                  {% endfor %}
+                </select>
+              </label>
+
+              <label class="field">
+                <span>발송 시간</span>
+                {% set report_run_time = report_form.run_time or '00:00' %}
+                {% set report_time_parts = report_run_time.split(':') %}
+                {% set report_run_hour = report_time_parts[0] %}
+                {% set report_run_minute = report_time_parts[1] if report_time_parts|length > 1 else '00' %}
+                <input name="run_time" type="hidden" value="{{ report_run_time }}" data-report-time>
+                <div class="time-select-row">
+                  <select data-report-hour {% if not auth.selected_server.can_manage %}disabled{% endif %}>
+                    {% for hour in range(0, 24) %}
+                      {% set hour_value = "%02d"|format(hour) %}
+                      <option value="{{ hour_value }}" {% if report_run_hour == hour_value %}selected{% endif %}>
+                        {{ hour_value }}시
+                      </option>
+                    {% endfor %}
+                  </select>
+                  <span>:</span>
+                  <select data-report-minute {% if not auth.selected_server.can_manage %}disabled{% endif %}>
+                    {% for minute in range(0, 60) %}
+                      {% set minute_value = "%02d"|format(minute) %}
+                      <option value="{{ minute_value }}" {% if report_run_minute == minute_value %}selected{% endif %}>
+                        {{ minute_value }}분
+                      </option>
+                    {% endfor %}
+                  </select>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <div class="report-field-group">
+            <div class="report-field-heading">통계</div>
+            <div class="report-field-grid">
+              <label class="field">
+                <span>조회 기간</span>
+                <select name="period_type" data-report-part {% if not auth.selected_server.can_manage %}disabled{% endif %}>
+                  {% for option in report_options.periods %}
+                    <option value="{{ option.value }}" data-label="{{ option.label }}" {% if report_form.period_type == option.value %}selected{% endif %}>
+                      {{ option.label }}
+                    </option>
+                  {% endfor %}
+                </select>
+              </label>
+
+              <label class="field">
+                <span>통계 대상</span>
+                <select name="subject_type" data-report-part {% if not auth.selected_server.can_manage %}disabled{% endif %}>
+                  {% for option in report_options.subjects %}
+                    <option value="{{ option.value }}" data-label="{{ option.label }}" {% if report_form.subject_type == option.value %}selected{% endif %}>
+                      {{ option.label }}
+                    </option>
+                  {% endfor %}
+                </select>
+              </label>
+
+              <label class="field">
+                <span>결과 형태</span>
+                <select name="result_type" data-report-part {% if not auth.selected_server.can_manage %}disabled{% endif %}>
+                  {% for option in report_options.results %}
+                    <option value="{{ option.value }}" data-label="{{ option.label }}" {% if report_form.result_type == option.value %}selected{% endif %}>
+                      {{ option.label }}
+                    </option>
+                  {% endfor %}
+                </select>
+              </label>
+
+              <label class="field">
+                <span>받을 채널</span>
+                <select name="channel_id" data-report-channel {% if not auth.selected_server.can_manage %}disabled{% endif %}>
+                  <option value="" data-label="채널">채널 선택</option>
+                  {% for channel in channels.text %}
+                    <option value="{{ channel.id }}" data-label="{{ channel.label }}" {% if report_form.channel_id|string == channel.id %}selected{% endif %}>
+                      # {{ channel.label }}
+                    </option>
+                  {% endfor %}
+                </select>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <aside class="report-preview-rail">
+          <div class="report-preview-topline">
+            <span class="status status-on">ON</span>
+            <span>미리보기</span>
+          </div>
+          <div class="sentence-preview" data-report-preview>
+            매일 00시에 최근 일주일의 유저별 전체 통계를 #채널로 받습니다.
+          </div>
+          <button class="primary-button report-add-button" type="submit" {% if not auth.selected_server.can_manage %}disabled{% endif %}>
+            알림 추가
+          </button>
+        </aside>
+      </div>
+    </form>
+
+    <article class="panel" data-settings-panel="reports" {% if settings_active_tab != "reports" %}hidden{% endif %}>
+      <header class="panel-header">
+        <h2>등록된 통계 알림</h2>
+        <span class="panel-caption">토글하면 바로 반영됩니다</span>
+      </header>
+      <div class="report-card-list">
+        {% for report in report_settings %}
+          <div class="report-card">
+            <div class="report-card-main">
+              <div class="report-card-title">
+                <span class="status {% if report.status == 'on' %}status-on{% else %}status-off{% endif %}">
+                  {{ "ON" if report.status == "on" else "OFF" }}
+                </span>
+                <strong>{{ report.sentence }}</strong>
+              </div>
+              <div class="report-card-meta">
+                <span>#{{ report.report_setting_id }}</span>
+                <span>등록 {{ report.created_by_name }}</span>
+                <span>다음 발송 {{ report.next_run_at or "예약 대기" }}</span>
+              </div>
+            </div>
+            <div class="report-card-actions">
+              <form class="toggle-form" method="post" action="/settings/reports/status?guild_id={{ auth.selected_guild_id }}">
+                <input type="hidden" name="report_setting_id" value="{{ report.report_setting_id }}">
+                <input type="hidden" name="status" value="{{ 'on' if report.status != 'on' else 'off' }}">
+                <button
+                  class="switch-toggle {% if report.status == 'on' %}is-on{% endif %}"
+                  type="submit"
+                  aria-label="알림 상태 전환"
+                  {% if not auth.selected_server.can_manage %}disabled{% endif %}
+                >
+                  <span></span>
+                </button>
+              </form>
+              <form method="post" action="/settings/reports/delete?guild_id={{ auth.selected_guild_id }}">
+                <input type="hidden" name="report_setting_id" value="{{ report.report_setting_id }}">
+                <button class="tiny-button danger-text-button" type="submit" {% if not auth.selected_server.can_manage %}disabled{% endif %}>
+                  삭제
+                </button>
+              </form>
+            </div>
+          </div>
+        {% else %}
+          <div class="empty report-empty">등록된 통계 알림이 없습니다.</div>
+        {% endfor %}
+      </div>
+    </article>
+
+    <form id="channel-settings" class="panel settings-form" method="post" action="/settings?guild_id={{ auth.selected_guild_id }}" data-settings-panel="channels" {% if settings_active_tab != "channels" %}hidden{% endif %}>
       <header class="panel-header">
         <h2>채널 설정</h2>
         <span class="panel-caption">봇 토큰으로 서버 채널 목록을 불러옵니다</span>
@@ -281,13 +497,44 @@
         {% endif %}
       </div>
     </form>
+    </div>
   </section>
 {% endblock %}
 
 {% block scripts %}
   <script>
+    const settingsTabsRoot = document.querySelector("[data-settings-tabs]");
+    const settingsMenuItems = settingsTabsRoot?.querySelectorAll("[data-settings-tab]") || [];
+    const settingsPanels = settingsTabsRoot?.querySelectorAll("[data-settings-panel]") || [];
+
+    function activateSettingsTab(nextTab) {
+      if (!settingsTabsRoot) {
+        return;
+      }
+      const fallbackTab = settingsTabsRoot.dataset.defaultTab || "alliance";
+      const availableTabs = Array.from(settingsMenuItems).map((item) => item.dataset.settingsTab);
+      const activeTab = availableTabs.includes(nextTab) ? nextTab : fallbackTab;
+
+      settingsMenuItems.forEach((item) => {
+        item.classList.toggle("is-active", item.dataset.settingsTab === activeTab);
+      });
+      settingsPanels.forEach((panel) => {
+        panel.hidden = panel.dataset.settingsPanel !== activeTab;
+      });
+    }
+
+    function tabFromHash() {
+      return window.location.hash.replace("#", "");
+    }
+
+    activateSettingsTab(tabFromHash());
+    window.addEventListener("hashchange", () => activateSettingsTab(tabFromHash()));
+
     const reportBuilder = document.querySelector("[data-report-builder]");
     const reportPreview = document.querySelector("[data-report-preview]");
+    const reportTime = reportBuilder?.querySelector("[data-report-time]");
+    const reportHour = reportBuilder?.querySelector("[data-report-hour]");
+    const reportMinute = reportBuilder?.querySelector("[data-report-minute]");
 
     function selectedLabel(selector) {
       const select = reportBuilder?.querySelector(selector);
@@ -300,10 +547,18 @@
       return minute === "00" ? `${hour}시` : `${hour}시 ${minute}분`;
     }
 
+    function syncReportTime() {
+      if (!reportTime || !reportHour || !reportMinute) {
+        return;
+      }
+      reportTime.value = `${reportHour.value}:${reportMinute.value}`;
+    }
+
     function updateReportPreview() {
       if (!reportBuilder || !reportPreview) {
         return;
       }
+      syncReportTime();
       const frequency = selectedLabel("[name='frequency']");
       const runTime = formatRunTime(reportBuilder.querySelector("[name='run_time']")?.value);
       const period = selectedLabel("[name='period_type']");

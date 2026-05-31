@@ -1,0 +1,223 @@
+{% extends "base.html" %}
+
+{% block title %}내 혈맹 통계{% endblock %}
+
+{% block content %}
+  <section class="ops-hero">
+    <div>
+      <p class="eyebrow">{{ auth.selected_server.name }}</p>
+      <h1>{{ selected_alliance.alliance_name }} 통계</h1>
+      <p class="hero-copy">출석 기반으로 혈맹 참여 흐름, 시간대, 유저별 참여율을 확인합니다.</p>
+    </div>
+    <div class="server-summary">
+      전체 {{ overview.total_sessions }}회차
+    </div>
+  </section>
+
+  <form class="panel filter-panel" method="get" action="/my-alliance">
+    <input type="hidden" name="guild_id" value="{{ auth.selected_guild_id }}">
+    <header class="panel-header">
+      <h2>기간</h2>
+      <span class="panel-caption">기본 전체기간</span>
+    </header>
+
+    <div class="my-alliance-filter-grid">
+      {% if can_select_alliance %}
+        <label class="field">
+          <span>혈맹</span>
+          <select name="alliance_id">
+            {% for alliance in alliance_options %}
+              <option value="{{ alliance.alliance_id }}" {% if filters.alliance_id == alliance.alliance_id %}selected{% endif %}>
+                {{ alliance.alliance_name }}
+              </option>
+            {% endfor %}
+          </select>
+        </label>
+      {% else %}
+        <input type="hidden" name="alliance_id" value="{{ selected_alliance.alliance_id }}">
+      {% endif %}
+
+      <label class="field">
+        <span>시작일</span>
+        <input type="date" name="start_date" value="{{ filters.start_date }}">
+      </label>
+      <label class="field">
+        <span>종료일</span>
+        <input type="date" name="end_date" value="{{ filters.end_date }}">
+      </label>
+      <div class="filter-actions">
+        <button class="primary-button" type="submit">적용</button>
+      </div>
+    </div>
+
+    <div class="quick-filter-row">
+      {% for item in filters.quick %}
+        <a class="quick-filter {% if item.active %}is-active{% endif %}" href="{{ item.href }}">
+          {{ item.label }}
+        </a>
+      {% endfor %}
+    </div>
+  </form>
+
+  <section class="stats-grid">
+    <article class="stat-card">
+      <span>혈맹 참여 회차</span>
+      <strong>{{ overview.alliance_session_count }}</strong>
+    </article>
+    <article class="stat-card">
+      <span>참여 회차율</span>
+      <strong>{{ overview.session_rate }}</strong>
+    </article>
+    <article class="stat-card">
+      <span>누적 출석</span>
+      <strong>{{ overview.attendance_count }}</strong>
+    </article>
+    <article class="stat-card">
+      <span>평균 인원</span>
+      <strong>{{ overview.average_count }}</strong>
+    </article>
+  </section>
+
+  <section class="content-grid my-alliance-grid">
+    <article class="panel">
+      <header class="panel-header">
+        <h2>인원 많은 시간대</h2>
+        <span class="panel-caption">상위 {{ hour_stats|length }}개</span>
+      </header>
+      <div class="rank-strip-list">
+        {% for row in hour_stats[:10] %}
+          <div class="rank-strip">
+            <div>
+              <strong>{{ row.label }}</strong>
+              <span>{{ row.session_count }}회 · 평균 {{ row.average_count }}명</span>
+            </div>
+            <b>{{ row.attendance_count }}</b>
+          </div>
+        {% else %}
+          <div class="empty report-empty">시간대 통계가 없습니다.</div>
+        {% endfor %}
+      </div>
+    </article>
+
+    <article class="panel">
+      <header class="panel-header">
+        <h2>요일 흐름</h2>
+        <span class="panel-caption">누적 출석 기준</span>
+      </header>
+      <div class="rank-strip-list">
+        {% for row in weekday_stats %}
+          <div class="rank-strip">
+            <div>
+              <strong>{{ row.label }}요일</strong>
+              <span>{{ row.session_count }}회 · 평균 {{ row.average_count }}명</span>
+            </div>
+            <b>{{ row.attendance_count }}</b>
+          </div>
+        {% else %}
+          <div class="empty report-empty">요일 통계가 없습니다.</div>
+        {% endfor %}
+      </div>
+    </article>
+
+    <article class="panel wide">
+      <header class="panel-header">
+        <h2>유저별 참여율</h2>
+        <span class="panel-caption">{{ user_rankings|length }}명</span>
+      </header>
+      <table>
+        <thead>
+          <tr>
+            <th>순위</th>
+            <th>닉네임</th>
+            <th>출석</th>
+            <th>참여율</th>
+            <th>최근 출석</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in user_rankings %}
+            <tr>
+              <td>{{ row.rank }}</td>
+              <td>{{ row.discord_nickname }}</td>
+              <td>{{ row.attendance_count }}</td>
+              <td>
+                <div class="rate-cell">
+                  <span>{{ row.participation_rate_text }}</span>
+                  <div class="rate-bar"><i style="width: {{ row.participation_rate }}%"></i></div>
+                </div>
+              </td>
+              <td>{{ row.last_attended_at or "-" }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="5" class="empty">조건에 맞는 출석 기록이 없습니다.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </article>
+
+    <article class="panel">
+      <header class="panel-header">
+        <h2>이번 주 순위</h2>
+        <span class="panel-caption">현재 주</span>
+      </header>
+      <div class="mini-rank-list">
+        {% for row in weekly_rankings %}
+          <div class="mini-rank-row">
+            <span>{{ row.rank }}</span>
+            <strong>{{ row.discord_nickname }}</strong>
+            <b>{{ row.attendance_count }}회</b>
+          </div>
+        {% else %}
+          <div class="empty report-empty">이번 주 출석 기록이 없습니다.</div>
+        {% endfor %}
+      </div>
+    </article>
+
+    <article class="panel">
+      <header class="panel-header">
+        <h2>이번 달 순위</h2>
+        <span class="panel-caption">현재 월</span>
+      </header>
+      <div class="mini-rank-list">
+        {% for row in monthly_rankings %}
+          <div class="mini-rank-row">
+            <span>{{ row.rank }}</span>
+            <strong>{{ row.discord_nickname }}</strong>
+            <b>{{ row.attendance_count }}회</b>
+          </div>
+        {% else %}
+          <div class="empty report-empty">이번 달 출석 기록이 없습니다.</div>
+        {% endfor %}
+      </div>
+    </article>
+
+    <article class="panel wide">
+      <header class="panel-header">
+        <h2>일자별 상세</h2>
+        <span class="panel-caption">최근 {{ daily_rows|length }}일</span>
+      </header>
+      <table>
+        <thead>
+          <tr>
+            <th>날짜</th>
+            <th>회차</th>
+            <th>누적 출석</th>
+            <th>참여 인원</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in daily_rows %}
+            <tr>
+              <td>{{ row.attendance_date }}</td>
+              <td>{{ row.session_count }}</td>
+              <td>{{ row.attendance_count }}</td>
+              <td>{{ row.unique_user_count }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="4" class="empty">일자별 기록이 없습니다.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </article>
+  </section>
+{% endblock %}

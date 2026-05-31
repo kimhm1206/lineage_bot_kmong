@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import sys
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Any
 from urllib.parse import quote
 
@@ -14,6 +15,7 @@ from psycopg2.extras import Json, RealDictCursor
 load_dotenv()
 
 DEFAULT_ALLIANCE_NAMES = ("정지", "랭커", "삼국", "해적", "보스", "인연")
+DEFAULT_DISTRIBUTION_FEE_RATE = Decimal("0.10")
 TEST_DB_FLAG = "--test"
 
 
@@ -117,6 +119,37 @@ class Database:
     ) -> dict[str, int]:
         return get_alliance_counts_for_discord_ids(discord_ids)
 
+    def get_guild_alliance_role_mappings(self, guild_id: int) -> list[dict[str, Any]]:
+        return get_guild_alliance_role_mappings(guild_id)
+
+    def upsert_guild_alliance_role_mapping(
+        self,
+        guild_id: int,
+        role_id: int,
+        role_name: str,
+        alliance_name: str,
+    ) -> None:
+        upsert_guild_alliance_role_mapping(
+            guild_id,
+            role_id,
+            role_name,
+            alliance_name,
+        )
+
+    def delete_guild_alliance_role_mapping(
+        self,
+        guild_id: int,
+        mapping_id: int,
+    ) -> None:
+        delete_guild_alliance_role_mapping(guild_id, mapping_id)
+
+    def resolve_alliance_by_role_ids(
+        self,
+        guild_id: int,
+        role_ids: list[int],
+    ) -> Alliance | None:
+        return resolve_alliance_by_role_ids(guild_id, role_ids)
+
     def get_attendance_overview(
         self,
         guild_id: int | None,
@@ -175,6 +208,41 @@ class Database:
             search,
             alliance_name,
         )
+
+    def get_attendance_status_sessions(
+        self,
+        guild_id: int,
+        limit: int = 10,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        return get_attendance_status_sessions(guild_id, limit, offset)
+
+    def count_attendance_status_sessions(self, guild_id: int) -> int:
+        return count_attendance_status_sessions(guild_id)
+
+    def get_active_scheduled_reports(self) -> list[dict[str, Any]]:
+        return get_active_scheduled_reports()
+
+    def get_active_scheduled_report(
+        self,
+        report_setting_id: int,
+    ) -> dict[str, Any] | None:
+        return get_active_scheduled_report(report_setting_id)
+
+    def update_scheduled_report_next_run(
+        self,
+        report_setting_id: int,
+        next_run_at: str,
+    ) -> None:
+        update_scheduled_report_next_run(report_setting_id, next_run_at)
+
+    def mark_scheduled_report_sent(
+        self,
+        report_setting_id: int,
+        last_sent_at: str,
+        next_run_at: str,
+    ) -> None:
+        mark_scheduled_report_sent(report_setting_id, last_sent_at, next_run_at)
 
     def claim_bot_commands(self, limit: int = 5) -> list[dict[str, Any]]:
         return claim_bot_commands(limit)
@@ -240,6 +308,123 @@ class Database:
 
     def get_live_attendance_state(self, guild_id: int) -> dict[str, Any]:
         return get_live_attendance_state(guild_id)
+
+    def get_item_price_settings(self, guild_id: int) -> list[dict[str, Any]]:
+        return get_item_price_settings(guild_id)
+
+    def upsert_item_price(
+        self,
+        guild_id: int,
+        *,
+        item_name: str,
+        default_price: Decimal,
+        category: str | None = None,
+        memo: str | None = None,
+        is_bid_item: bool = True,
+    ) -> int:
+        return upsert_item_price(
+            guild_id,
+            item_name=item_name,
+            default_price=default_price,
+            category=category,
+            memo=memo,
+            is_bid_item=is_bid_item,
+        )
+
+    def update_item_price(
+        self,
+        guild_id: int,
+        item_id: int,
+        *,
+        item_name: str,
+        default_price: Decimal,
+        category: str | None = None,
+        memo: str | None = None,
+        is_bid_item: bool = True,
+    ) -> None:
+        update_item_price(
+            guild_id,
+            item_id,
+            item_name=item_name,
+            default_price=default_price,
+            category=category,
+            memo=memo,
+            is_bid_item=is_bid_item,
+        )
+
+    def deactivate_item_price(self, guild_id: int, item_id: int) -> None:
+        deactivate_item_price(guild_id, item_id)
+
+    def get_latest_adena_rate(self, guild_id: int) -> Decimal:
+        return get_latest_adena_rate(guild_id)
+
+    def create_loot_drop(
+        self,
+        guild_id: int,
+        *,
+        attendance_id: int,
+        item_id: int | None,
+        item_name: str,
+        cash_price_krw: Decimal,
+        sale_price: Decimal,
+        adena_rate: Decimal,
+        buyer_name: str | None,
+        memo: str | None,
+        created_by_discord_id: int | None,
+    ) -> int:
+        return create_loot_drop(
+            guild_id,
+            attendance_id=attendance_id,
+            item_id=item_id,
+            item_name=item_name,
+            cash_price_krw=cash_price_krw,
+            sale_price=sale_price,
+            adena_rate=adena_rate,
+            buyer_name=buyer_name,
+            memo=memo,
+            created_by_discord_id=created_by_discord_id,
+        )
+
+    def update_loot_drop(
+        self,
+        guild_id: int,
+        loot_event_id: int,
+        *,
+        cash_price_krw: Decimal,
+        sale_price: Decimal,
+        adena_rate: Decimal,
+        buyer_name: str | None,
+        memo: str | None,
+    ) -> None:
+        update_loot_drop(
+            guild_id,
+            loot_event_id,
+            cash_price_krw=cash_price_krw,
+            sale_price=sale_price,
+            adena_rate=adena_rate,
+            buyer_name=buyer_name,
+            memo=memo,
+        )
+
+    def delete_loot_drop(self, guild_id: int, loot_event_id: int) -> None:
+        delete_loot_drop(guild_id, loot_event_id)
+
+    def get_loot_drop_events(self, guild_id: int, limit: int = 30) -> list[dict[str, Any]]:
+        return get_loot_drop_events(guild_id, limit)
+
+    def update_distribution_alliance_payout_status(
+        self,
+        guild_id: int,
+        distribution_id: int,
+        alliance_id: int,
+        payout_status: str,
+    ) -> None:
+        update_distribution_alliance_payout_status(
+            guild_id,
+            distribution_id,
+            alliance_id,
+            payout_status,
+        )
 
 
 database = Database()
@@ -529,6 +714,105 @@ def get_alliance_counts_for_discord_ids(discord_ids: list[int]) -> dict[str, int
     return counts
 
 
+def get_guild_alliance_role_mappings(guild_id: int) -> list[dict[str, Any]]:
+    rows = _fetchall(
+        """
+        SELECT
+            m.mapping_id,
+            m.guild_id,
+            m.role_id,
+            m.role_name,
+            m.alliance_id,
+            a.alliance_name,
+            m.updated_at
+        FROM guild_alliance_role_mappings m
+        INNER JOIN alliances a ON a.alliance_id = m.alliance_id
+        WHERE m.guild_id = %s
+        ORDER BY a.alliance_name ASC, m.role_name ASC
+        """,
+        (guild_id,),
+    )
+    return [
+        {
+            "mapping_id": int(row["mapping_id"]),
+            "guild_id": int(row["guild_id"]),
+            "role_id": int(row["role_id"]),
+            "role_name": str(row["role_name"]),
+            "alliance_id": int(row["alliance_id"]),
+            "alliance_name": str(row["alliance_name"]),
+            "updated_at": row["updated_at"],
+        }
+        for row in rows
+    ]
+
+
+def upsert_guild_alliance_role_mapping(
+    guild_id: int,
+    role_id: int,
+    role_name: str,
+    alliance_name: str,
+) -> None:
+    alliance = get_or_create_alliance(alliance_name)
+    normalized_role_name = role_name.strip() or str(role_id)
+    with _connect() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO guild_alliance_role_mappings (
+                    guild_id,
+                    role_id,
+                    role_name,
+                    alliance_id
+                )
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (guild_id, role_id) DO UPDATE SET
+                    role_name = EXCLUDED.role_name,
+                    alliance_id = EXCLUDED.alliance_id,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                (guild_id, role_id, normalized_role_name, alliance.alliance_id),
+            )
+        connection.commit()
+
+
+def delete_guild_alliance_role_mapping(guild_id: int, mapping_id: int) -> None:
+    with _connect() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                DELETE FROM guild_alliance_role_mappings
+                WHERE guild_id = %s AND mapping_id = %s
+                """,
+                (guild_id, mapping_id),
+            )
+        connection.commit()
+
+
+def resolve_alliance_by_role_ids(guild_id: int, role_ids: list[int]) -> Alliance | None:
+    if not role_ids:
+        return None
+    row = _fetchone(
+        """
+        WITH role_priority AS (
+            SELECT role_id, ordinality
+            FROM unnest(%s::bigint[]) WITH ORDINALITY AS role_ids(role_id, ordinality)
+        )
+        SELECT a.alliance_id, a.alliance_name
+        FROM role_priority rp
+        INNER JOIN guild_alliance_role_mappings m
+            ON m.guild_id = %s
+           AND m.role_id = rp.role_id
+        INNER JOIN alliances a ON a.alliance_id = m.alliance_id
+        ORDER BY rp.ordinality ASC
+        LIMIT 1
+        """,
+        (role_ids, guild_id),
+    )
+    if row is None:
+        return None
+    return Alliance(alliance_id=int(row["alliance_id"]), alliance_name=str(row["alliance_name"]))
+
+
 def get_attendance_overview(
     guild_id: int | None,
     start_at: str | None = None,
@@ -749,6 +1033,200 @@ def get_attendance_export_rows(
         }
         for row in rows
     ]
+
+
+def count_attendance_status_sessions(guild_id: int) -> int:
+    row = _fetchone(
+        """
+        SELECT COUNT(*) AS session_count
+        FROM attendance_sessions
+        WHERE guild_id = %s
+        """,
+        (guild_id,),
+    )
+    return int(row["session_count"] or 0) if row else 0
+
+
+def get_attendance_status_sessions(
+    guild_id: int,
+    limit: int = 10,
+    offset: int = 0,
+) -> list[dict[str, Any]]:
+    session_rows = _fetchall(
+        """
+        SELECT
+            s.attendance_id,
+            s.started_at,
+            s.ended_at,
+            s.started_by_discord_id,
+            COALESCE(
+                MAX(starter.discord_nickname),
+                s.started_by_discord_id::text
+            ) AS started_by_name,
+            COUNT(e.user_id) AS participant_count
+        FROM attendance_sessions s
+        LEFT JOIN attendance_entries e ON e.attendance_id = s.attendance_id
+        LEFT JOIN users starter ON starter.discord_id = s.started_by_discord_id
+        WHERE s.guild_id = %s
+        GROUP BY
+            s.attendance_id,
+            s.started_at,
+            s.ended_at,
+            s.started_by_discord_id
+        ORDER BY s.started_at DESC
+        LIMIT %s
+        OFFSET %s
+        """,
+        (guild_id, int(limit), int(offset)),
+    )
+    session_ids = [int(row["attendance_id"]) for row in session_rows]
+    if not session_ids:
+        return []
+
+    participant_rows = _fetchall(
+        """
+        SELECT
+            e.attendance_id,
+            COALESCE(a.alliance_name, '미분류') AS alliance_name,
+            u.discord_id,
+            u.discord_nickname
+        FROM attendance_entries e
+        INNER JOIN users u ON u.user_id = e.user_id
+        LEFT JOIN alliances a ON a.alliance_id = u.alliance_id
+        WHERE e.attendance_id = ANY(%s::bigint[])
+        ORDER BY e.attendance_id DESC, alliance_name ASC, u.discord_nickname ASC
+        """,
+        (session_ids,),
+    )
+    grouped: dict[int, dict[str, list[dict[str, Any]]]] = {
+        attendance_id: {} for attendance_id in session_ids
+    }
+    for row in participant_rows:
+        attendance_id = int(row["attendance_id"])
+        alliance_name = str(row["alliance_name"])
+        grouped.setdefault(attendance_id, {}).setdefault(alliance_name, []).append(
+            {
+                "discord_id": int(row["discord_id"]),
+                "discord_nickname": str(row["discord_nickname"]),
+            }
+        )
+
+    sessions: list[dict[str, Any]] = []
+    for row in session_rows:
+        attendance_id = int(row["attendance_id"])
+        alliances = [
+            {
+                "alliance_name": alliance_name,
+                "count": len(members),
+                "members": members,
+            }
+            for alliance_name, members in sorted(grouped.get(attendance_id, {}).items())
+        ]
+        sessions.append(
+            {
+                "attendance_id": attendance_id,
+                "started_at": str(row["started_at"]),
+                "ended_at": str(row["ended_at"]),
+                "started_by_discord_id": _optional_int(row["started_by_discord_id"]),
+                "started_by_name": row["started_by_name"] or "",
+                "participant_count": int(row["participant_count"] or 0),
+                "alliances": alliances,
+            }
+        )
+    return sessions
+
+
+def get_active_scheduled_reports() -> list[dict[str, Any]]:
+    rows = _fetchall(
+        """
+        SELECT
+            report_setting_id,
+            guild_id,
+            frequency,
+            period_type,
+            subject_type,
+            result_type,
+            run_time,
+            channel_id,
+            channel_name,
+            status,
+            last_sent_at,
+            next_run_at,
+            updated_at
+        FROM scheduled_report_settings
+        WHERE status = 'on'
+        ORDER BY
+            next_run_at NULLS FIRST,
+            updated_at ASC,
+            report_setting_id ASC
+        """
+    )
+    return [dict(row) for row in rows]
+
+
+def get_active_scheduled_report(report_setting_id: int) -> dict[str, Any] | None:
+    row = _fetchone(
+        """
+        SELECT
+            report_setting_id,
+            guild_id,
+            frequency,
+            period_type,
+            subject_type,
+            result_type,
+            run_time,
+            channel_id,
+            channel_name,
+            status,
+            last_sent_at,
+            next_run_at,
+            updated_at
+        FROM scheduled_report_settings
+        WHERE report_setting_id = %s
+          AND status = 'on'
+        """,
+        (int(report_setting_id),),
+    )
+    return dict(row) if row else None
+
+
+def update_scheduled_report_next_run(
+    report_setting_id: int,
+    next_run_at: str,
+) -> None:
+    with _connect() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE scheduled_report_settings
+                SET next_run_at = %s
+                WHERE report_setting_id = %s
+                  AND status = 'on'
+                """,
+                (next_run_at, int(report_setting_id)),
+            )
+        connection.commit()
+
+
+def mark_scheduled_report_sent(
+    report_setting_id: int,
+    last_sent_at: str,
+    next_run_at: str,
+) -> None:
+    with _connect() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE scheduled_report_settings
+                SET
+                    last_sent_at = %s,
+                    next_run_at = %s
+                WHERE report_setting_id = %s
+                  AND status = 'on'
+                """,
+                (last_sent_at, next_run_at, int(report_setting_id)),
+            )
+        connection.commit()
 
 
 def claim_bot_commands(limit: int = 5) -> list[dict[str, Any]]:
@@ -1000,6 +1478,996 @@ def get_live_attendance_state(guild_id: int) -> dict[str, Any]:
     }
 
 
+def get_item_price_settings(guild_id: int) -> list[dict[str, Any]]:
+    rows = _fetchall(
+        """
+        SELECT *
+        FROM (
+            SELECT DISTINCT ON (LOWER(item_name))
+                item_id,
+                guild_id,
+                item_name,
+                category,
+                default_price,
+                is_bid_item,
+                is_active,
+                memo,
+                sort_order,
+                updated_at
+            FROM items
+            WHERE is_active = TRUE
+            ORDER BY
+                LOWER(item_name),
+                CASE WHEN guild_id IS NULL THEN 0 ELSE 1 END,
+                updated_at DESC,
+                sort_order ASC NULLS LAST,
+                item_name ASC
+        ) picked
+        ORDER BY sort_order ASC NULLS LAST, item_name ASC
+        """,
+    )
+    return [
+        {
+            "item_id": int(row["item_id"]),
+            "guild_id": _optional_int(row["guild_id"]),
+            "item_name": str(row["item_name"]),
+            "category": row["category"] or "",
+            "default_price": _decimal(row["default_price"]),
+            "is_bid_item": bool(row["is_bid_item"]),
+            "is_active": bool(row["is_active"]),
+            "memo": row["memo"] or "",
+            "updated_at": row["updated_at"],
+        }
+        for row in rows
+    ]
+
+
+def upsert_item_price(
+    guild_id: int,
+    *,
+    item_name: str,
+    default_price: Decimal,
+    category: str | None = None,
+    memo: str | None = None,
+    is_bid_item: bool = True,
+) -> int:
+    ensure_guild(guild_id)
+    normalized_name = item_name.strip()
+    if not normalized_name:
+        raise ValueError("Item name must not be empty.")
+
+    with _connect() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT item_id
+                FROM items
+                WHERE LOWER(item_name) = LOWER(%s)
+                ORDER BY
+                    CASE WHEN guild_id IS NULL THEN 0 ELSE 1 END,
+                    is_active DESC,
+                    updated_at DESC,
+                    item_id ASC
+                LIMIT 1
+                """,
+                (normalized_name,),
+            )
+            row = cursor.fetchone()
+            if row is None:
+                cursor.execute(
+                    """
+                    INSERT INTO items (
+                        guild_id,
+                        item_name,
+                        category,
+                        default_price,
+                        is_bid_item,
+                        is_active,
+                        memo,
+                        updated_at
+                    )
+                    VALUES (NULL, %s, %s, %s, %s, TRUE, %s, CURRENT_TIMESTAMP)
+                    RETURNING item_id
+                    """,
+                    (
+                        normalized_name,
+                        _blank_to_none(category),
+                        _decimal(default_price),
+                        is_bid_item,
+                        _blank_to_none(memo),
+                    ),
+                )
+                item_id = int(cursor.fetchone()["item_id"])
+            else:
+                item_id = int(row["item_id"])
+                cursor.execute(
+                    """
+                    UPDATE items
+                    SET guild_id = NULL,
+                        item_name = %s,
+                        category = %s,
+                        default_price = %s,
+                        is_bid_item = %s,
+                        is_active = TRUE,
+                        memo = %s,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE item_id = %s
+                    """,
+                    (
+                        normalized_name,
+                        _blank_to_none(category),
+                        _decimal(default_price),
+                        is_bid_item,
+                        _blank_to_none(memo),
+                        item_id,
+                    ),
+                )
+            _deactivate_duplicate_item_prices(cursor, item_id, normalized_name)
+        connection.commit()
+    return item_id
+
+
+def update_item_price(
+    guild_id: int,
+    item_id: int,
+    *,
+    item_name: str,
+    default_price: Decimal,
+    category: str | None = None,
+    memo: str | None = None,
+    is_bid_item: bool = True,
+) -> None:
+    ensure_guild(guild_id)
+    normalized_name = item_name.strip()
+    if not normalized_name:
+        raise ValueError("Item name must not be empty.")
+
+    with _connect() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE items
+                SET guild_id = NULL,
+                    item_name = %s,
+                    category = %s,
+                    default_price = %s,
+                    is_bid_item = %s,
+                    is_active = TRUE,
+                    memo = %s,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE item_id = %s
+                """,
+                (
+                    normalized_name,
+                    _blank_to_none(category),
+                    _decimal(default_price),
+                    is_bid_item,
+                    _blank_to_none(memo),
+                    item_id,
+                ),
+            )
+            if cursor.rowcount == 0:
+                raise ValueError("Item price setting was not found.")
+            _deactivate_duplicate_item_prices(cursor, item_id, normalized_name)
+        connection.commit()
+
+
+def deactivate_item_price(guild_id: int, item_id: int) -> None:
+    ensure_guild(guild_id)
+    with _connect() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE items
+                SET is_active = FALSE,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE item_id = %s
+                """,
+                (item_id,),
+            )
+        connection.commit()
+
+
+def get_latest_adena_rate(guild_id: int) -> Decimal:
+    row = _fetchone(
+        """
+        SELECT adena_rate
+        FROM loot_events
+        WHERE guild_id = %s
+          AND adena_rate > 0
+        ORDER BY updated_at DESC, loot_event_id DESC
+        LIMIT 1
+        """,
+        (guild_id,),
+    )
+    return _decimal(row["adena_rate"]) if row else Decimal("0")
+
+
+def create_loot_drop(
+    guild_id: int,
+    *,
+    attendance_id: int,
+    item_id: int | None,
+    item_name: str,
+    cash_price_krw: Decimal,
+    sale_price: Decimal,
+    adena_rate: Decimal,
+    buyer_name: str | None,
+    memo: str | None,
+    created_by_discord_id: int | None,
+) -> int:
+    ensure_guild(guild_id)
+    normalized_item_name = item_name.strip()
+    if item_id is None and not normalized_item_name:
+        raise ValueError("Item name must not be empty.")
+
+    cash_amount = _decimal(cash_price_krw)
+    sale_amount = _decimal(sale_price)
+    net_amount = sale_amount - (sale_amount * DEFAULT_DISTRIBUTION_FEE_RATE)
+    with _connect() as connection:
+        with connection.cursor() as cursor:
+            session = _get_attendance_session_for_loot(cursor, guild_id, attendance_id)
+            participants = _get_attendance_participants_for_loot(cursor, attendance_id)
+            if not participants:
+                raise ValueError("Attendance session has no participants.")
+
+            resolved_item_id, resolved_item_name = _resolve_loot_item(
+                cursor,
+                guild_id,
+                item_id,
+                normalized_item_name,
+                cash_amount,
+            )
+            started_at = str(session["started_at"])
+            cursor.execute(
+                """
+                INSERT INTO loot_events (
+                    guild_id,
+                    attendance_id,
+                    event_date,
+                    event_time_label,
+                    title,
+                    memo,
+                    adena_rate,
+                    created_by_discord_id,
+                    updated_at
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                RETURNING loot_event_id
+                """,
+                (
+                    guild_id,
+                    attendance_id,
+                    _date_label_from_text(started_at),
+                    _time_label_from_text(started_at),
+                    resolved_item_name,
+                    _blank_to_none(memo),
+                    _decimal(adena_rate),
+                    created_by_discord_id,
+                ),
+            )
+            loot_event_id = int(cursor.fetchone()["loot_event_id"])
+            participant_counts: dict[int, int] = {}
+            unclassified_alliance_id: int | None = None
+
+            for participant in participants:
+                alliance_id = _optional_int(participant["alliance_id"])
+                if alliance_id is None:
+                    if unclassified_alliance_id is None:
+                        unclassified_alliance_id = _ensure_alliance_id(
+                            cursor,
+                            "미분류",
+                        )
+                    alliance_id = unclassified_alliance_id
+                participant_counts[alliance_id] = participant_counts.get(alliance_id, 0) + 1
+                cursor.execute(
+                    """
+                    INSERT INTO loot_event_participants (
+                        loot_event_id,
+                        user_id,
+                        alliance_id,
+                        attended_at,
+                        source
+                    )
+                    VALUES (%s, %s, %s, %s, 'attendance')
+                    ON CONFLICT (loot_event_id, user_id) DO UPDATE SET
+                        alliance_id = EXCLUDED.alliance_id,
+                        attended_at = EXCLUDED.attended_at,
+                        source = EXCLUDED.source
+                    """,
+                    (
+                        loot_event_id,
+                        int(participant["user_id"]),
+                        alliance_id,
+                        started_at,
+                    ),
+                )
+
+            for alliance_id, count in participant_counts.items():
+                cursor.execute(
+                    """
+                    INSERT INTO loot_event_alliance_counts (
+                        loot_event_id,
+                        alliance_id,
+                        participant_count
+                    )
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (loot_event_id, alliance_id) DO UPDATE SET
+                        participant_count = EXCLUDED.participant_count
+                    """,
+                    (loot_event_id, alliance_id, count),
+                )
+
+            cursor.execute(
+                """
+                INSERT INTO loot_event_items (
+                    loot_event_id,
+                    item_id,
+                    item_name_snapshot,
+                    buyer_name,
+                    cash_price_krw,
+                    sale_price,
+                    fee_rate,
+                    net_amount,
+                    memo
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NULL)
+                RETURNING loot_item_id
+                """,
+                (
+                    loot_event_id,
+                    resolved_item_id,
+                    resolved_item_name,
+                    _blank_to_none(buyer_name),
+                    cash_amount,
+                    sale_amount,
+                    DEFAULT_DISTRIBUTION_FEE_RATE,
+                    net_amount,
+                ),
+            )
+            loot_item_id = int(cursor.fetchone()["loot_item_id"])
+            _upsert_distribution_for_loot(
+                cursor,
+                guild_id,
+                loot_event_id,
+                loot_item_id,
+                sale_amount,
+                participant_counts,
+            )
+        connection.commit()
+    return loot_event_id
+
+
+def update_loot_drop(
+    guild_id: int,
+    loot_event_id: int,
+    *,
+    cash_price_krw: Decimal,
+    sale_price: Decimal,
+    adena_rate: Decimal,
+    buyer_name: str | None,
+    memo: str | None,
+) -> None:
+    cash_amount = _decimal(cash_price_krw)
+    sale_amount = _decimal(sale_price)
+    net_amount = sale_amount - (sale_amount * DEFAULT_DISTRIBUTION_FEE_RATE)
+    with _connect() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT loot_event_id
+                FROM loot_events
+                WHERE guild_id = %s
+                  AND loot_event_id = %s
+                """,
+                (guild_id, loot_event_id),
+            )
+            if cursor.fetchone() is None:
+                raise ValueError("Loot event was not found.")
+
+            cursor.execute(
+                """
+                SELECT loot_item_id
+                FROM loot_event_items
+                WHERE loot_event_id = %s
+                ORDER BY loot_item_id ASC
+                LIMIT 1
+                """,
+                (loot_event_id,),
+            )
+            item_row = cursor.fetchone()
+            if item_row is None:
+                raise ValueError("Loot event item was not found.")
+            loot_item_id = int(item_row["loot_item_id"])
+
+            cursor.execute(
+                """
+                UPDATE loot_events
+                SET adena_rate = %s,
+                    memo = %s,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE loot_event_id = %s
+                """,
+                (_decimal(adena_rate), _blank_to_none(memo), loot_event_id),
+            )
+            cursor.execute(
+                """
+                UPDATE loot_event_items
+                SET buyer_name = %s,
+                    cash_price_krw = %s,
+                    sale_price = %s,
+                    fee_rate = %s,
+                    net_amount = %s
+                WHERE loot_item_id = %s
+                """,
+                (
+                    _blank_to_none(buyer_name),
+                    cash_amount,
+                    sale_amount,
+                    DEFAULT_DISTRIBUTION_FEE_RATE,
+                    net_amount,
+                    loot_item_id,
+                ),
+            )
+            participant_counts = _get_loot_alliance_counts(cursor, loot_event_id)
+            _upsert_distribution_for_loot(
+                cursor,
+                guild_id,
+                loot_event_id,
+                loot_item_id,
+                sale_amount,
+                participant_counts,
+            )
+        connection.commit()
+
+
+def delete_loot_drop(guild_id: int, loot_event_id: int) -> None:
+    with _connect() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                DELETE FROM distribution_batches db
+                USING loot_events le
+                WHERE db.loot_event_id = le.loot_event_id
+                  AND le.guild_id = %s
+                  AND le.loot_event_id = %s
+                """,
+                (guild_id, loot_event_id),
+            )
+            cursor.execute(
+                """
+                DELETE FROM loot_events
+                WHERE guild_id = %s
+                  AND loot_event_id = %s
+                """,
+                (guild_id, loot_event_id),
+            )
+            if cursor.rowcount == 0:
+                raise ValueError("Loot event was not found.")
+        connection.commit()
+
+
+def get_loot_drop_events(guild_id: int, limit: int = 30) -> list[dict[str, Any]]:
+    event_rows = _fetchall(
+        """
+        SELECT
+            le.loot_event_id,
+            le.guild_id,
+            le.attendance_id,
+            le.event_date,
+            le.event_time_label,
+            le.title,
+            le.memo,
+            le.adena_rate,
+            le.created_by_discord_id,
+            le.updated_at,
+            s.started_at AS attendance_started_at,
+            s.ended_at AS attendance_ended_at,
+            li.loot_item_id,
+            li.item_id,
+            li.item_name_snapshot,
+            li.buyer_name,
+            li.cash_price_krw,
+            li.sale_price,
+            li.net_amount,
+            db.distribution_id,
+            db.total_sale_amount,
+            db.total_net_amount,
+            db.total_participant_count,
+            db.fee_rate,
+            db.fee_amount,
+            db.status AS distribution_status
+        FROM loot_events le
+        LEFT JOIN attendance_sessions s ON s.attendance_id = le.attendance_id
+        LEFT JOIN LATERAL (
+            SELECT
+                loot_item_id,
+                item_id,
+                item_name_snapshot,
+                buyer_name,
+                cash_price_krw,
+                sale_price,
+                net_amount
+            FROM loot_event_items
+            WHERE loot_event_id = le.loot_event_id
+            ORDER BY loot_item_id ASC
+            LIMIT 1
+        ) li ON TRUE
+        LEFT JOIN distribution_batches db ON db.loot_event_id = le.loot_event_id
+        WHERE le.guild_id = %s
+        ORDER BY
+            le.event_date DESC,
+            le.event_time_label DESC NULLS LAST,
+            le.loot_event_id DESC
+        LIMIT %s
+        """,
+        (guild_id, int(limit)),
+    )
+    event_ids = [int(row["loot_event_id"]) for row in event_rows]
+    if not event_ids:
+        return []
+
+    payout_rows = _fetchall(
+        """
+        SELECT
+            db.loot_event_id,
+            p.alliance_id,
+            COALESCE(a.alliance_name, '미분류') AS alliance_name,
+            p.participant_count,
+            p.gross_amount,
+            p.net_amount,
+            p.payout_status
+        FROM distribution_batches db
+        INNER JOIN distribution_alliance_payouts p
+            ON p.distribution_id = db.distribution_id
+        LEFT JOIN alliances a ON a.alliance_id = p.alliance_id
+        WHERE db.loot_event_id = ANY(%s::bigint[])
+        ORDER BY db.loot_event_id DESC, alliance_name ASC
+        """,
+        (event_ids,),
+    )
+    participant_rows = _fetchall(
+        """
+        SELECT
+            lep.loot_event_id,
+            COALESCE(a.alliance_name, '미분류') AS alliance_name,
+            u.discord_nickname
+        FROM loot_event_participants lep
+        INNER JOIN users u ON u.user_id = lep.user_id
+        LEFT JOIN alliances a ON a.alliance_id = lep.alliance_id
+        WHERE lep.loot_event_id = ANY(%s::bigint[])
+        ORDER BY lep.loot_event_id DESC, alliance_name ASC, u.discord_nickname ASC
+        """,
+        (event_ids,),
+    )
+    payouts_by_event: dict[int, list[dict[str, Any]]] = {event_id: [] for event_id in event_ids}
+    for row in payout_rows:
+        event_id = int(row["loot_event_id"])
+        count = int(row["participant_count"] or 0)
+        net_amount = _decimal(row["net_amount"])
+        payouts_by_event.setdefault(event_id, []).append(
+            {
+                "alliance_id": _optional_int(row["alliance_id"]),
+                "alliance_name": str(row["alliance_name"]),
+                "participant_count": count,
+                "gross_amount": _decimal(row["gross_amount"]),
+                "net_amount": net_amount,
+                "per_member_amount": _safe_divide(net_amount, count),
+                "payout_status": str(row["payout_status"]),
+            }
+        )
+
+    member_map: dict[int, dict[str, list[str]]] = {event_id: {} for event_id in event_ids}
+    for row in participant_rows:
+        event_id = int(row["loot_event_id"])
+        alliance_name = str(row["alliance_name"])
+        member_map.setdefault(event_id, {}).setdefault(alliance_name, []).append(
+            str(row["discord_nickname"])
+        )
+
+    events: list[dict[str, Any]] = []
+    for row in event_rows:
+        loot_event_id = int(row["loot_event_id"])
+        participant_count = int(row["total_participant_count"] or 0)
+        total_net_amount = _decimal(row["total_net_amount"])
+        alliances = [
+            {
+                "alliance_name": alliance_name,
+                "count": len(members),
+                "members": members,
+            }
+            for alliance_name, members in sorted(member_map.get(loot_event_id, {}).items())
+        ]
+        events.append(
+            {
+                "loot_event_id": loot_event_id,
+                "attendance_id": _optional_int(row["attendance_id"]),
+                "event_date": row["event_date"] or "",
+                "event_time_label": row["event_time_label"] or "",
+                "title": row["title"] or "",
+                "memo": row["memo"] or "",
+                "adena_rate": _decimal(row["adena_rate"]),
+                "attendance_started_at": row["attendance_started_at"] or "",
+                "attendance_ended_at": row["attendance_ended_at"] or "",
+                "loot_item_id": _optional_int(row["loot_item_id"]),
+                "item_id": _optional_int(row["item_id"]),
+                "item_name": row["item_name_snapshot"] or "",
+                "buyer_name": row["buyer_name"] or "",
+                "cash_price_krw": _decimal(row["cash_price_krw"]),
+                "sale_price": _decimal(row["sale_price"]),
+                "net_amount": _decimal(row["net_amount"]),
+                "distribution_id": _optional_int(row["distribution_id"]),
+                "total_sale_amount": _decimal(row["total_sale_amount"]),
+                "total_net_amount": total_net_amount,
+                "total_participant_count": participant_count,
+                "fee_rate": _decimal(row["fee_rate"]),
+                "fee_amount": _decimal(row["fee_amount"]),
+                "per_member_amount": _safe_divide(total_net_amount, participant_count),
+                "distribution_status": row["distribution_status"] or "draft",
+                "alliance_payouts": payouts_by_event.get(loot_event_id, []),
+                "alliances": alliances,
+                "updated_at": row["updated_at"],
+            }
+        )
+    return events
+
+
+def update_distribution_alliance_payout_status(
+    guild_id: int,
+    distribution_id: int,
+    alliance_id: int,
+    payout_status: str,
+) -> None:
+    if payout_status not in {"paid", "unpaid"}:
+        raise ValueError("Payout status must be paid or unpaid.")
+
+    with _connect() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE distribution_alliance_payouts p
+                SET payout_status = %s,
+                    updated_at = CURRENT_TIMESTAMP
+                FROM distribution_batches db
+                WHERE p.distribution_id = db.distribution_id
+                  AND db.guild_id = %s
+                  AND p.distribution_id = %s
+                  AND p.alliance_id = %s
+                """,
+                (payout_status, guild_id, distribution_id, alliance_id),
+            )
+            if cursor.rowcount == 0:
+                raise ValueError("Distribution payout was not found.")
+            cursor.execute(
+                """
+                UPDATE distribution_batches db
+                SET status = CASE
+                    WHEN EXISTS (
+                        SELECT 1
+                        FROM distribution_alliance_payouts p
+                        WHERE p.distribution_id = db.distribution_id
+                          AND p.payout_status <> 'paid'
+                    )
+                    THEN 'draft'
+                    ELSE 'paid'
+                END
+                WHERE db.guild_id = %s
+                  AND db.distribution_id = %s
+                """,
+                (guild_id, distribution_id),
+            )
+        connection.commit()
+
+
+def _get_attendance_session_for_loot(
+    cursor: psycopg2.extensions.cursor,
+    guild_id: int,
+    attendance_id: int,
+) -> dict[str, Any]:
+    cursor.execute(
+        """
+        SELECT attendance_id, guild_id, started_at, ended_at
+        FROM attendance_sessions
+        WHERE guild_id = %s
+          AND attendance_id = %s
+        """,
+        (guild_id, attendance_id),
+    )
+    row = cursor.fetchone()
+    if row is None:
+        raise ValueError("Attendance session was not found.")
+    return dict(row)
+
+
+def _get_attendance_participants_for_loot(
+    cursor: psycopg2.extensions.cursor,
+    attendance_id: int,
+) -> list[dict[str, Any]]:
+    cursor.execute(
+        """
+        SELECT
+            e.user_id,
+            u.discord_id,
+            u.discord_nickname,
+            u.alliance_id
+        FROM attendance_entries e
+        INNER JOIN users u ON u.user_id = e.user_id
+        WHERE e.attendance_id = %s
+        ORDER BY u.discord_nickname ASC
+        """,
+        (attendance_id,),
+    )
+    return [dict(row) for row in cursor.fetchall()]
+
+
+def _resolve_loot_item(
+    cursor: psycopg2.extensions.cursor,
+    guild_id: int,
+    item_id: int | None,
+    item_name: str,
+    fallback_price: Decimal,
+) -> tuple[int | None, str]:
+    if item_id is not None:
+        cursor.execute(
+            """
+            SELECT item_id, item_name
+            FROM items
+            WHERE item_id = %s
+              AND is_active = TRUE
+            """,
+            (item_id,),
+        )
+        row = cursor.fetchone()
+        if row is None:
+            raise ValueError("Item price setting was not found.")
+        return int(row["item_id"]), str(row["item_name"])
+
+    cursor.execute(
+        """
+        SELECT item_id, item_name
+        FROM items
+        WHERE LOWER(item_name) = LOWER(%s)
+          AND is_active = TRUE
+        ORDER BY
+            CASE WHEN guild_id IS NULL THEN 0 ELSE 1 END,
+            updated_at DESC,
+            item_id ASC
+        LIMIT 1
+        """,
+        (item_name,),
+    )
+    row = cursor.fetchone()
+    if row is not None:
+        return int(row["item_id"]), str(row["item_name"])
+
+    cursor.execute(
+        """
+        INSERT INTO items (
+            guild_id,
+            item_name,
+            default_price,
+            is_bid_item,
+            is_active,
+            updated_at
+        )
+        VALUES (NULL, %s, %s, TRUE, TRUE, CURRENT_TIMESTAMP)
+        RETURNING item_id, item_name
+        """,
+        (item_name, fallback_price),
+    )
+    inserted = cursor.fetchone()
+    return int(inserted["item_id"]), str(inserted["item_name"])
+
+
+def _upsert_distribution_for_loot(
+    cursor: psycopg2.extensions.cursor,
+    guild_id: int,
+    loot_event_id: int,
+    loot_item_id: int,
+    total_amount: Decimal,
+    participant_counts: dict[int, int],
+) -> int:
+    participant_total = sum(participant_counts.values())
+    total_sale_amount = _decimal(total_amount)
+    fee_rate = DEFAULT_DISTRIBUTION_FEE_RATE
+    fee_amount = total_sale_amount * fee_rate
+    total_net_amount = total_sale_amount - fee_amount
+    cursor.execute(
+        """
+        SELECT distribution_id
+        FROM distribution_batches
+        WHERE loot_event_id = %s
+        ORDER BY distribution_id ASC
+        LIMIT 1
+        """,
+        (loot_event_id,),
+    )
+    distribution_row = cursor.fetchone()
+    if distribution_row is None:
+        cursor.execute(
+            """
+            INSERT INTO distribution_batches (
+                guild_id,
+                loot_event_id,
+                total_sale_amount,
+                total_net_amount,
+                total_participant_count,
+                fee_rate,
+                fee_amount,
+                status
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, 'draft')
+            RETURNING distribution_id
+            """,
+            (
+                guild_id,
+                loot_event_id,
+                total_sale_amount,
+                total_net_amount,
+                participant_total,
+                fee_rate,
+                fee_amount,
+            ),
+        )
+        distribution_id = int(cursor.fetchone()["distribution_id"])
+    else:
+        distribution_id = int(distribution_row["distribution_id"])
+        cursor.execute(
+            """
+            UPDATE distribution_batches
+            SET guild_id = %s,
+                total_sale_amount = %s,
+                total_net_amount = %s,
+                total_participant_count = %s,
+                fee_rate = %s,
+                fee_amount = %s
+            WHERE distribution_id = %s
+            """,
+            (
+                guild_id,
+                total_sale_amount,
+                total_net_amount,
+                participant_total,
+                fee_rate,
+                fee_amount,
+                distribution_id,
+            ),
+        )
+
+    cursor.execute(
+        """
+        DELETE FROM distribution_lines
+        WHERE distribution_id = %s
+          AND line_type IN ('item', 'fee')
+        """,
+        (distribution_id,),
+    )
+    cursor.execute(
+        """
+        INSERT INTO distribution_lines (
+            distribution_id,
+            loot_item_id,
+            line_type,
+            amount,
+            memo
+        )
+        VALUES (%s, %s, 'item', %s, NULL)
+        """,
+        (distribution_id, loot_item_id, total_sale_amount),
+    )
+    if fee_amount:
+        cursor.execute(
+            """
+            INSERT INTO distribution_lines (
+                distribution_id,
+                loot_item_id,
+                line_type,
+                amount,
+                memo
+            )
+            VALUES (%s, %s, 'fee', %s, '경리 수수료 10%%')
+            """,
+            (distribution_id, loot_item_id, fee_amount),
+        )
+
+    active_alliance_ids = list(participant_counts.keys())
+    if active_alliance_ids:
+        cursor.execute(
+            """
+            DELETE FROM distribution_alliance_payouts
+            WHERE distribution_id = %s
+              AND NOT (alliance_id = ANY(%s::bigint[]))
+            """,
+            (distribution_id, active_alliance_ids),
+        )
+    per_member_amount = _safe_divide(total_net_amount, participant_total)
+    for alliance_id, count in participant_counts.items():
+        alliance_amount = per_member_amount * Decimal(count)
+        cursor.execute(
+            """
+            INSERT INTO distribution_alliance_payouts (
+                distribution_id,
+                alliance_id,
+                participant_count,
+                gross_amount,
+                net_amount,
+                payout_status,
+                updated_at
+            )
+            VALUES (%s, %s, %s, %s, %s, 'unpaid', CURRENT_TIMESTAMP)
+            ON CONFLICT (distribution_id, alliance_id) DO UPDATE SET
+                participant_count = EXCLUDED.participant_count,
+                gross_amount = EXCLUDED.gross_amount,
+                net_amount = EXCLUDED.net_amount,
+                payout_status = distribution_alliance_payouts.payout_status,
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            (
+                distribution_id,
+                alliance_id,
+                count,
+                alliance_amount,
+                alliance_amount,
+            ),
+        )
+    return distribution_id
+
+
+def _get_loot_alliance_counts(
+    cursor: psycopg2.extensions.cursor,
+    loot_event_id: int,
+) -> dict[int, int]:
+    cursor.execute(
+        """
+        SELECT alliance_id, participant_count
+        FROM loot_event_alliance_counts
+        WHERE loot_event_id = %s
+        """,
+        (loot_event_id,),
+    )
+    return {
+        int(row["alliance_id"]): int(row["participant_count"] or 0)
+        for row in cursor.fetchall()
+    }
+
+
+def _ensure_alliance_id(
+    cursor: psycopg2.extensions.cursor,
+    alliance_name: str,
+) -> int:
+    normalized_name = alliance_name.strip()
+    cursor.execute(
+        """
+        INSERT INTO alliances (alliance_name, display_name, tag_name, is_active)
+        VALUES (%s, %s, %s, TRUE)
+        ON CONFLICT (alliance_name) DO UPDATE SET
+            is_active = TRUE,
+            updated_at = CURRENT_TIMESTAMP
+        RETURNING alliance_id
+        """,
+        (normalized_name, normalized_name, normalized_name),
+    )
+    return int(cursor.fetchone()["alliance_id"])
+
+
+def _deactivate_duplicate_item_prices(
+    cursor: psycopg2.extensions.cursor,
+    keep_item_id: int,
+    item_name: str,
+) -> None:
+    cursor.execute(
+        """
+        UPDATE items
+        SET is_active = FALSE,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE item_id <> %s
+          AND LOWER(item_name) = LOWER(%s)
+          AND is_active = TRUE
+        """,
+        (keep_item_id, item_name),
+    )
+
+
 def _build_attendance_filter(
     guild_id: int | None,
     start_at: str | None,
@@ -1025,6 +2493,37 @@ def _optional_int(value: Any) -> int | None:
     return int(value)
 
 
+def _blank_to_none(value: str | None) -> str | None:
+    if value is None:
+        return None
+    stripped = value.strip()
+    return stripped or None
+
+
+def _decimal(value: Any) -> Decimal:
+    if value is None or value == "":
+        return Decimal("0")
+    if isinstance(value, Decimal):
+        return value
+    return Decimal(str(value))
+
+
+def _safe_divide(value: Decimal, divisor: int) -> Decimal:
+    if divisor <= 0:
+        return Decimal("0")
+    return _decimal(value) / Decimal(divisor)
+
+
+def _date_label_from_text(value: str) -> str:
+    return value[:10] if len(value) >= 10 else value
+
+
+def _time_label_from_text(value: str) -> str:
+    if len(value) >= 16:
+        return value[11:16]
+    return value
+
+
 def _ensure_postgres_columns(cursor: psycopg2.extensions.cursor) -> None:
     column_sql = [
         "ALTER TABLE alliances ADD COLUMN IF NOT EXISTS display_name TEXT",
@@ -1041,11 +2540,118 @@ def _ensure_postgres_columns(cursor: psycopg2.extensions.cursor) -> None:
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS memo TEXT",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP",
+        "ALTER TABLE items ADD COLUMN IF NOT EXISTS guild_id BIGINT REFERENCES guilds(guild_id) ON DELETE CASCADE",
+        "ALTER TABLE loot_events ADD COLUMN IF NOT EXISTS attendance_id BIGINT REFERENCES attendance_sessions(attendance_id) ON DELETE SET NULL",
+        "ALTER TABLE loot_events ADD COLUMN IF NOT EXISTS adena_rate NUMERIC(18, 6) NOT NULL DEFAULT 0",
+        "ALTER TABLE loot_event_items ADD COLUMN IF NOT EXISTS cash_price_krw NUMERIC(18, 2) NOT NULL DEFAULT 0",
+        "ALTER TABLE distribution_batches ADD COLUMN IF NOT EXISTS guild_id BIGINT REFERENCES guilds(guild_id) ON DELETE CASCADE",
+        "ALTER TABLE distribution_batches ADD COLUMN IF NOT EXISTS fee_rate NUMERIC(8, 6) NOT NULL DEFAULT 0",
+        "ALTER TABLE distribution_batches ADD COLUMN IF NOT EXISTS fee_amount NUMERIC(18, 2) NOT NULL DEFAULT 0",
+        "ALTER TABLE distribution_alliance_payouts ADD COLUMN IF NOT EXISTS payout_status TEXT NOT NULL DEFAULT 'unpaid'",
         "ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP",
         "ALTER TABLE scheduled_report_settings ADD COLUMN IF NOT EXISTS run_time TEXT NOT NULL DEFAULT '00:00'",
     ]
     for sql in column_sql:
         cursor.execute(sql)
+    cursor.execute("ALTER TABLE items DROP CONSTRAINT IF EXISTS items_item_name_key")
+    cursor.execute("DROP INDEX IF EXISTS idx_items_guild_name_unique")
+    cursor.execute("DROP INDEX IF EXISTS idx_items_active_name_unique")
+    cursor.execute(
+        """
+        WITH ranked AS (
+            SELECT
+                item_id,
+                ROW_NUMBER() OVER (
+                    PARTITION BY LOWER(item_name)
+                    ORDER BY
+                        CASE WHEN guild_id IS NULL THEN 0 ELSE 1 END,
+                        updated_at DESC,
+                        item_id ASC
+                ) AS item_rank
+            FROM items
+            WHERE is_active = TRUE
+        )
+        UPDATE items i
+        SET
+            guild_id = NULL,
+            is_active = (ranked.item_rank = 1),
+            updated_at = CURRENT_TIMESTAMP
+        FROM ranked
+        WHERE i.item_id = ranked.item_id
+          AND (i.guild_id IS NOT NULL OR ranked.item_rank > 1)
+        """
+    )
+    cursor.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_items_active_name_unique "
+        "ON items(LOWER(item_name)) WHERE is_active = TRUE"
+    )
+    cursor.execute(
+        """
+        UPDATE distribution_batches db
+        SET guild_id = le.guild_id
+        FROM loot_events le
+        WHERE db.loot_event_id = le.loot_event_id
+          AND db.guild_id IS NULL
+        """
+    )
+    cursor.execute(
+        """
+        UPDATE loot_event_items
+        SET fee_rate = %s,
+            net_amount = sale_price * (1 - %s)
+        WHERE sale_price > 0
+          AND fee_rate = 0
+        """,
+        (DEFAULT_DISTRIBUTION_FEE_RATE, DEFAULT_DISTRIBUTION_FEE_RATE),
+    )
+    cursor.execute(
+        """
+        UPDATE distribution_batches
+        SET fee_rate = %s,
+            fee_amount = total_sale_amount * %s,
+            total_net_amount = total_sale_amount * (1 - %s)
+        WHERE total_sale_amount > 0
+          AND fee_rate = 0
+        """,
+        (
+            DEFAULT_DISTRIBUTION_FEE_RATE,
+            DEFAULT_DISTRIBUTION_FEE_RATE,
+            DEFAULT_DISTRIBUTION_FEE_RATE,
+        ),
+    )
+    cursor.execute(
+        """
+        UPDATE distribution_alliance_payouts p
+        SET gross_amount = (
+                db.total_net_amount / NULLIF(db.total_participant_count, 0)
+            ) * p.participant_count,
+            net_amount = (
+                db.total_net_amount / NULLIF(db.total_participant_count, 0)
+            ) * p.participant_count,
+            updated_at = CURRENT_TIMESTAMP
+        FROM distribution_batches db
+        WHERE p.distribution_id = db.distribution_id
+          AND db.total_participant_count > 0
+          AND db.fee_rate = %s
+        """,
+        (DEFAULT_DISTRIBUTION_FEE_RATE,),
+    )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_items_guild_active "
+        "ON items(guild_id, is_active)"
+    )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_loot_events_guild_attendance "
+        "ON loot_events(guild_id, attendance_id)"
+    )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_loot_events_guild_updated "
+        "ON loot_events(guild_id, updated_at)"
+    )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_distribution_batches_guild "
+        "ON distribution_batches(guild_id)"
+    )
 
 
 def _drop_redundant_timestamp_columns(cursor: psycopg2.extensions.cursor) -> None:
@@ -1127,6 +2733,16 @@ CREATE TABLE IF NOT EXISTS users (
     memo TEXT,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS guild_alliance_role_mappings (
+    mapping_id BIGSERIAL PRIMARY KEY,
+    guild_id BIGINT NOT NULL REFERENCES guilds(guild_id) ON DELETE CASCADE,
+    role_id BIGINT NOT NULL,
+    role_name TEXT NOT NULL,
+    alliance_id BIGINT NOT NULL REFERENCES alliances(alliance_id) ON DELETE CASCADE,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (guild_id, role_id)
 );
 
 CREATE TABLE IF NOT EXISTS attendance_sessions (
@@ -1275,7 +2891,8 @@ CREATE TABLE IF NOT EXISTS boss_attendance_snapshot_rows (
 
 CREATE TABLE IF NOT EXISTS items (
     item_id BIGSERIAL PRIMARY KEY,
-    item_name TEXT NOT NULL UNIQUE,
+    guild_id BIGINT REFERENCES guilds(guild_id) ON DELETE CASCADE,
+    item_name TEXT NOT NULL,
     category TEXT,
     default_price NUMERIC(18, 2),
     is_bid_item BOOLEAN NOT NULL DEFAULT FALSE,
@@ -1323,10 +2940,12 @@ CREATE TABLE IF NOT EXISTS alliance_item_bid_statuses (
 CREATE TABLE IF NOT EXISTS loot_events (
     loot_event_id BIGSERIAL PRIMARY KEY,
     guild_id BIGINT REFERENCES guilds(guild_id) ON DELETE CASCADE,
+    attendance_id BIGINT REFERENCES attendance_sessions(attendance_id) ON DELETE SET NULL,
     event_date TEXT NOT NULL,
     event_time_label TEXT,
     title TEXT,
     memo TEXT,
+    adena_rate NUMERIC(18, 6) NOT NULL DEFAULT 0,
     created_by_discord_id BIGINT,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -1338,6 +2957,7 @@ CREATE TABLE IF NOT EXISTS loot_event_items (
     item_name_snapshot TEXT NOT NULL,
     buyer_name TEXT,
     buyer_alliance_id BIGINT REFERENCES alliances(alliance_id),
+    cash_price_krw NUMERIC(18, 2) NOT NULL DEFAULT 0,
     sale_price NUMERIC(18, 2) NOT NULL DEFAULT 0,
     fee_rate NUMERIC(8, 6) NOT NULL DEFAULT 0,
     net_amount NUMERIC(18, 2) NOT NULL DEFAULT 0,
@@ -1362,6 +2982,7 @@ CREATE TABLE IF NOT EXISTS loot_event_participants (
 
 CREATE TABLE IF NOT EXISTS distribution_batches (
     distribution_id BIGSERIAL PRIMARY KEY,
+    guild_id BIGINT REFERENCES guilds(guild_id) ON DELETE CASCADE,
     loot_event_id BIGINT REFERENCES loot_events(loot_event_id) ON DELETE SET NULL,
     total_sale_amount NUMERIC(18, 2) NOT NULL DEFAULT 0,
     total_net_amount NUMERIC(18, 2) NOT NULL DEFAULT 0,
@@ -1473,6 +3094,8 @@ CREATE TABLE IF NOT EXISTS discord_message_links (
 CREATE INDEX IF NOT EXISTS idx_guild_settings_admin_channel ON guild_settings(admin_channel_id);
 CREATE INDEX IF NOT EXISTS idx_users_discord_id ON users(discord_id);
 CREATE INDEX IF NOT EXISTS idx_users_alliance_id ON users(alliance_id);
+CREATE INDEX IF NOT EXISTS idx_guild_alliance_role_mappings_guild
+ON guild_alliance_role_mappings(guild_id);
 CREATE INDEX IF NOT EXISTS idx_attendance_sessions_guild_started ON attendance_sessions(guild_id, started_at);
 CREATE INDEX IF NOT EXISTS idx_attendance_entries_user_id ON attendance_entries(user_id);
 CREATE INDEX IF NOT EXISTS idx_attendance_entries_attendance_id ON attendance_entries(attendance_id);

@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+
+{% block title %}출석 현황{% endblock %}
+
+{% block content %}
+  <section class="ops-hero">
+    <div>
+      <p class="eyebrow">{{ auth.selected_server.name }}</p>
+      <h1>출석 현황</h1>
+      <p class="hero-copy">출석 회차별 혈맹 참여 인원과 상세 명단을 확인합니다.</p>
+    </div>
+    <div class="server-summary">
+      총 {{ pagination.total_count }}회차
+    </div>
+  </section>
+
+  {% macro pagination_controls(pagination) %}
+    {% if pagination.total_pages > 1 %}
+      <nav class="pagination" aria-label="출석 현황 페이지">
+        <a class="page-control {% if not pagination.has_previous %}is-disabled{% endif %}" href="{{ pagination.first_href }}">&lt;&lt;</a>
+        <a class="page-control {% if not pagination.has_previous %}is-disabled{% endif %}" href="{{ pagination.prev_href }}">&lt;</a>
+        {% for item in pagination["items"] %}
+          {% if item.type == "ellipsis" %}
+            <span class="page-ellipsis">{{ item.label }}</span>
+          {% else %}
+            <a class="page-control {% if item.active %}is-active{% endif %}" href="{{ item.href }}">{{ item.label }}</a>
+          {% endif %}
+        {% endfor %}
+        <a class="page-control {% if not pagination.has_next %}is-disabled{% endif %}" href="{{ pagination.next_href }}">&gt;</a>
+        <a class="page-control {% if not pagination.has_next %}is-disabled{% endif %}" href="{{ pagination.last_href }}">&gt;&gt;</a>
+      </nav>
+    {% endif %}
+  {% endmacro %}
+
+  {{ pagination_controls(pagination) }}
+
+  <section class="status-list" aria-label="출석 회차별 현황">
+    {% for session in sessions %}
+      <details class="panel status-session">
+        <summary>
+          <div class="status-session-main">
+            <div>
+              <span class="status-id">#{{ session.attendance_id }}</span>
+              <strong>{{ session.started_at }}</strong>
+              <span>시작자 {{ session.started_by_name or "-" }} · 총 {{ session.participant_count }}명</span>
+            </div>
+          </div>
+          <div class="alliance-chip-row">
+            {% for alliance in session.alliances %}
+              <span class="alliance-chip">{{ alliance.alliance_name }} {{ alliance.count }}명</span>
+            {% else %}
+              <span class="alliance-chip is-empty">출석 없음</span>
+            {% endfor %}
+          </div>
+        </summary>
+
+        <div class="status-detail-grid">
+          {% for alliance in session.alliances %}
+            <article class="alliance-detail">
+              <header>
+                <h2>{{ alliance.alliance_name }}</h2>
+                <span>{{ alliance.count }}명</span>
+              </header>
+              <div class="member-pill-row">
+                {% for member in alliance.members %}
+                  <span class="member-pill">
+                    {{ member.discord_nickname }}
+                  </span>
+                {% endfor %}
+              </div>
+            </article>
+          {% else %}
+            <div class="empty status-empty">이 회차에는 출석자가 없습니다.</div>
+          {% endfor %}
+        </div>
+      </details>
+    {% else %}
+      <article class="panel">
+        <div class="empty status-empty">출석 회차가 없습니다.</div>
+      </article>
+    {% endfor %}
+  </section>
+
+  {{ pagination_controls(pagination) }}
+{% endblock %}

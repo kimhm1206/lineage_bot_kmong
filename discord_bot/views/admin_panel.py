@@ -73,9 +73,11 @@ class AdminPanelView(discord.ui.View):
             await _safe_response(interaction, "권한이 없습니다.")
             return
 
+        if not await _safe_defer(interaction):
+            return
+
         state = get_attendance_state(self.bot, self.guild_id)
         if bool(state.get("active")):
-            await interaction.response.defer(ephemeral=True)
             result = await stop_attendance(
                 self.bot,
                 guild,
@@ -94,16 +96,29 @@ class AdminPanelView(discord.ui.View):
             return
 
         ok, message = await start_attendance(self.bot, guild, user)
-        await interaction.response.send_message(message, ephemeral=True)
+        await _safe_response(interaction, message)
+
+
+async def _safe_defer(interaction: discord.Interaction) -> bool:
+    if interaction.response.is_done():
+        return True
+    try:
+        await interaction.response.defer(ephemeral=True)
+        return True
+    except discord.NotFound:
+        return False
 
 
 async def _safe_response(
     interaction: discord.Interaction, message: str
 ) -> None:
-    if interaction.response.is_done():
-        await interaction.followup.send(message, ephemeral=True)
-    else:
-        await interaction.response.send_message(message, ephemeral=True)
+    try:
+        if interaction.response.is_done():
+            await interaction.followup.send(message, ephemeral=True)
+        else:
+            await interaction.response.send_message(message, ephemeral=True)
+    except discord.NotFound:
+        return
 
 
 def _build_web_statistics_url(guild_id: int) -> str:
@@ -113,4 +128,4 @@ def _build_web_statistics_url(guild_id: int) -> str:
 
 def _build_web_settings_url(guild_id: int) -> str:
     base_url = os.getenv("WEB_BASE_URL", "http://localhost:8000").rstrip("/")
-    return f"{base_url}/settings?{urlencode({'guild_id': str(guild_id)})}"
+    return f"{base_url}/settings?{urlencode({'guild_id': str(guild_id)})}#channels"

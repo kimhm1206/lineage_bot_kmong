@@ -1,0 +1,835 @@
+{% extends "base.html" %}
+
+{% block title %}드랍 관리{% endblock %}
+
+{% block content %}
+  <section class="ops-hero">
+    <div>
+      <p class="eyebrow">{{ auth.selected_server.name }}</p>
+      <h1>{% if auth.selected_server.can_manage %}드랍 관리{% else %}드랍 현황{% endif %}</h1>
+      <p class="hero-copy">
+        {% if auth.selected_server.can_manage %}
+          출석 회차를 기준으로 드랍, 원화 시세, 혈맹별 분배 상태를 관리합니다.
+        {% else %}
+          출석 회차를 기준으로 드랍, 원화 시세, 혈맹별 분배 상태를 확인합니다.
+        {% endif %}
+      </p>
+    </div>
+    <div class="server-summary">
+      최근 {{ loot_events|length }}건
+    </div>
+  </section>
+
+  {% if saved == "created" %}
+    <div class="alert success">드랍 기록을 등록했습니다.</div>
+  {% elif saved == "updated" %}
+    <div class="alert success">드랍 시세와 분배 금액을 다시 계산했습니다.</div>
+  {% elif saved == "deleted" %}
+    <div class="alert success">드랍 기록을 삭제했습니다.</div>
+  {% elif saved == "payout" %}
+    <div class="alert success">혈맹 분배 상태를 변경했습니다.</div>
+  {% elif saved == "error" %}
+    <div class="alert error">드랍 기록을 변경하지 못했습니다.</div>
+  {% elif saved == "forbidden" %}
+    <div class="alert error">관리자 권한이 있는 계정만 드랍 기록을 변경할 수 있습니다.</div>
+  {% endif %}
+
+  {% if errors %}
+    <div class="alert error">
+      {% for error in errors %}
+        <div>{{ error }}</div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  <nav class="loot-tabs" aria-label="드랍 관리 탭">
+    {% if auth.selected_server.can_manage %}
+      <a class="loot-tab-button is-active" href="#create" data-loot-tab="create">드랍 등록</a>
+      <a class="loot-tab-button" href="#payouts" data-loot-tab="payouts">분배 현황</a>
+    {% else %}
+      <a class="loot-tab-button is-active" href="#payouts" data-loot-tab="payouts">분배 현황</a>
+    {% endif %}
+  </nav>
+
+  {% if auth.selected_server.can_manage %}
+    <section class="loot-tab-panel" data-loot-panel="create">
+      <section class="loot-layout">
+        <form class="panel loot-create-panel" method="post" action="/loot?guild_id={{ auth.selected_guild_id }}" data-loot-form>
+          <header class="panel-header">
+            <h2>드랍 등록</h2>
+            <a class="tiny-button" href="/settings?guild_id={{ auth.selected_guild_id }}#items">아이템 추가하기</a>
+          </header>
+
+          <div class="loot-create-grid">
+            <label class="field loot-session-field">
+              <span>출석 회차</span>
+              <select name="attendance_id" data-loot-attendance>
+                <option value="">출석 회차 선택</option>
+                {% for session in attendance_options %}
+                  <option value="{{ session.attendance_id }}" {% if loot_form.attendance_id|string == session.attendance_id|string %}selected{% endif %}>
+                    {{ session.label }}
+                  </option>
+                {% endfor %}
+              </select>
+            </label>
+
+            <label class="field">
+              <span>아이템</span>
+              <select name="item_id" data-loot-item>
+                <option value="" data-cash-price="">아이템 선택</option>
+                {% for item in item_prices %}
+                  <option
+                    value="{{ item.item_id }}"
+                    data-cash-price="{{ item.default_price_input }}"
+                    {% if loot_form.item_id|string == item.item_id|string %}selected{% endif %}
+                  >
+                    {{ item.item_name }} · {{ item.default_price_text }}원
+                  </option>
+                {% endfor %}
+              </select>
+            </label>
+
+            <label class="field">
+              <span>원화 시세</span>
+              <input
+                name="cash_price_krw"
+                type="number"
+                min="0"
+                step="1"
+                value="{{ loot_form.cash_price_krw }}"
+                placeholder="예: 5000000"
+                data-loot-cash-price
+              >
+            </label>
+
+            <label class="field">
+              <span>머니 시세</span>
+              <input
+                name="adena_rate"
+                type="number"
+                min="0"
+                step="0.000001"
+                value="{{ loot_form.adena_rate }}"
+                placeholder="예: 1750"
+                data-loot-adena-rate
+              >
+            </label>
+
+            <label class="field">
+              <span>게임머니 판매금</span>
+              <input
+                name="sale_price"
+                type="number"
+                min="0"
+                step="0.01"
+                value="{{ loot_form.sale_price }}"
+                data-loot-sale-price
+                readonly
+              >
+            </label>
+
+            <div class="field buyer-field" data-buyer-picker data-buyer-source="attendance">
+              <span>입찰자</span>
+              <input
+                name="buyer_name"
+                type="hidden"
+                value="{{ loot_form.buyer_name }}"
+                data-buyer-value
+              >
+              <button
+                class="buyer-picker-button"
+                type="button"
+                data-buyer-trigger
+              >
+                <span data-buyer-label>{{ loot_form.buyer_name or "입찰자 선택" }}</span>
+              </button>
+              <div class="buyer-picker-menu" data-buyer-menu hidden>
+                <input
+                  class="buyer-search-input"
+                  type="search"
+                  placeholder="참여자 검색"
+                  data-buyer-search
+                >
+                <div class="buyer-option-list" data-buyer-list></div>
+              </div>
+            </div>
+
+            <label class="field loot-memo-field">
+              <span>메모</span>
+              <input
+                name="memo"
+                value="{{ loot_form.memo }}"
+                placeholder="보스명, 특이사항"
+              >
+            </label>
+
+            <div class="loot-create-actions">
+              <button class="primary-button" type="submit">
+                드랍 등록
+              </button>
+            </div>
+          </div>
+        </form>
+
+        <article class="panel loot-preview-panel">
+          <header class="panel-header">
+            <h2>출석 기준</h2>
+            <span class="panel-caption">분배 대상</span>
+          </header>
+          <div class="loot-session-preview" data-loot-attendance-preview>
+            <div class="empty report-empty">출석 회차를 선택해주세요.</div>
+          </div>
+        </article>
+      </section>
+    </section>
+  {% endif %}
+
+  <section class="loot-tab-panel" data-loot-panel="payouts" {% if auth.selected_server.can_manage %}hidden{% endif %}>
+    <section class="loot-event-list" aria-label="드랍 기록">
+      {% for event in loot_events %}
+        <details
+          class="panel loot-event-card"
+          data-loot-event-card
+          data-loot-event-id="{{ event.loot_event_id }}"
+          data-distribution-id="{{ event.distribution_id }}"
+        >
+          <summary>
+            <div class="loot-event-main">
+              <span class="status-id">#{{ event.loot_event_id }}</span>
+              <strong>{{ event.item_name }}</strong>
+              <span>출석 #{{ event.attendance_id }} · {{ event.attendance_started_at or event.event_date }}</span>
+            </div>
+            <div class="loot-event-metrics">
+              <div>
+                <span>게임머니</span>
+                <strong>{{ event.sale_price_text }}</strong>
+              </div>
+              <div>
+                <span>수수료</span>
+                <strong>{{ event.fee_amount_text }}</strong>
+              </div>
+              <div>
+                <span>1인</span>
+                <strong>{{ event.per_member_text }}</strong>
+              </div>
+            </div>
+            <div class="loot-summary-status {{ event.payout_summary_class }}" data-payout-summary>
+              <strong data-payout-summary-label>{{ event.payout_summary_label }}</strong>
+              <span data-payout-summary-meta>{{ event.payout_summary_meta }}</span>
+            </div>
+            <div class="alliance-chip-row">
+              {% for payout in event.alliance_payouts[:4] %}
+                <span
+                  class="alliance-chip {% if payout.payout_status == 'paid' %}is-paid{% endif %}"
+                  data-summary-alliance-id="{{ payout.alliance_id }}"
+                >
+                  {{ payout.alliance_name }} {{ payout.participant_count }}명
+                </span>
+              {% else %}
+                <span class="alliance-chip is-empty">분배 없음</span>
+              {% endfor %}
+              {% if event.alliance_payouts|length > 4 %}
+                <span class="alliance-chip is-empty">+{{ event.alliance_payouts|length - 4 }}</span>
+              {% endif %}
+            </div>
+          </summary>
+
+          <div class="loot-event-body">
+            {% if auth.selected_server.can_manage %}
+              <div class="loot-edit-row">
+                <form class="loot-update-form" method="post" action="/loot/update?guild_id={{ auth.selected_guild_id }}" data-loot-event-form>
+                  <input type="hidden" name="loot_event_id" value="{{ event.loot_event_id }}">
+                  <label class="field">
+                    <span>원화 시세</span>
+                    <input
+                      name="cash_price_krw"
+                      type="number"
+                      min="0"
+                      step="1"
+                      value="{{ event.cash_price_input }}"
+                      data-loot-cash-price
+                    >
+                  </label>
+                  <label class="field">
+                    <span>머니 시세</span>
+                    <input
+                      name="adena_rate"
+                      type="number"
+                      min="0"
+                      step="0.000001"
+                      value="{{ event.adena_rate_input }}"
+                      data-loot-adena-rate
+                    >
+                  </label>
+                  <label class="field">
+                    <span>게임머니 판매금</span>
+                    <input
+                      name="sale_price"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value="{{ event.sale_price_input }}"
+                      data-loot-sale-price
+                      readonly
+                    >
+                  </label>
+                  <div class="field buyer-field" data-buyer-picker data-buyer-options='{{ event.buyer_options | tojson }}'>
+                    <span>입찰자</span>
+                    <input
+                      name="buyer_name"
+                      type="hidden"
+                      value="{{ event.buyer_name }}"
+                      data-buyer-value
+                    >
+                    <button
+                      class="buyer-picker-button"
+                      type="button"
+                      data-buyer-trigger
+                    >
+                      <span data-buyer-label>{{ event.buyer_name or "입찰자 선택" }}</span>
+                    </button>
+                    <div class="buyer-picker-menu" data-buyer-menu hidden>
+                      <input
+                        class="buyer-search-input"
+                        type="search"
+                        placeholder="참여자 검색"
+                        data-buyer-search
+                      >
+                      <div class="buyer-option-list" data-buyer-list></div>
+                    </div>
+                  </div>
+                  <label class="field loot-update-memo">
+                    <span>메모</span>
+                    <input name="memo" value="{{ event.memo }}">
+                  </label>
+                  <button class="tiny-button" type="submit">
+                    수정
+                  </button>
+                </form>
+                <form class="loot-delete-form" method="post" action="/loot/delete?guild_id={{ auth.selected_guild_id }}" data-loot-delete-form>
+                  <input type="hidden" name="loot_event_id" value="{{ event.loot_event_id }}">
+                  <button class="tiny-button danger-text-button" type="submit">
+                    삭제
+                  </button>
+                </form>
+              </div>
+            {% endif %}
+
+            <div class="loot-fee-summary">
+              <div>
+                <span>원화 시세</span>
+                <strong>{{ event.cash_price_text }}원</strong>
+              </div>
+              <div>
+                <span>총 판매금</span>
+                <strong>{{ event.total_sale_text }}</strong>
+              </div>
+              <div>
+                <span>경리 수수료 {{ event.fee_rate_percent_text }}%</span>
+                <strong>{{ event.fee_amount_text }}</strong>
+              </div>
+              <div>
+                <span>실분배금</span>
+                <strong>{{ event.total_net_text }}</strong>
+              </div>
+              <div>
+                <span>총 인원</span>
+                <strong>{{ event.total_participant_count }}명</strong>
+              </div>
+              <div>
+                <span>1인 분배</span>
+                <strong>{{ event.per_member_text }}</strong>
+              </div>
+            </div>
+
+            <section class="loot-breakdown-grid">
+              <article class="loot-breakdown-card">
+                <header>
+                  <h2>혈맹별 분배</h2>
+                  <span>{% if auth.selected_server.can_manage %}완료 상태 관리{% else %}분배 상태{% endif %}</span>
+                </header>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>혈맹</th>
+                      <th>인원</th>
+                      <th>분배금</th>
+                      <th>1인</th>
+                      <th>상태</th>
+                      {% if auth.selected_server.can_manage %}
+                        <th>관리</th>
+                      {% endif %}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for payout in event.alliance_payouts %}
+                      <tr data-payout-row data-alliance-id="{{ payout.alliance_id }}">
+                        <td>{{ payout.alliance_name }}</td>
+                        <td>{{ payout.participant_count }}</td>
+                        <td>{{ payout.net_amount_text }}</td>
+                        <td>{{ payout.per_member_text }}</td>
+                        <td>
+                          <span
+                            class="payout-status-badge {% if payout.payout_status == 'paid' %}is-paid{% else %}is-unpaid{% endif %}"
+                            data-payout-badge
+                          >
+                            {{ payout.status_label }}
+                          </span>
+                        </td>
+                        {% if auth.selected_server.can_manage %}
+                          <td>
+                            <form class="inline-actions" method="post" action="/loot/payout-status?guild_id={{ auth.selected_guild_id }}" data-payout-form>
+                              <input type="hidden" name="distribution_id" value="{{ event.distribution_id }}">
+                              <input type="hidden" name="alliance_id" value="{{ payout.alliance_id }}">
+                              <input type="hidden" name="payout_status" value="{{ payout.next_status }}" data-payout-status-input>
+                              <button class="tiny-button" type="submit" data-payout-button>
+                                {{ payout.next_status_label }}
+                              </button>
+                            </form>
+                          </td>
+                        {% endif %}
+                      </tr>
+                    {% else %}
+                      <tr><td colspan="{% if auth.selected_server.can_manage %}6{% else %}5{% endif %}" class="empty">분배 데이터가 없습니다.</td></tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </article>
+
+              <article class="loot-breakdown-card">
+                <header>
+                  <h2>출석 유저</h2>
+                  <span>머니 시세 {{ event.adena_rate_text }}</span>
+                </header>
+                <div class="loot-member-groups">
+                  {% for alliance in event.alliances %}
+                    <div class="loot-member-group">
+                      <div>
+                        <strong>{{ alliance.alliance_name }}</strong>
+                        <span>{{ alliance.count }}명</span>
+                      </div>
+                      <div class="member-pill-row">
+                        {% for member in alliance.members %}
+                          <span class="member-pill">{{ member }}</span>
+                        {% endfor %}
+                      </div>
+                    </div>
+                  {% else %}
+                    <div class="empty report-empty">출석 유저가 없습니다.</div>
+                  {% endfor %}
+                </div>
+              </article>
+            </section>
+          </div>
+        </details>
+      {% else %}
+        <article class="panel">
+          <div class="empty report-empty">등록된 드랍 기록이 없습니다.</div>
+        </article>
+      {% endfor %}
+    </section>
+  </section>
+{% endblock %}
+
+{% block scripts %}
+  <script>
+    const canManageLoot = {{ auth.selected_server.can_manage | tojson }};
+    const attendanceOptions = {{ attendance_options | tojson }};
+    const attendanceSelect = document.querySelector("[data-loot-attendance]");
+    const attendancePreview = document.querySelector("[data-loot-attendance-preview]");
+    const itemSelect = document.querySelector("[data-loot-item]");
+    const createForm = document.querySelector("[data-loot-form]");
+    const createBuyerPicker = document.querySelector("[data-buyer-source='attendance']");
+
+    function attendanceBuyerOptions(session) {
+      if (!session) {
+        return [];
+      }
+      return (session.alliances || []).flatMap((alliance) => {
+        return (alliance.members || []).map((member) => ({
+          name: member.discord_nickname || member.display_name || "",
+          alliance: alliance.alliance_name || "미분류",
+        })).filter((member) => member.name);
+      });
+    }
+
+    function selectedAttendance() {
+      return attendanceOptions.find((session) => String(session.attendance_id) === attendanceSelect?.value);
+    }
+
+    function closeBuyerMenus(exceptPicker = null) {
+      document.querySelectorAll("[data-buyer-picker]").forEach((picker) => {
+        if (picker !== exceptPicker) {
+          picker.querySelector("[data-buyer-menu]").hidden = true;
+        }
+      });
+    }
+
+    function renderBuyerOptions(picker) {
+      const list = picker.querySelector("[data-buyer-list]");
+      const search = picker.querySelector("[data-buyer-search]");
+      const valueInput = picker.querySelector("[data-buyer-value]");
+      if (!list || !search || !valueInput) {
+        return;
+      }
+      const query = search.value.trim().toLowerCase();
+      const options = (picker._buyerOptions || []).filter((option) => {
+        return !query
+          || option.name.toLowerCase().includes(query)
+          || option.alliance.toLowerCase().includes(query);
+      });
+      list.innerHTML = "";
+
+      if (valueInput.value) {
+        const clearButton = document.createElement("button");
+        clearButton.type = "button";
+        clearButton.className = "buyer-option is-clear";
+        clearButton.textContent = "선택 해제";
+        clearButton.addEventListener("click", () => {
+          valueInput.value = "";
+          picker.querySelector("[data-buyer-label]").textContent = "입찰자 선택";
+          picker.querySelector("[data-buyer-menu]").hidden = true;
+        });
+        list.appendChild(clearButton);
+      }
+
+      if (!options.length) {
+        const empty = document.createElement("div");
+        empty.className = "buyer-option-empty";
+        empty.textContent = query ? "검색 결과가 없습니다." : "출석 참여자가 없습니다.";
+        list.appendChild(empty);
+        return;
+      }
+
+      options.forEach((option) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "buyer-option";
+        if (option.name === valueInput.value) {
+          button.classList.add("is-selected");
+        }
+        const name = document.createElement("strong");
+        const alliance = document.createElement("span");
+        name.textContent = option.name;
+        alliance.textContent = option.alliance;
+        button.appendChild(name);
+        button.appendChild(alliance);
+        button.addEventListener("click", () => {
+          valueInput.value = option.name;
+          picker.querySelector("[data-buyer-label]").textContent = option.name;
+          picker.querySelector("[data-buyer-menu]").hidden = true;
+        });
+        list.appendChild(button);
+      });
+    }
+
+    function setBuyerOptions(picker, options, clearInvalid = false) {
+      if (!picker) {
+        return;
+      }
+      const valueInput = picker.querySelector("[data-buyer-value]");
+      const label = picker.querySelector("[data-buyer-label]");
+      picker._buyerOptions = options || [];
+      if (clearInvalid && valueInput?.value) {
+        const exists = picker._buyerOptions.some((option) => option.name === valueInput.value);
+        if (!exists) {
+          valueInput.value = "";
+        }
+      }
+      if (label && valueInput) {
+        label.textContent = valueInput.value || "입찰자 선택";
+      }
+      renderBuyerOptions(picker);
+    }
+
+    function setupBuyerPicker(picker) {
+      const trigger = picker.querySelector("[data-buyer-trigger]");
+      const menu = picker.querySelector("[data-buyer-menu]");
+      const search = picker.querySelector("[data-buyer-search]");
+      if (!trigger || !menu || !search) {
+        return;
+      }
+
+      if (picker.dataset.buyerOptions) {
+        try {
+          setBuyerOptions(picker, JSON.parse(picker.dataset.buyerOptions));
+        } catch {
+          setBuyerOptions(picker, []);
+        }
+      }
+
+      trigger.addEventListener("click", () => {
+        const willOpen = menu.hidden;
+        closeBuyerMenus(picker);
+        menu.hidden = !willOpen;
+        if (willOpen) {
+          search.value = "";
+          renderBuyerOptions(picker);
+          search.focus();
+        }
+      });
+      search.addEventListener("input", () => renderBuyerOptions(picker));
+      search.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") {
+          menu.hidden = true;
+          trigger.focus();
+        } else if (event.key === "Enter") {
+          event.preventDefault();
+          const firstOption = menu.querySelector(".buyer-option:not(.is-clear)");
+          firstOption?.click();
+        }
+      });
+    }
+
+    function syncCreateBuyerOptions() {
+      setBuyerOptions(
+        createBuyerPicker,
+        attendanceBuyerOptions(selectedAttendance()),
+        true,
+      );
+    }
+
+    function renderAttendancePreview() {
+      if (!attendanceSelect || !attendancePreview) {
+        return;
+      }
+      const selected = selectedAttendance();
+      attendancePreview.innerHTML = "";
+      if (!selected) {
+        const empty = document.createElement("div");
+        empty.className = "empty report-empty";
+        empty.textContent = "출석 회차를 선택해주세요.";
+        attendancePreview.appendChild(empty);
+        return;
+      }
+
+      const header = document.createElement("div");
+      header.className = "loot-preview-summary";
+      header.innerHTML = `<strong>#${selected.attendance_id} · ${selected.started_at}</strong><span>총 ${selected.participant_count}명</span>`;
+      attendancePreview.appendChild(header);
+
+      selected.alliances.forEach((alliance) => {
+        const group = document.createElement("div");
+        group.className = "loot-preview-group";
+        const top = document.createElement("div");
+        top.innerHTML = `<strong>${alliance.alliance_name}</strong><span>${alliance.count}명</span>`;
+        const members = document.createElement("div");
+        members.className = "member-pill-row";
+        alliance.members.forEach((member) => {
+          const pill = document.createElement("span");
+          pill.className = "member-pill";
+          pill.textContent = member.discord_nickname;
+          members.appendChild(pill);
+        });
+        group.appendChild(top);
+        group.appendChild(members);
+        attendancePreview.appendChild(group);
+      });
+    }
+
+    function decimalValue(input) {
+      return Number(String(input?.value || "").replace(/,/g, ""));
+    }
+
+    function formatNumber(value) {
+      if (!Number.isFinite(value) || value <= 0) {
+        return "";
+      }
+      return String(Math.round(value * 100) / 100);
+    }
+
+    function syncLootPrice(form) {
+      const cashInput = form?.querySelector("[data-loot-cash-price]");
+      const adenaInput = form?.querySelector("[data-loot-adena-rate]");
+      const saleInput = form?.querySelector("[data-loot-sale-price]");
+      if (!cashInput || !adenaInput || !saleInput) {
+        return;
+      }
+      const cashPrice = decimalValue(cashInput);
+      const adenaRate = decimalValue(adenaInput);
+      saleInput.value = cashPrice > 0 && adenaRate > 0
+        ? formatNumber((cashPrice / adenaRate) * 10000)
+        : "";
+    }
+
+    function syncItemPrice() {
+      const option = itemSelect?.selectedOptions?.[0];
+      const cashInput = createForm?.querySelector("[data-loot-cash-price]");
+      if (!option || !cashInput) {
+        return;
+      }
+      if (option.value && option.dataset.cashPrice) {
+        cashInput.value = option.dataset.cashPrice;
+      }
+      syncLootPrice(createForm);
+    }
+
+    function activateLootTab(tabName) {
+      const normalized = canManageLoot && tabName !== "payouts" ? "create" : "payouts";
+      document.querySelectorAll("[data-loot-tab]").forEach((tab) => {
+        tab.classList.toggle("is-active", tab.dataset.lootTab === normalized);
+      });
+      document.querySelectorAll("[data-loot-panel]").forEach((panel) => {
+        panel.hidden = panel.dataset.lootPanel !== normalized;
+      });
+    }
+
+    function findByData(container, selector, dataKey, value) {
+      return Array.from(container.querySelectorAll(selector)).find((element) => {
+        return element.dataset[dataKey] === String(value);
+      });
+    }
+
+    function setPayoutBadge(badge, payout) {
+      if (!badge) {
+        return;
+      }
+      badge.textContent = payout.status_label;
+      badge.classList.toggle("is-paid", payout.payout_status === "paid");
+      badge.classList.toggle("is-unpaid", payout.payout_status !== "paid");
+    }
+
+    function updatePayoutCard(card, payload) {
+      const summary = card.querySelector("[data-payout-summary]");
+      if (summary && payload.summary) {
+        summary.classList.remove("is-paid", "is-unpaid", "is-empty");
+        summary.classList.add(payload.summary.class_name);
+        const label = summary.querySelector("[data-payout-summary-label]");
+        const meta = summary.querySelector("[data-payout-summary-meta]");
+        if (label) {
+          label.textContent = payload.summary.label;
+        }
+        if (meta) {
+          meta.textContent = payload.summary.meta;
+        }
+      }
+
+      (payload.payouts || []).forEach((payout) => {
+        const row = findByData(card, "[data-payout-row]", "allianceId", payout.alliance_id);
+        if (row) {
+          setPayoutBadge(row.querySelector("[data-payout-badge]"), payout);
+          const input = row.querySelector("[data-payout-status-input]");
+          const button = row.querySelector("[data-payout-button]");
+          if (input) {
+            input.value = payout.next_status;
+          }
+          if (button) {
+            button.textContent = payout.next_status_label;
+          }
+        }
+
+        const chip = findByData(
+          card,
+          "[data-summary-alliance-id]",
+          "summaryAllianceId",
+          payout.alliance_id,
+        );
+        if (chip) {
+          chip.classList.toggle("is-paid", payout.payout_status === "paid");
+        }
+      });
+    }
+
+    async function submitJsonForm(form) {
+      const response = await fetch(form.action, {
+        method: "POST",
+        body: new URLSearchParams(new FormData(form)),
+        headers: {
+          "Accept": "application/json",
+          "X-Requested-With": "fetch",
+        },
+      });
+      let payload = {};
+      try {
+        payload = await response.json();
+      } catch {
+        payload = {};
+      }
+      if (!response.ok || payload.ok === false) {
+        throw new Error(payload.message || "요청을 처리하지 못했습니다.");
+      }
+      return payload;
+    }
+
+    document.querySelectorAll("[data-payout-form]").forEach((form) => {
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const button = form.querySelector("[data-payout-button]");
+        const card = form.closest("[data-loot-event-card]");
+        if (!button || !card || button.disabled) {
+          return;
+        }
+        const originalText = button.textContent;
+        button.disabled = true;
+        button.textContent = "처리중";
+        try {
+          const payload = await submitJsonForm(form);
+          updatePayoutCard(card, payload);
+        } catch (error) {
+          alert(error.message);
+        } finally {
+          button.disabled = false;
+          if (button.textContent === "처리중") {
+            button.textContent = originalText;
+          }
+        }
+      });
+    });
+
+    document.querySelectorAll("[data-loot-delete-form]").forEach((form) => {
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        if (!confirm("드랍 기록을 삭제할까요? 분배 내역도 함께 삭제됩니다.")) {
+          return;
+        }
+        const button = form.querySelector("button");
+        const card = form.closest("[data-loot-event-card]");
+        if (!button || !card || button.disabled) {
+          return;
+        }
+        button.disabled = true;
+        button.textContent = "삭제중";
+        try {
+          await submitJsonForm(form);
+          card.remove();
+        } catch (error) {
+          alert(error.message);
+          button.disabled = false;
+          button.textContent = "삭제";
+        }
+      });
+    });
+
+    document.querySelectorAll("[data-loot-tab]").forEach((tab) => {
+      tab.addEventListener("click", () => activateLootTab(tab.dataset.lootTab));
+    });
+    window.addEventListener("hashchange", () => activateLootTab(location.hash.replace("#", "")));
+
+    document.querySelectorAll("[data-buyer-picker]").forEach(setupBuyerPicker);
+    document.addEventListener("click", (event) => {
+      if (!event.target.closest("[data-buyer-picker]")) {
+        closeBuyerMenus();
+      }
+    });
+
+    attendanceSelect?.addEventListener("change", () => {
+      renderAttendancePreview();
+      syncCreateBuyerOptions();
+    });
+    itemSelect?.addEventListener("change", syncItemPrice);
+    createForm?.querySelectorAll("[data-loot-cash-price], [data-loot-adena-rate]").forEach((input) => {
+      input.addEventListener("input", () => syncLootPrice(createForm));
+    });
+    document.querySelectorAll("[data-loot-event-form]").forEach((form) => {
+      form.querySelectorAll("[data-loot-cash-price], [data-loot-adena-rate]").forEach((input) => {
+        input.addEventListener("input", () => syncLootPrice(form));
+      });
+    });
+
+    renderAttendancePreview();
+    syncItemPrice();
+    syncCreateBuyerOptions();
+    document.querySelectorAll("[data-loot-event-form]").forEach(syncLootPrice);
+    activateLootTab(location.hash.replace("#", "") || (canManageLoot ? "create" : "payouts"));
+  </script>
+{% endblock %}
