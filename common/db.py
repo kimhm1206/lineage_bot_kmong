@@ -244,8 +244,12 @@ class Database:
     ) -> None:
         mark_scheduled_report_sent(report_setting_id, last_sent_at, next_run_at)
 
-    def claim_bot_commands(self, limit: int = 5) -> list[dict[str, Any]]:
-        return claim_bot_commands(limit)
+    def claim_bot_commands(
+        self,
+        limit: int = 5,
+        guild_ids: list[int] | tuple[int, ...] | None = None,
+    ) -> list[dict[str, Any]]:
+        return claim_bot_commands(limit, guild_ids)
 
     def complete_bot_command(
         self,
@@ -1229,15 +1233,34 @@ def mark_scheduled_report_sent(
         connection.commit()
 
 
-def claim_bot_commands(limit: int = 5) -> list[dict[str, Any]]:
+def claim_bot_commands(
+    limit: int = 5,
+    guild_ids: list[int] | tuple[int, ...] | None = None,
+) -> list[dict[str, Any]]:
+    normalized_guild_ids = (
+        sorted({int(guild_id) for guild_id in guild_ids})
+        if guild_ids is not None
+        else None
+    )
+    if normalized_guild_ids == []:
+        return []
+
+    guild_filter = ""
+    params: list[Any] = []
+    if normalized_guild_ids is not None:
+        guild_filter = "AND guild_id = ANY(%s::bigint[])"
+        params.append(normalized_guild_ids)
+    params.append(int(limit))
+
     with _connect() as connection:
         with connection.cursor() as cursor:
             cursor.execute(
-                """
+                f"""
                 WITH picked AS (
                     SELECT command_id
                     FROM bot_command_queue
                     WHERE status = 'pending'
+                      {guild_filter}
                     ORDER BY created_at ASC
                     LIMIT %s
                     FOR UPDATE SKIP LOCKED
@@ -1254,7 +1277,7 @@ def claim_bot_commands(limit: int = 5) -> list[dict[str, Any]]:
                     q.requested_by_discord_id,
                     q.created_at
                 """,
-                (int(limit),),
+                tuple(params),
             )
             rows = cursor.fetchall()
         connection.commit()
@@ -2652,6 +2675,10 @@ def _ensure_postgres_columns(cursor: psycopg2.extensions.cursor) -> None:
         "CREATE INDEX IF NOT EXISTS idx_distribution_batches_guild "
         "ON distribution_batches(guild_id)"
     )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_bot_command_queue_guild_status "
+        "ON bot_command_queue(guild_id, status, created_at)"
+    )
 
 
 def _drop_redundant_timestamp_columns(cursor: psycopg2.extensions.cursor) -> None:
@@ -3100,6 +3127,7 @@ CREATE INDEX IF NOT EXISTS idx_attendance_sessions_guild_started ON attendance_s
 CREATE INDEX IF NOT EXISTS idx_attendance_entries_user_id ON attendance_entries(user_id);
 CREATE INDEX IF NOT EXISTS idx_attendance_entries_attendance_id ON attendance_entries(attendance_id);
 CREATE INDEX IF NOT EXISTS idx_bot_command_queue_status ON bot_command_queue(status, created_at);
+CREATE INDEX IF NOT EXISTS idx_bot_command_queue_guild_status ON bot_command_queue(guild_id, status, created_at);
 CREATE INDEX IF NOT EXISTS idx_scheduled_report_settings_guild_status
 ON scheduled_report_settings(guild_id, status);
 CREATE INDEX IF NOT EXISTS idx_scheduled_report_settings_next_run

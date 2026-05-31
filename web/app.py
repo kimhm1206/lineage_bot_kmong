@@ -154,6 +154,30 @@ def _discord_get(path: str, access_token: str) -> Any:
     return response.json()
 
 
+def _discord_get_user_guilds(access_token: str) -> list[dict[str, Any]]:
+    guilds: list[dict[str, Any]] = []
+    after: str | None = None
+    while True:
+        query = {"limit": "200"}
+        if after:
+            query["after"] = after
+
+        page = _discord_get(f"/users/@me/guilds?{urlencode(query)}", access_token)
+        if not isinstance(page, list):
+            return guilds
+
+        guilds.extend(
+            guild for guild in page if isinstance(guild, dict)
+        )
+        if len(page) < 200:
+            return guilds
+
+        last_guild_id = str((page[-1] or {}).get("id") or "")
+        if not last_guild_id or last_guild_id == after:
+            return guilds
+        after = last_guild_id
+
+
 def _discord_bot_get(path: str) -> Any:
     if not DISCORD_BOT_TOKEN:
         raise RuntimeError("DISCORD_BOT_TOKEN is not configured.")
@@ -242,6 +266,17 @@ def _role_from_bot_member_permissions(
         permissions |= _discord_permissions(role)
 
     return "admin" if permissions & DISCORD_WEB_ADMIN_PERMISSION_MASK else "user"
+
+
+def _discord_bot_guild_name(guild_id: int) -> str | None:
+    if not DISCORD_BOT_TOKEN:
+        return None
+    try:
+        guild = _discord_bot_get_cached(f"/guilds/{guild_id}")
+    except Exception:
+        return None
+    name = str(guild.get("name") or "").strip()
+    return name or None
 
 
 def _discord_guild_member(
@@ -402,6 +437,22 @@ def _my_alliance_access(
     }
 
 
+def _attendance_guild_ids_for_user(discord_user_id: str) -> set[int]:
+    if not str(discord_user_id).isdigit():
+        return set()
+    rows = database.fetchall(
+        """
+        SELECT DISTINCT s.guild_id
+        FROM attendance_sessions s
+        INNER JOIN attendance_entries e ON e.attendance_id = s.attendance_id
+        INNER JOIN users u ON u.user_id = e.user_id
+        WHERE u.discord_id = %s
+        """,
+        (int(discord_user_id),),
+    )
+    return {int(row["guild_id"]) for row in rows}
+
+
 def _load_accessible_servers(
     discord_user_id: str,
     discord_guilds: list[dict[str, Any]],
@@ -412,12 +463,21 @@ def _load_accessible_servers(
         if str(guild.get("id", "")).isdigit()
     }
     guild_ids = [int(guild_id) for guild_id in guild_lookup]
+    attendance_guild_ids = _attendance_guild_ids_for_user(discord_user_id)
+    candidate_guild_ids = sorted(set(guild_ids) | attendance_guild_ids)
     is_global_developer = str(discord_user_id) == GLOBAL_DEVELOPER_DISCORD_ID
-    if not guild_ids and not is_global_developer:
+    can_verify_with_bot = bool(DISCORD_BOT_TOKEN)
+    if not candidate_guild_ids and not is_global_developer and not can_verify_with_bot:
         return []
 
-    where_clause = "TRUE" if is_global_developer else "g.guild_id = ANY(%s::bigint[])"
-    params: tuple[Any, ...] = () if is_global_developer else (guild_ids,)
+    where_clause = (
+        "TRUE"
+        if is_global_developer or can_verify_with_bot
+        else "g.guild_id = ANY(%s::bigint[])"
+    )
+    params: tuple[Any, ...] = (
+        () if is_global_developer or can_verify_with_bot else (candidate_guild_ids,)
+    )
 
     rows = database.fetchall(
         f"""
@@ -454,7 +514,20 @@ def _load_accessible_servers(
     for row in rows:
         guild_id = str(row["guild_id"])
         discord_guild = guild_lookup.get(guild_id)
-        role = _server_role(discord_user_id, discord_guild)
+        role_from_bot = _role_from_bot_member_permissions(
+            int(guild_id),
+            discord_user_id,
+        )
+        has_attendance_access = int(guild_id) in attendance_guild_ids
+        if (
+            not is_global_developer
+            and discord_guild is None
+            and role_from_bot is None
+            and not has_attendance_access
+        ):
+            continue
+
+        role = role_from_bot or _server_role(discord_user_id, discord_guild)
         has_settings = any(
             row.get(column) is not None
             for column in (
@@ -463,12 +536,13 @@ def _load_accessible_servers(
                 "log_channel_id",
             )
         )
+        server_name = str((discord_guild or {}).get("name") or "").strip()
+        if not server_name:
+            server_name = _discord_bot_guild_name(int(guild_id)) or f"Discord 서버 {guild_id}"
         servers.append(
             {
                 "guild_id": guild_id,
-                "name": str(
-                    (discord_guild or {}).get("name") or f"Discord 서버 {guild_id}"
-                ),
+                "name": server_name,
                 "permissions": _discord_permissions(discord_guild),
                 "discord_owner": bool((discord_guild or {}).get("owner")),
                 "role": role,
@@ -1852,6 +1926,32 @@ def _latest_command_queue(guild_id: int, limit: int = 10) -> list[dict[str, Any]
     return commands
 
 
+def _pending_attendance_command(guild_id: int) -> dict[str, Any] | None:
+    row = database.fetchone(
+        """
+        SELECT command_id, command_type, status, created_at
+        FROM bot_command_queue
+        WHERE guild_id = %s
+          AND command_type IN ('start_attendance', 'stop_attendance')
+          AND status IN ('pending', 'processing')
+        ORDER BY created_at DESC
+        LIMIT 1
+        """,
+        (guild_id,),
+    )
+    if row is None:
+        return None
+
+    command_type = str(row["command_type"])
+    return {
+        "command_id": int(row["command_id"]),
+        "command_type": command_type,
+        "status": str(row["status"]),
+        "label": "출석 시작" if command_type == "start_attendance" else "출석 종료",
+        "created_at": row["created_at"],
+    }
+
+
 def _live_attendance_state(guild_id: int) -> dict[str, Any]:
     state = database.get_live_attendance_state(guild_id)
     participants = state.get("participants") or []
@@ -2005,7 +2105,7 @@ def discord_callback(
     try:
         access_token = _exchange_discord_code(code)
         discord_user = _discord_get("/users/@me", access_token)
-        discord_guilds = _discord_get("/users/@me/guilds", access_token)
+        discord_guilds = _discord_get_user_guilds(access_token)
         servers = _load_accessible_servers(str(discord_user["id"]), discord_guilds)
     except Exception:
         request.session.clear()
@@ -2350,6 +2450,9 @@ def attendance(
             "auth": auth,
             "live_state": _live_attendance_state(selected_guild_id),
             "sessions": _latest_attendance_sessions(selected_guild_id),
+            "attendance_command_pending": _pending_attendance_command(
+                selected_guild_id
+            ),
             "queued": queued,
             "active_page": "attendance",
         },
@@ -3430,6 +3533,12 @@ def start_attendance(
         )
 
     user_id = int(auth["user"]["id"])
+    if _pending_attendance_command(selected_guild_id) is not None:
+        return RedirectResponse(
+            f"/attendance?guild_id={selected_guild_id}&queued=busy",
+            status_code=303,
+        )
+
     _enqueue_attendance_command(selected_guild_id, "start_attendance", user_id)
     return RedirectResponse(
         f"/attendance?guild_id={selected_guild_id}&queued=start",
@@ -3455,6 +3564,12 @@ def stop_attendance(
         )
 
     user_id = int(auth["user"]["id"])
+    if _pending_attendance_command(selected_guild_id) is not None:
+        return RedirectResponse(
+            f"/attendance?guild_id={selected_guild_id}&queued=busy",
+            status_code=303,
+        )
+
     should_save = str(save or "1").strip().lower() not in {
         "0",
         "false",

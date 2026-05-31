@@ -67,8 +67,11 @@ async def reload_report_schedules(bot: discord.Bot) -> dict[str, int]:
         scheduler = _get_scheduler(bot)
         scheduler.remove_all_jobs()
         reports = await asyncio.to_thread(database.get_active_scheduled_reports)
+        connected_guild_ids = _connected_guild_ids(bot)
         scheduled_count = 0
         for report in reports:
+            if int(report["guild_id"]) not in connected_guild_ids:
+                continue
             did_schedule = await _schedule_report(bot, report)
             scheduled_count += 1 if did_schedule else 0
         print(f"[report-scheduler] reloaded {scheduled_count} active reports")
@@ -118,6 +121,14 @@ async def _run_report_job(
     if report is None:
         return
 
+    guild_id = int(report["guild_id"])
+    if guild_id not in _connected_guild_ids(bot):
+        print(
+            "[report-scheduler] skipped unsupported guild "
+            f"report={report_setting_id} guild_id={guild_id}"
+        )
+        return
+
     now = datetime.now(KST)
     scheduled_at = _parse_datetime(scheduled_run_at) or now
     try:
@@ -160,6 +171,10 @@ def _get_scheduler(bot: discord.Bot) -> AsyncIOScheduler:
 
 def _job_id(report_setting_id: int) -> str:
     return f"report:{report_setting_id}"
+
+
+def _connected_guild_ids(bot: discord.Bot) -> set[int]:
+    return {int(guild.id) for guild in bot.guilds}
 
 
 async def _resolve_channel(bot: discord.Bot, channel_id: int) -> Any:

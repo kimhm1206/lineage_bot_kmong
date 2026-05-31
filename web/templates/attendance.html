@@ -14,15 +14,22 @@
         <form
           method="post"
           action="/attendance/start?guild_id={{ auth.selected_guild_id }}"
+          data-attendance-command-form
           data-attendance-start-form
           {% if live_state.active %}hidden{% endif %}
         >
-          <button class="primary-button" type="submit">출석 시작</button>
+          <button
+            class="primary-button"
+            type="submit"
+            data-attendance-control-button
+            {% if attendance_command_pending %}disabled{% endif %}
+          >출석 시작</button>
         </form>
         <form
           class="attendance-stop-actions"
           method="post"
           action="/attendance/stop?guild_id={{ auth.selected_guild_id }}&save=1"
+          data-attendance-command-form
           data-attendance-stop-form
           {% if not live_state.active %}hidden{% endif %}
         >
@@ -30,11 +37,15 @@
             class="danger-button"
             type="submit"
             formaction="/attendance/stop?guild_id={{ auth.selected_guild_id }}&save=1"
+            data-attendance-control-button
+            {% if attendance_command_pending %}disabled{% endif %}
           >종료 후 DB 저장</button>
           <button
             class="secondary-button"
             type="submit"
             formaction="/attendance/stop?guild_id={{ auth.selected_guild_id }}&save=0"
+            data-attendance-control-button
+            {% if attendance_command_pending %}disabled{% endif %}
           >저장 없이 종료</button>
         </form>
       </div>
@@ -47,8 +58,15 @@
     <div class="alert success">출석 종료 및 DB 저장 요청을 봇 큐에 등록했습니다.</div>
   {% elif queued == "stop_skipped" %}
     <div class="alert success">출석 종료 요청을 등록했습니다. 이번 회차는 DB에 저장하지 않습니다.</div>
+  {% elif queued == "busy" %}
+    <div class="alert success">이미 처리 중인 출석 요청이 있습니다. 잠시만 기다려주세요.</div>
   {% elif queued == "forbidden" %}
     <div class="alert error">이 서버의 관리자 권한이 있는 계정만 출석을 제어할 수 있습니다.</div>
+  {% endif %}
+  {% if attendance_command_pending %}
+    <div class="alert success" data-attendance-pending-alert>
+      {{ attendance_command_pending.label }} 요청을 처리 중입니다.
+    </div>
   {% endif %}
 
   <section class="attendance-live-grid">
@@ -153,7 +171,21 @@
     const liveConnection = document.querySelector("[data-live-connection]");
     const startForm = document.querySelector("[data-attendance-start-form]");
     const stopForm = document.querySelector("[data-attendance-stop-form]");
+    const commandForms = document.querySelectorAll("[data-attendance-command-form]");
+    const controlButtons = document.querySelectorAll("[data-attendance-control-button]");
+    const pendingAlert = document.querySelector("[data-attendance-pending-alert]");
+    let attendanceCommandPending = {{ "true" if attendance_command_pending else "false" }};
     let latestLiveState = {{ live_state | tojson }};
+
+    commandForms.forEach((form) => {
+      form.addEventListener("submit", (event) => {
+        if (event.submitter?.formAction) {
+          form.action = event.submitter.formAction;
+        }
+        attendanceCommandPending = true;
+        updateAttendanceControls(Boolean(latestLiveState.active));
+      });
+    });
 
     liveSocket.addEventListener("open", () => {
       liveConnection.textContent = "실시간 연결됨";
@@ -172,14 +204,24 @@
     setInterval(renderRemainingTime, 1000);
     renderRemainingTime();
     updateAttendanceControls(Boolean(latestLiveState.active));
+    setTimeout(() => {
+      if (attendanceCommandPending) {
+        window.location.reload();
+      }
+    }, 5000);
 
     function renderLiveAttendance(state) {
+      const wasActive = Boolean(latestLiveState?.active);
       latestLiveState = state;
       liveStatus.textContent = state.active ? "진행 중" : "대기 중";
       liveStatus.classList.toggle("is-active", state.active);
       liveCount.textContent = state.participant_count;
       liveStarted.textContent = state.session?.started_at || "-";
       liveExpires.textContent = state.session?.expires_at || "-";
+      if (wasActive !== Boolean(state.active)) {
+        attendanceCommandPending = false;
+        pendingAlert?.remove();
+      }
       updateAttendanceControls(state.active);
       renderRemainingTime();
       renderRoster(state);
@@ -192,6 +234,9 @@
       if (stopForm) {
         stopForm.hidden = !active;
       }
+      controlButtons.forEach((button) => {
+        button.disabled = attendanceCommandPending;
+      });
     }
 
     function parseServerTime(value) {

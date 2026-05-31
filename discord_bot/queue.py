@@ -19,6 +19,8 @@ from discord_bot.utils.panel import clear_old_admin_panel, rebuild_admin_panel
 
 POLL_INTERVAL_SECONDS = 2
 COMMAND_BATCH_SIZE = 5
+GUILD_RESOLVE_ATTEMPTS = 5
+GUILD_RESOLVE_DELAY_SECONDS = 1
 
 
 def start_command_queue_worker(bot: discord.Bot) -> None:
@@ -32,9 +34,14 @@ async def _poll_command_queue(bot: discord.Bot) -> None:
     await bot.wait_until_ready()
     while not bot.is_closed():
         try:
+            guild_ids = _connected_guild_ids(bot)
+            if not guild_ids:
+                await asyncio.sleep(POLL_INTERVAL_SECONDS)
+                continue
             rows = await asyncio.to_thread(
                 database.claim_bot_commands,
                 COMMAND_BATCH_SIZE,
+                guild_ids,
             )
             for row in rows:
                 await _process_command(bot, row)
@@ -70,7 +77,7 @@ async def _process_start_attendance(
     bot: discord.Bot,
     row: dict[str, Any],
 ) -> dict[str, Any]:
-    guild = _get_guild(bot, row)
+    guild = await _resolve_guild(bot, row)
     member = await _resolve_member(guild, row.get("requested_by_discord_id"))
     if member is None:
         raise RuntimeError("요청자를 Discord 서버에서 찾을 수 없습니다.")
@@ -85,7 +92,7 @@ async def _process_stop_attendance(
     bot: discord.Bot,
     row: dict[str, Any],
 ) -> dict[str, Any]:
-    guild = _get_guild(bot, row)
+    guild = await _resolve_guild(bot, row)
     member = await _resolve_member(guild, row.get("requested_by_discord_id"))
     payload = row.get("payload_json") or {}
     if not isinstance(payload, dict):
@@ -140,7 +147,7 @@ async def _process_refresh_admin_panel(
     bot: discord.Bot,
     row: dict[str, Any],
 ) -> dict[str, Any]:
-    guild = _get_guild(bot, row)
+    guild = await _resolve_guild(bot, row)
     payload = row.get("payload_json") or {}
     previous_admin_channel_id = _optional_int(payload.get("previous_admin_channel_id"))
     current_settings = database.get_settings(guild.id)
@@ -156,14 +163,28 @@ async def _process_refresh_admin_panel(
     }
 
 
-def _get_guild(bot: discord.Bot, row: dict[str, Any]) -> discord.Guild:
+async def _resolve_guild(bot: discord.Bot, row: dict[str, Any]) -> discord.Guild:
     guild_id = row.get("guild_id")
     if guild_id is None:
         raise RuntimeError("guild_id가 없는 명령입니다.")
-    guild = bot.get_guild(int(guild_id))
-    if guild is None:
-        raise RuntimeError(f"봇이 서버에 접속해 있지 않습니다. guild_id={guild_id}")
-    return guild
+
+    target_guild_id = int(guild_id)
+    for attempt in range(GUILD_RESOLVE_ATTEMPTS):
+        guild = bot.get_guild(target_guild_id)
+        if guild is not None:
+            return guild
+        if attempt + 1 < GUILD_RESOLVE_ATTEMPTS:
+            await asyncio.sleep(GUILD_RESOLVE_DELAY_SECONDS)
+
+    connected_guilds = ", ".join(str(guild.id) for guild in bot.guilds) or "none"
+    raise RuntimeError(
+        "봇이 서버에 접속해 있지 않습니다. "
+        f"guild_id={guild_id}, connected_guilds={connected_guilds}"
+    )
+
+
+def _connected_guild_ids(bot: discord.Bot) -> list[int]:
+    return sorted({int(guild.id) for guild in bot.guilds})
 
 
 async def _resolve_member(
