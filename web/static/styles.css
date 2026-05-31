@@ -151,6 +151,7 @@ input {
 }
 
 .support-side-icon {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -166,6 +167,38 @@ input {
   transition:
     transform 0.16s ease,
     box-shadow 0.16s ease;
+}
+
+.support-side-icon::before {
+  position: absolute;
+  width: 19px;
+  height: 14px;
+  border: 2px solid #ffffff;
+  border-radius: 9px;
+  content: "";
+}
+
+.support-side-icon::after {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  width: 7px;
+  height: 7px;
+  background: var(--discord);
+  border-right: 2px solid #ffffff;
+  border-bottom: 2px solid #ffffff;
+  content: "";
+  transform: rotate(25deg);
+}
+
+.support-side-icon-eyes {
+  position: relative;
+  z-index: 1;
+  width: 3px;
+  height: 3px;
+  border-radius: 999px;
+  background: #ffffff;
+  box-shadow: 8px 0 0 #ffffff;
 }
 
 .support-side-link:hover .support-side-icon {

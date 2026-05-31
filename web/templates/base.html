@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}Lineage Ops{% endblock %}</title>
-    <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}?v=20260601-support-side">
   </head>
   <body class="{% block body_class %}{% endblock %}">
     <header class="topbar {% if not auth %}topbar-public{% endif %}">
@@ -59,7 +59,9 @@
         aria-label="Discord DM 보내기"
         title="Discord DM 보내기"
       >
-        <span class="support-side-icon" aria-hidden="true">DM</span>
+        <span class="support-side-icon" aria-hidden="true">
+          <span class="support-side-icon-eyes"></span>
+        </span>
       </a>
     </aside>
 
