@@ -87,6 +87,10 @@ async def _process_stop_attendance(
 ) -> dict[str, Any]:
     guild = _get_guild(bot, row)
     member = await _resolve_member(guild, row.get("requested_by_discord_id"))
+    payload = row.get("payload_json") or {}
+    if not isinstance(payload, dict):
+        payload = {}
+    should_save = _payload_bool(payload.get("save_attendance"), default=True)
     result = await stop_attendance(
         bot,
         guild,
@@ -97,8 +101,24 @@ async def _process_stop_attendance(
         raise RuntimeError(str(result["message"]))
 
     snapshot = result["snapshot"]
-    attendance_id = await persist_attendance_snapshot(bot, guild, snapshot)
     stopped_by_mention = member.mention if member is not None else "웹"
+    if not should_save:
+        await send_attendance_summary(
+            bot,
+            guild,
+            snapshot=snapshot,
+            reason="manual",
+            stopped_by_mention=stopped_by_mention,
+            save_status="기록 저장 X",
+        )
+        return {
+            "message": str(result["message"]),
+            "attendance_id": None,
+            "participant_count": int(result.get("participant_count") or 0),
+            "saved": False,
+        }
+
+    attendance_id = await persist_attendance_snapshot(bot, guild, snapshot)
     await send_attendance_summary(
         bot,
         guild,
@@ -112,6 +132,7 @@ async def _process_stop_attendance(
         "message": str(result["message"]),
         "attendance_id": attendance_id,
         "participant_count": int(result.get("participant_count") or 0),
+        "saved": True,
     }
 
 
@@ -165,3 +186,15 @@ def _optional_int(value: object) -> int | None:
     if value is None or value == "":
         return None
     return int(value)
+
+
+def _payload_bool(value: object, *, default: bool) -> bool:
+    if value is None or value == "":
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        return value.strip().lower() not in {"0", "false", "no", "off"}
+    return bool(value)

@@ -1906,8 +1906,9 @@ def _enqueue_attendance_command(
     guild_id: int,
     command_type: str,
     requested_by_discord_id: int,
+    payload: dict[str, Any] | None = None,
 ) -> None:
-    _enqueue_bot_command(guild_id, command_type, requested_by_discord_id)
+    _enqueue_bot_command(guild_id, command_type, requested_by_discord_id, payload)
 
 
 def _enqueue_report_scheduler_refresh(
@@ -3440,6 +3441,7 @@ def start_attendance(
 def stop_attendance(
     request: Request,
     guild_id: str | None = None,
+    save: str | None = "1",
 ):
     auth = _auth_context(request, guild_id)
     if not auth:
@@ -3453,9 +3455,21 @@ def stop_attendance(
         )
 
     user_id = int(auth["user"]["id"])
-    _enqueue_attendance_command(selected_guild_id, "stop_attendance", user_id)
+    should_save = str(save or "1").strip().lower() not in {
+        "0",
+        "false",
+        "no",
+        "off",
+    }
+    _enqueue_attendance_command(
+        selected_guild_id,
+        "stop_attendance",
+        user_id,
+        {"save_attendance": should_save},
+    )
+    queued_status = "stop_saved" if should_save else "stop_skipped"
     return RedirectResponse(
-        f"/attendance?guild_id={selected_guild_id}&queued=stop",
+        f"/attendance?guild_id={selected_guild_id}&queued={queued_status}",
         status_code=303,
     )
 

@@ -13,20 +13,29 @@
       <div class="hero-actions">
         <form
           method="post"
-          action="{% if live_state.active %}/attendance/stop{% else %}/attendance/start{% endif %}?guild_id={{ auth.selected_guild_id }}"
-          data-attendance-toggle-form
+          action="/attendance/start?guild_id={{ auth.selected_guild_id }}"
+          data-attendance-start-form
+          {% if live_state.active %}hidden{% endif %}
+        >
+          <button class="primary-button" type="submit">출석 시작</button>
+        </form>
+        <form
+          class="attendance-stop-actions"
+          method="post"
+          action="/attendance/stop?guild_id={{ auth.selected_guild_id }}&save=1"
+          data-attendance-stop-form
+          {% if not live_state.active %}hidden{% endif %}
         >
           <button
-            class="{% if live_state.active %}danger-button{% else %}primary-button{% endif %}"
+            class="danger-button"
             type="submit"
-            data-attendance-toggle-button
-          >
-            {% if live_state.active %}
-              출석 종료
-            {% else %}
-              출석 시작
-            {% endif %}
-          </button>
+            formaction="/attendance/stop?guild_id={{ auth.selected_guild_id }}&save=1"
+          >종료 후 DB 저장</button>
+          <button
+            class="secondary-button"
+            type="submit"
+            formaction="/attendance/stop?guild_id={{ auth.selected_guild_id }}&save=0"
+          >저장 없이 종료</button>
         </form>
       </div>
     {% endif %}
@@ -34,8 +43,10 @@
 
   {% if queued == "start" %}
     <div class="alert success">출석 시작 요청을 봇 큐에 등록했습니다.</div>
-  {% elif queued == "stop" %}
-    <div class="alert success">출석 종료 요청을 봇 큐에 등록했습니다.</div>
+  {% elif queued == "stop" or queued == "stop_saved" %}
+    <div class="alert success">출석 종료 및 DB 저장 요청을 봇 큐에 등록했습니다.</div>
+  {% elif queued == "stop_skipped" %}
+    <div class="alert success">출석 종료 요청을 등록했습니다. 이번 회차는 DB에 저장하지 않습니다.</div>
   {% elif queued == "forbidden" %}
     <div class="alert error">이 서버의 관리자 권한이 있는 계정만 출석을 제어할 수 있습니다.</div>
   {% endif %}
@@ -140,8 +151,8 @@
     const liveExpires = document.querySelector("[data-live-expires]");
     const liveRoster = document.querySelector("[data-live-roster]");
     const liveConnection = document.querySelector("[data-live-connection]");
-    const toggleForm = document.querySelector("[data-attendance-toggle-form]");
-    const toggleButton = document.querySelector("[data-attendance-toggle-button]");
+    const startForm = document.querySelector("[data-attendance-start-form]");
+    const stopForm = document.querySelector("[data-attendance-stop-form]");
     let latestLiveState = {{ live_state | tojson }};
 
     liveSocket.addEventListener("open", () => {
@@ -160,7 +171,7 @@
 
     setInterval(renderRemainingTime, 1000);
     renderRemainingTime();
-    updateToggleButton(Boolean(latestLiveState.active));
+    updateAttendanceControls(Boolean(latestLiveState.active));
 
     function renderLiveAttendance(state) {
       latestLiveState = state;
@@ -169,21 +180,18 @@
       liveCount.textContent = state.participant_count;
       liveStarted.textContent = state.session?.started_at || "-";
       liveExpires.textContent = state.session?.expires_at || "-";
-      updateToggleButton(state.active);
+      updateAttendanceControls(state.active);
       renderRemainingTime();
       renderRoster(state);
     }
 
-    function updateToggleButton(active) {
-      if (!toggleForm || !toggleButton) {
-        return;
+    function updateAttendanceControls(active) {
+      if (startForm) {
+        startForm.hidden = active;
       }
-      toggleForm.action = active
-        ? `/attendance/stop?guild_id=${liveGuildId}`
-        : `/attendance/start?guild_id=${liveGuildId}`;
-      toggleButton.textContent = active ? "출석 종료" : "출석 시작";
-      toggleButton.classList.toggle("primary-button", !active);
-      toggleButton.classList.toggle("danger-button", active);
+      if (stopForm) {
+        stopForm.hidden = !active;
+      }
     }
 
     function parseServerTime(value) {

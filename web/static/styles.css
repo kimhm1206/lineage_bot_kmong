@@ -188,6 +188,15 @@ input {
   gap: 10px;
 }
 
+.hero-actions [hidden] {
+  display: none !important;
+}
+
+.attendance-stop-actions {
+  display: flex;
+  gap: 10px;
+}
+
 .page-heading {
   display: flex;
   align-items: flex-end;
