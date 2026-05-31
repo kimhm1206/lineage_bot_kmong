@@ -21,6 +21,7 @@
           <button
             class="primary-button"
             type="submit"
+            formaction="/attendance/start?guild_id={{ auth.selected_guild_id }}"
             data-attendance-control-button
             {% if attendance_command_pending %}disabled{% endif %}
           >출석 시작</button>
@@ -179,8 +180,9 @@
 
     commandForms.forEach((form) => {
       form.addEventListener("submit", (event) => {
-        if (event.submitter?.formAction) {
-          form.action = event.submitter.formAction;
+        const submitterAction = event.submitter?.getAttribute("formaction");
+        if (submitterAction) {
+          form.action = submitterAction;
         }
         attendanceCommandPending = true;
         updateAttendanceControls(Boolean(latestLiveState.active));
