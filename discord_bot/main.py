@@ -47,7 +47,7 @@ bot.web_bridge_ws = None
 bot.attendance_state_publisher = None
 bot.runtime_label = (
     f"{datetime.now(timezone(timedelta(hours=9))).strftime('%Y-%m-%d %H:%M')} "
-    "구동 Ver1.3"
+    "구동 Ver3.0 Web."
 )
 
 

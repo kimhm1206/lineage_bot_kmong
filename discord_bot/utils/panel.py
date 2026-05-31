@@ -14,7 +14,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DATA_DIR = PROJECT_ROOT / "data"
 UI_STATE_PATH = DATA_DIR / "ui_state.json"
 KST = timezone(timedelta(hours=9))
-VERSION_LABEL = "Ver1.3"
+VERSION_LABEL = "Ver3.0 Web."
 
 
 def build_admin_panel_embed(
