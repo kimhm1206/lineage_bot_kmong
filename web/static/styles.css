@@ -19,6 +19,7 @@
 
 body {
   margin: 0;
+  padding-bottom: 48px;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(243, 246, 248, 0.92)),
     var(--bg);
@@ -116,6 +117,32 @@ input {
 
 .account a {
   color: var(--accent);
+}
+
+.support-footer {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 8px 18px;
+  background: rgba(255, 255, 255, 0.9);
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+  backdrop-filter: blur(16px) saturate(140%);
+}
+
+.support-footer a {
+  color: var(--discord);
+  font-weight: 900;
 }
 
 .account-name {
@@ -2194,6 +2221,10 @@ button:disabled {
 }
 
 @media (max-width: 780px) {
+  body {
+    padding-bottom: 64px;
+  }
+
   .topbar {
     align-items: stretch;
     flex-direction: column;
@@ -2209,6 +2240,12 @@ button:disabled {
   .server-picker,
   .account {
     width: 100%;
+  }
+
+  .support-footer {
+    flex-wrap: wrap;
+    row-gap: 2px;
+    line-height: 1.35;
   }
 
   select {
