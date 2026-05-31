@@ -48,15 +48,20 @@
       {% block content %}{% endblock %}
     </main>
 
-    <footer class="support-footer">
-      <span>기능 문의 및 에러 발생은</span>
+    <aside class="support-side-banner" aria-label="기능 문의 및 오류제보">
+      <span>기능 문의</span>
+      <span>오류제보</span>
       <a
+        class="support-side-link"
         href="https://discord.com/users/238978205078388747"
         target="_blank"
         rel="noopener noreferrer"
-      >238978205078388747</a>
-      <span>프로필로 DM 주세요.</span>
-    </footer>
+        aria-label="Discord DM 보내기"
+        title="Discord DM 보내기"
+      >
+        <span class="support-side-icon" aria-hidden="true">DM</span>
+      </a>
+    </aside>
 
     <script>
       function changeServer(select) {

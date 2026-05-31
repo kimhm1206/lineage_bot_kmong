@@ -74,7 +74,7 @@ def build_attendance_embed(
         name="문의",
         value=(
             f"<@{SUPPORT_DISCORD_ID}>\n"
-            "출석 중 에러 발생 및 문의사항은 위 ID로 DM 보내주세요."
+            "출석 중 에러 발생 및 문의사항은 위 유저에게 DM 보내주세요."
         ),
         inline=False,
     )

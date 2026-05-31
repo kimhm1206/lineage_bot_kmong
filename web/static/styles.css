@@ -19,7 +19,6 @@
 
 body {
   margin: 0;
-  padding-bottom: 48px;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(243, 246, 248, 0.92)),
     var(--bg);
@@ -119,30 +118,64 @@ input {
   color: var(--accent);
 }
 
-.support-footer {
+.support-side-banner {
   position: fixed;
-  right: 0;
-  bottom: 0;
-  left: 0;
+  top: 50%;
+  right: max(16px, calc((100vw - 1180px) / 2 - 96px));
   z-index: 20;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  min-height: 40px;
-  padding: 8px 18px;
-  background: rgba(255, 255, 255, 0.9);
-  border-top: 1px solid var(--line);
+  gap: 8px;
+  width: 78px;
+  min-height: 124px;
+  padding: 12px 10px;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 12px 30px rgba(23, 32, 42, 0.14);
   color: var(--muted);
-  font-size: 13px;
-  font-weight: 700;
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1.25;
   text-align: center;
+  transform: translateY(-50%);
   backdrop-filter: blur(16px) saturate(140%);
 }
 
-.support-footer a {
-  color: var(--discord);
+.support-side-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.support-side-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  background: var(--discord);
+  box-shadow: 0 8px 18px rgba(88, 101, 242, 0.28);
+  color: #ffffff;
+  font-size: 11px;
   font-weight: 900;
+  letter-spacing: 0;
+  transition:
+    transform 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
+.support-side-link:hover .support-side-icon {
+  box-shadow: 0 10px 22px rgba(88, 101, 242, 0.38);
+  transform: translateY(-1px);
+}
+
+.support-side-link:focus-visible .support-side-icon {
+  outline: 3px solid rgba(88, 101, 242, 0.25);
+  outline-offset: 2px;
 }
 
 .account-name {
@@ -2221,10 +2254,6 @@ button:disabled {
 }
 
 @media (max-width: 780px) {
-  body {
-    padding-bottom: 64px;
-  }
-
   .topbar {
     align-items: stretch;
     flex-direction: column;
@@ -2242,10 +2271,18 @@ button:disabled {
     width: 100%;
   }
 
-  .support-footer {
-    flex-wrap: wrap;
-    row-gap: 2px;
-    line-height: 1.35;
+  .support-side-banner {
+    top: auto;
+    right: 10px;
+    bottom: 10px;
+    width: auto;
+    min-height: 0;
+    padding: 8px;
+    transform: none;
+  }
+
+  .support-side-banner > span {
+    display: none;
   }
 
   select {
