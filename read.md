@@ -60,9 +60,9 @@ Discord/OAuth 관련 값:
 DISCORD_BOT_TOKEN=...
 DISCORD_CLIENT_ID=...
 DISCORD_CLIENT_SECRET=...
-DISCORD_REDIRECT_URI=https://도메인/auth/discord/callback
+DISCORD_REDIRECT_URI=https://test.meetloa.online/auth/discord/callback
 WEB_SESSION_SECRET=충분히_긴_랜덤_문자열
-WEB_BASE_URL=https://도메인
+WEB_BASE_URL=https://test.meetloa.online
 GLOBAL_DEVELOPER_DISCORD_ID=개발자_DISCORD_ID
 ```
 
@@ -90,7 +90,30 @@ discord_bot/venv/bin/python -m discord_bot.main
 - Discord 관리자 패널 갱신
 - 통계 알림 APScheduler Worker
 
-## 5. systemd 예시
+## 5. Cloudflare 도메인 연결
+
+운영 도메인:
+
+```text
+https://test.meetloa.online
+```
+
+Cloudflare Tunnel을 쓰는 경우 public hostname을 아래처럼 연결합니다.
+
+```text
+Hostname: test.meetloa.online
+Service: http://localhost:8000
+```
+
+일반 Nginx/리버스 프록시를 쓰는 경우에도 외부 HTTPS 요청이 내부 웹 프로세스 `http://127.0.0.1:8000`으로 전달되게 설정합니다.
+
+Discord Developer Portal의 OAuth2 Redirect URI에는 반드시 아래 값을 등록합니다.
+
+```text
+https://test.meetloa.online/auth/discord/callback
+```
+
+## 6. systemd 예시
 
 경로와 사용자명은 서버에 맞게 바꾸세요.
 
@@ -148,12 +171,12 @@ journalctl -u lineage-web -f
 journalctl -u lineage-bot -f
 ```
 
-## 6. 실행 확인
+## 7. 실행 확인
 
 웹:
 
 ```bash
-curl -I http://127.0.0.1:8000/login
+curl -I https://test.meetloa.online/login
 ```
 
 봇:
@@ -162,7 +185,7 @@ curl -I http://127.0.0.1:8000/login
 - 관리자 패널 메시지가 설정 채널에 갱신되는지 확인
 - 웹에서 설정 저장 시 봇 큐가 처리되는지 확인
 
-## 7. 하면 안 되는 작업
+## 8. 하면 안 되는 작업
 
 운영 서버에서 아래 작업은 하지 마세요.
 
@@ -173,7 +196,7 @@ python scripts/migrate_sqlite_to_postgres.py --test
 
 SQLite 파일(`*.sqlite3`, `data/`)은 운영 원본으로 쓰지 않습니다. 현재 운영 기준 데이터는 PostgreSQL입니다.
 
-## 8. 자주 쓰는 중지 명령
+## 9. 자주 쓰는 중지 명령
 
 systemd 사용 시:
 

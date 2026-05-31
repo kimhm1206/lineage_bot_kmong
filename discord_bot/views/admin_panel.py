@@ -122,10 +122,10 @@ async def _safe_response(
 
 
 def _build_web_statistics_url(guild_id: int) -> str:
-    base_url = os.getenv("WEB_BASE_URL", "http://localhost:8000").rstrip("/")
+    base_url = os.getenv("WEB_BASE_URL", "https://test.meetloa.online").rstrip("/")
     return f"{base_url}/dashboard?{urlencode({'guild_id': str(guild_id)})}"
 
 
 def _build_web_settings_url(guild_id: int) -> str:
-    base_url = os.getenv("WEB_BASE_URL", "http://localhost:8000").rstrip("/")
+    base_url = os.getenv("WEB_BASE_URL", "https://test.meetloa.online").rstrip("/")
     return f"{base_url}/settings?{urlencode({'guild_id': str(guild_id)})}#channels"
