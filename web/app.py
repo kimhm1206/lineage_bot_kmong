@@ -1725,16 +1725,22 @@ def _render_report_preview(
     guild_name: str | None = None,
 ) -> str:
     start_at, end_at = _report_period_bounds(str(query_json.get("period") or "today"))
-    rows = database.get_report_attendance_ranking(
-        guild_id,
-        _report_format_datetime(start_at),
-        _report_format_datetime(end_at),
-        group_by=str(query_json.get("group_by") or "alliance"),
-        rank_target=str(query_json.get("rank_target") or "user"),
-        metric=str(query_json.get("metric") or "attendance_count"),
-        limit=int(query_json.get("limit") or 10),
-    )
-    return _format_report_message(
+    warning = ""
+    try:
+        rows = database.get_report_attendance_ranking(
+            guild_id,
+            _report_format_datetime(start_at),
+            _report_format_datetime(end_at),
+            group_by=str(query_json.get("group_by") or "alliance"),
+            rank_target=str(query_json.get("rank_target") or "user"),
+            metric=str(query_json.get("metric") or "attendance_count"),
+            limit=int(query_json.get("limit") or 10),
+        )
+    except Exception as exc:
+        rows = []
+        warning = f"\n\n미리보기 데이터 조회 실패: {exc}"
+        print(f"[report-preview] failed guild_id={guild_id}: {exc}")
+    preview = _format_report_message(
         rows,
         schedule_json,
         query_json,
@@ -1743,6 +1749,7 @@ def _render_report_preview(
         start_at=start_at,
         end_at=end_at,
     )
+    return f"{preview}{warning}"
 
 
 def _format_report_message(

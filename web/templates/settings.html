@@ -652,7 +652,16 @@
           method: "POST",
           body: new URLSearchParams(new FormData(reportBuilder)),
         });
-        const payload = await response.json();
+        const responseText = await response.text();
+        let payload = {};
+        try {
+          payload = JSON.parse(responseText);
+        } catch (parseError) {
+          payload = {
+            ok: false,
+            errors: [`미리보기 응답을 읽을 수 없습니다. 상태: ${response.status}`],
+          };
+        }
         if (!response.ok || !payload.ok) {
           reportPreviewOutput.textContent = (payload.errors || ["미리보기를 만들 수 없습니다."]).join("\n");
           return;
