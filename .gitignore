@@ -12,3 +12,4 @@ data/
 aitest/
 .venv/
 .vscode/tasks.json
+deploy_once.sh

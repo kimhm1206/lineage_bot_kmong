@@ -240,12 +240,41 @@
       {% if settings_active_tab != "reports" %}hidden{% endif %}
     >
       <header class="panel-header">
-        <h2>통계 알림 설정</h2>
-        <span class="panel-caption">새 알림</span>
+        <h2>통계 알림 빌더</h2>
+        <span class="panel-caption">저장 전 미리보기</span>
       </header>
 
       <div class="report-builder-shell">
         <div class="report-field-board">
+          <div class="report-field-group">
+            <div class="report-field-heading">기본</div>
+            <div class="report-field-grid compact-report-grid">
+              <label class="field">
+                <span>알림 이름</span>
+                <input
+                  name="report_name"
+                  type="text"
+                  value="{{ report_form.report_name }}"
+                  maxlength="80"
+                  data-report-part
+                  {% if not auth.selected_server.can_manage %}disabled{% endif %}
+                >
+              </label>
+
+              <label class="field">
+                <span>받을 채널</span>
+                <select name="channel_id" data-report-channel {% if not auth.selected_server.can_manage %}disabled{% endif %}>
+                  <option value="" data-label="채널">채널 선택</option>
+                  {% for channel in channels.text %}
+                    <option value="{{ channel.id }}" data-label="{{ channel.label }}" {% if report_form.channel_id|string == channel.id %}selected{% endif %}>
+                      # {{ channel.label }}
+                    </option>
+                  {% endfor %}
+                </select>
+              </label>
+            </div>
+          </div>
+
           <div class="report-field-group">
             <div class="report-field-heading">스케줄</div>
             <div class="report-field-grid compact-report-grid">
@@ -291,8 +320,19 @@
           </div>
 
           <div class="report-field-group">
-            <div class="report-field-heading">통계</div>
-            <div class="report-field-grid">
+            <div class="report-field-heading">데이터</div>
+            <div class="report-field-grid report-field-grid-wide">
+              <label class="field">
+                <span>데이터</span>
+                <select name="dataset" data-report-part {% if not auth.selected_server.can_manage %}disabled{% endif %}>
+                  {% for option in report_options.datasets %}
+                    <option value="{{ option.value }}" data-label="{{ option.label }}" {% if report_form.dataset == option.value %}selected{% endif %}>
+                      {{ option.label }}
+                    </option>
+                  {% endfor %}
+                </select>
+              </label>
+
               <label class="field">
                 <span>조회 기간</span>
                 <select name="period_type" data-report-part {% if not auth.selected_server.can_manage %}disabled{% endif %}>
@@ -305,10 +345,10 @@
               </label>
 
               <label class="field">
-                <span>통계 대상</span>
-                <select name="subject_type" data-report-part {% if not auth.selected_server.can_manage %}disabled{% endif %}>
-                  {% for option in report_options.subjects %}
-                    <option value="{{ option.value }}" data-label="{{ option.label }}" {% if report_form.subject_type == option.value %}selected{% endif %}>
+                <span>묶음</span>
+                <select name="group_by" data-report-part {% if not auth.selected_server.can_manage %}disabled{% endif %}>
+                  {% for option in report_options.groups %}
+                    <option value="{{ option.value }}" data-label="{{ option.label }}" {% if report_form.group_by == option.value %}selected{% endif %}>
                       {{ option.label }}
                     </option>
                   {% endfor %}
@@ -316,10 +356,10 @@
               </label>
 
               <label class="field">
-                <span>결과 형태</span>
-                <select name="result_type" data-report-part {% if not auth.selected_server.can_manage %}disabled{% endif %}>
-                  {% for option in report_options.results %}
-                    <option value="{{ option.value }}" data-label="{{ option.label }}" {% if report_form.result_type == option.value %}selected{% endif %}>
+                <span>랭킹 대상</span>
+                <select name="rank_target" data-report-part {% if not auth.selected_server.can_manage %}disabled{% endif %}>
+                  {% for option in report_options.rank_targets %}
+                    <option value="{{ option.value }}" data-label="{{ option.label }}" {% if report_form.rank_target == option.value %}selected{% endif %}>
                       {{ option.label }}
                     </option>
                   {% endfor %}
@@ -327,15 +367,63 @@
               </label>
 
               <label class="field">
-                <span>받을 채널</span>
-                <select name="channel_id" data-report-channel {% if not auth.selected_server.can_manage %}disabled{% endif %}>
-                  <option value="" data-label="채널">채널 선택</option>
-                  {% for channel in channels.text %}
-                    <option value="{{ channel.id }}" data-label="{{ channel.label }}" {% if report_form.channel_id|string == channel.id %}selected{% endif %}>
-                      # {{ channel.label }}
+                <span>집계값</span>
+                <select name="metric" data-report-part {% if not auth.selected_server.can_manage %}disabled{% endif %}>
+                  {% for option in report_options.metrics %}
+                    <option value="{{ option.value }}" data-label="{{ option.label }}" {% if report_form.metric == option.value %}selected{% endif %}>
+                      {{ option.label }}
                     </option>
                   {% endfor %}
                 </select>
+              </label>
+
+              <label class="field">
+                <span>표시 개수</span>
+                <input
+                  name="limit"
+                  type="number"
+                  min="1"
+                  max="30"
+                  value="{{ report_form.limit }}"
+                  data-report-part
+                  {% if not auth.selected_server.can_manage %}disabled{% endif %}
+                >
+              </label>
+            </div>
+          </div>
+
+          <div class="report-field-group">
+            <div class="report-field-heading">출력 포맷</div>
+            <div class="report-field-grid report-format-grid">
+              <label class="field">
+                <span>출력 방식</span>
+                <select name="output" data-report-part {% if not auth.selected_server.can_manage %}disabled{% endif %}>
+                  {% for option in report_options.outputs %}
+                    <option value="{{ option.value }}" data-label="{{ option.label }}" {% if report_form.output == option.value %}selected{% endif %}>
+                      {{ option.label }}
+                    </option>
+                  {% endfor %}
+                </select>
+              </label>
+
+              <label class="field">
+                <span>제목</span>
+                <input name="title" type="text" value="{{ report_form.title }}" maxlength="100" data-report-part {% if not auth.selected_server.can_manage %}disabled{% endif %}>
+              </label>
+
+              <label class="field">
+                <span>그룹 제목</span>
+                <input name="group_header" type="text" value="{{ report_form.group_header }}" maxlength="80" data-report-part {% if not auth.selected_server.can_manage %}disabled{% endif %}>
+              </label>
+
+              <label class="field">
+                <span>행 템플릿</span>
+                <input name="row_template" type="text" value="{{ report_form.row_template }}" maxlength="100" data-report-part {% if not auth.selected_server.can_manage %}disabled{% endif %}>
+              </label>
+
+              <label class="field">
+                <span>빈 결과 문구</span>
+                <input name="empty_text" type="text" value="{{ report_form.empty_text }}" maxlength="80" data-report-part {% if not auth.selected_server.can_manage %}disabled{% endif %}>
               </label>
             </div>
           </div>
@@ -344,14 +432,17 @@
         <aside class="report-preview-rail">
           <div class="report-preview-topline">
             <span class="status status-on">ON</span>
-            <span>미리보기</span>
+            <span>Discord 미리보기</span>
           </div>
-          <div class="sentence-preview" data-report-preview>
-            매일 00시에 최근 일주일의 유저별 전체 통계를 #채널로 받습니다.
+          <pre class="report-preview-box" data-report-preview-output>미리보기를 불러오는 중입니다.</pre>
+          <div class="report-builder-actions">
+            <button class="secondary-button" type="button" data-report-preview-refresh {% if not auth.selected_server.can_manage %}disabled{% endif %}>
+              미리보기 새로고침
+            </button>
+            <button class="primary-button report-add-button" type="submit" {% if not auth.selected_server.can_manage %}disabled{% endif %}>
+              알림 추가
+            </button>
           </div>
-          <button class="primary-button report-add-button" type="submit" {% if not auth.selected_server.can_manage %}disabled{% endif %}>
-            알림 추가
-          </button>
         </aside>
       </div>
     </form>
@@ -369,9 +460,11 @@
                 <span class="status {% if report.status == 'on' %}status-on{% else %}status-off{% endif %}">
                   {{ "ON" if report.status == "on" else "OFF" }}
                 </span>
-                <strong>{{ report.sentence }}</strong>
+                <strong>{{ report.report_name }}</strong>
               </div>
               <div class="report-card-meta">
+                <span>{{ report.sentence }}</span>
+                <span>{{ report.output_label }}</span>
                 <span>#{{ report.report_setting_id }}</span>
                 <span>등록 {{ report.created_by_name }}</span>
                 <span>다음 발송 {{ report.next_run_at or "예약 대기" }}</span>
@@ -531,21 +624,12 @@
     window.addEventListener("hashchange", () => activateSettingsTab(tabFromHash()));
 
     const reportBuilder = document.querySelector("[data-report-builder]");
-    const reportPreview = document.querySelector("[data-report-preview]");
+    const reportPreviewOutput = document.querySelector("[data-report-preview-output]");
+    const reportPreviewRefresh = document.querySelector("[data-report-preview-refresh]");
     const reportTime = reportBuilder?.querySelector("[data-report-time]");
     const reportHour = reportBuilder?.querySelector("[data-report-hour]");
     const reportMinute = reportBuilder?.querySelector("[data-report-minute]");
-
-    function selectedLabel(selector) {
-      const select = reportBuilder?.querySelector(selector);
-      const option = select?.selectedOptions?.[0];
-      return option?.dataset.label || option?.textContent?.trim() || "";
-    }
-
-    function formatRunTime(value) {
-      const [hour = "00", minute = "00"] = String(value || "00:00").split(":");
-      return minute === "00" ? `${hour}시` : `${hour}시 ${minute}분`;
-    }
+    let reportPreviewTimer = null;
 
     function syncReportTime() {
       if (!reportTime || !reportHour || !reportMinute) {
@@ -554,24 +638,38 @@
       reportTime.value = `${reportHour.value}:${reportMinute.value}`;
     }
 
-    function updateReportPreview() {
-      if (!reportBuilder || !reportPreview) {
+    async function updateReportPreview() {
+      if (!reportBuilder || !reportPreviewOutput) {
         return;
       }
       syncReportTime();
-      const frequency = selectedLabel("[name='frequency']");
-      const runTime = formatRunTime(reportBuilder.querySelector("[name='run_time']")?.value);
-      const period = selectedLabel("[name='period_type']");
-      const subject = selectedLabel("[name='subject_type']");
-      const result = selectedLabel("[name='result_type']");
-      const channel = selectedLabel("[name='channel_id']") || "채널";
-      reportPreview.textContent = `${frequency} ${runTime}에 ${period}의 ${subject} ${result} 통계를 #${channel}로 받습니다.`;
+      reportPreviewOutput.textContent = "미리보기를 불러오는 중입니다.";
+      try {
+        const response = await fetch(`/settings/reports/preview?guild_id={{ auth.selected_guild_id }}`, {
+          method: "POST",
+          body: new URLSearchParams(new FormData(reportBuilder)),
+        });
+        const payload = await response.json();
+        if (!response.ok || !payload.ok) {
+          reportPreviewOutput.textContent = (payload.errors || ["미리보기를 만들 수 없습니다."]).join("\n");
+          return;
+        }
+        reportPreviewOutput.textContent = payload.preview || "표시할 내용이 없습니다.";
+      } catch (error) {
+        reportPreviewOutput.textContent = "미리보기 요청에 실패했습니다.";
+      }
+    }
+
+    function queueReportPreview() {
+      window.clearTimeout(reportPreviewTimer);
+      reportPreviewTimer = window.setTimeout(updateReportPreview, 250);
     }
 
     reportBuilder?.querySelectorAll("select, input").forEach((control) => {
-      control.addEventListener("change", updateReportPreview);
-      control.addEventListener("input", updateReportPreview);
+      control.addEventListener("change", queueReportPreview);
+      control.addEventListener("input", queueReportPreview);
     });
+    reportPreviewRefresh?.addEventListener("click", updateReportPreview);
     updateReportPreview();
   </script>
 {% endblock %}

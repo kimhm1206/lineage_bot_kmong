@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from datetime import datetime, time, timedelta, timezone
 from typing import Any
 
@@ -19,17 +20,18 @@ FREQUENCY_DAYS = {
     "weekly": 7,
 }
 PERIOD_LABELS = {
+    "today": "오늘",
     "recent_7_days": "최근 일주일",
     "yesterday": "전날",
     "recent_3_days": "최근 3일",
+    "this_week": "이번 주",
+    "this_month": "이번 달",
 }
-SUBJECT_LABELS = {
-    "user": "유저별",
-    "alliance": "혈맹별",
-}
-RESULT_LABELS = {
-    "ranking": "순위",
-    "all": "전체",
+FREQUENCY_LABELS = {
+    "daily": "매일",
+    "every_3_days": "3일마다",
+    "weekly": "일주일마다",
+    "monthly": "매월",
 }
 
 
@@ -85,10 +87,11 @@ async def _schedule_report(bot: discord.Bot, report: dict[str, Any]) -> bool:
     next_run_at = _parse_datetime(report.get("next_run_at"))
     scheduled_at = next_run_at
     if next_run_at is None:
+        schedule = _report_schedule(report)
         next_run_at = _next_run_from_now(
             now,
-            str(report["run_time"] or "00:00"),
-            str(report["frequency"]),
+            str(schedule.get("time") or report["run_time"] or "00:00"),
+            str(schedule.get("type") or report["frequency"] or "daily"),
         )
         scheduled_at = next_run_at
         await asyncio.to_thread(
@@ -149,8 +152,8 @@ async def _run_report_job(
 
     following_run = _next_run_from_now(
         now,
-        str(report["run_time"] or "00:00"),
-        str(report["frequency"]),
+        str(_report_schedule(report).get("time") or report["run_time"] or "00:00"),
+        str(_report_schedule(report).get("type") or report["frequency"] or "daily"),
     )
     await asyncio.to_thread(
         database.mark_scheduled_report_sent,
@@ -194,85 +197,94 @@ async def _build_report_message(
     guild_id = int(report["guild_id"])
     guild = bot.get_guild(guild_id)
     guild_name = guild.name if guild is not None else str(guild_id)
-    start_at, end_at = _period_bounds(str(report["period_type"]), now)
-    subject_type = str(report["subject_type"])
-    result_type = str(report["result_type"])
+    schedule = _report_schedule(report)
+    query = _report_query(report)
+    render = _report_render(report)
+    start_at, end_at = _period_bounds(str(query.get("period") or "today"), now)
+    rows = await asyncio.to_thread(
+        database.get_report_attendance_ranking,
+        guild_id,
+        _format_datetime(start_at),
+        _format_datetime(end_at),
+        group_by=str(query.get("group_by") or "alliance"),
+        rank_target=str(query.get("rank_target") or "user"),
+        metric=str(query.get("metric") or "attendance_count"),
+        limit=int(query.get("limit") or 10),
+    )
+    return _format_report_message(rows, schedule, query, render, guild_name, start_at, end_at)
 
-    if subject_type == "alliance":
-        rows = await asyncio.to_thread(
-            database.get_alliance_attendance_stats,
-            guild_id,
-            _format_datetime(start_at),
-            _format_datetime(end_at),
-            None,
-        )
-        table = _format_alliance_rows(rows, result_type)
-        total_count = len(rows)
-    else:
-        fetch_limit = 30 if result_type == "all" else 20
-        rows = await asyncio.to_thread(
-            database.get_user_attendance_stats,
-            guild_id,
-            _format_datetime(start_at),
-            _format_datetime(end_at),
-            None,
-            None,
-            fetch_limit,
-        )
-        table = _format_user_rows(rows, result_type)
-        total_count = len(rows)
 
-    title_suffix = "랭킹" if result_type == "ranking" else "전체"
+def _format_report_message(
+    rows: list[dict[str, Any]],
+    schedule: dict[str, Any],
+    query: dict[str, Any],
+    render: dict[str, Any],
+    guild_name: str,
+    start_at: datetime,
+    end_at: datetime,
+) -> str:
+    title = str(render.get("title") or "통계 알림")
+    group_template = str(render.get("group_header") or "{group_name}")
+    row_template = str(render.get("row") or "{rank}. {label} - {value}회")
+    empty_text = str(render.get("empty") or "출석 기록 없음")
+    output = str(render.get("output") or "grouped_ranking")
     lines = [
-        f"**통계 알림 - {SUBJECT_LABELS.get(subject_type, subject_type)} {title_suffix}**",
+        f"**{title}**",
         f"서버: {guild_name}",
         (
             f"기간: {_format_datetime(start_at)} ~ "
             f"{_format_datetime(end_at)}"
         ),
         (
-            f"설정: {PERIOD_LABELS.get(str(report['period_type']), str(report['period_type']))} · "
-            f"{RESULT_LABELS.get(result_type, result_type)} · "
-            f"#{report['channel_name']}"
+            f"설정: {PERIOD_LABELS.get(str(query.get('period')), str(query.get('period')))} · "
+            f"{FREQUENCY_LABELS.get(str(schedule.get('type')), str(schedule.get('type')))} "
+            f"{_format_run_time(str(schedule.get('time') or '00:00'))}"
         ),
-        f"표시: {total_count}건",
         "",
-        "```text",
-        table,
-        "```",
     ]
-    if result_type == "all" and total_count >= 30 and subject_type == "user":
-        lines.append("Discord 메시지 길이를 고려해 최대 30명까지 표시합니다.")
-    return "\n".join(lines)
-
-
-def _format_user_rows(rows: list[dict[str, Any]], result_type: str) -> str:
     if not rows:
-        return "조건에 맞는 출석 기록이 없습니다."
-    limit = 30 if result_type == "all" else 20
-    lines = ["순위 | 닉네임 | 혈맹 | 출석", "--- | --- | --- | ---"]
-    for index, row in enumerate(rows[:limit], start=1):
-        nickname = _clip(str(row.get("discord_nickname") or "-"), 18)
-        alliance = _clip(str(row.get("alliance_name") or "미분류"), 10)
-        count = int(row.get("attendance_count") or 0)
-        lines.append(f"{index} | {nickname} | {alliance} | {count}회")
-    return "\n".join(lines)
+        lines.append(empty_text)
+        return "\n".join(lines)
+
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        grouped.setdefault(str(row.get("group_name") or "전체"), []).append(row)
+
+    if output == "ranking" or str(query.get("group_by")) == "none":
+        lines.append("```")
+        lines.extend(_format_report_rows(rows, row_template))
+        lines.append("```")
+        return "\n".join(lines)
+
+    for group_name, group_rows in grouped.items():
+        lines.append(_safe_template(group_template, group_name=group_name))
+        lines.append("```")
+        lines.extend(_format_report_rows(group_rows, row_template))
+        lines.append("```")
+        lines.append("")
+    return "\n".join(lines).strip()
 
 
-def _format_alliance_rows(rows: list[dict[str, Any]], result_type: str) -> str:
-    if not rows:
-        return "조건에 맞는 혈맹 기록이 없습니다."
-    limit = 30 if result_type == "all" else 20
-    lines = ["순위 | 혈맹 | 회차 | 누적 | 인원", "--- | --- | --- | --- | ---"]
-    for index, row in enumerate(rows[:limit], start=1):
-        alliance = _clip(str(row.get("alliance_name") or "미분류"), 14)
-        session_count = int(row.get("session_count") or 0)
-        attendance_count = int(row.get("attendance_count") or 0)
-        user_count = int(row.get("unique_user_count") or 0)
+def _format_report_rows(rows: list[dict[str, Any]], row_template: str) -> list[str]:
+    lines = []
+    for index, row in enumerate(rows, start=1):
         lines.append(
-            f"{index} | {alliance} | {session_count} | {attendance_count} | {user_count}"
+            _safe_template(
+                row_template,
+                rank=int(row.get("rank") or index),
+                label=_clip(str(row.get("label") or "-"), 28),
+                value=int(row.get("value") or 0),
+                group_name=_clip(str(row.get("group_name") or "전체"), 18),
+            )
         )
-    return "\n".join(lines)
+    return lines
+
+
+def _safe_template(template: str, **values: Any) -> str:
+    try:
+        return template.format(**values)
+    except (KeyError, IndexError, ValueError):
+        return str(template)
 
 
 async def _send_chunked(channel: Any, content: str) -> None:
@@ -302,21 +314,112 @@ def _period_bounds(period_type: str, now: datetime) -> tuple[datetime, datetime]
         return _day_start(day), _day_end(day)
     if period_type == "recent_3_days":
         return _day_start(today - timedelta(days=2)), _day_end(today)
-    return _day_start(today - timedelta(days=6)), _day_end(today)
+    if period_type == "recent_7_days":
+        return _day_start(today - timedelta(days=6)), _day_end(today)
+    if period_type == "this_week":
+        return _day_start(today - timedelta(days=today.weekday())), _day_end(today)
+    if period_type == "this_month":
+        return _day_start(today.replace(day=1)), _day_end(today)
+    return _day_start(today), _day_end(today)
 
 
 def _next_run_from_now(now: datetime, run_time: str, frequency: str) -> datetime:
     run_clock = _parse_run_time(run_time)
     candidate = datetime.combine(now.date(), run_clock, tzinfo=KST)
+    if frequency == "monthly":
+        while candidate <= now:
+            candidate = _add_month(candidate)
+        return candidate
     interval = timedelta(days=FREQUENCY_DAYS.get(frequency, 1))
     while candidate <= now:
         candidate += interval
     return candidate
 
 
+def _add_month(value: datetime) -> datetime:
+    month = value.month + 1
+    year = value.year
+    if month > 12:
+        month = 1
+        year += 1
+    day = min(value.day, _last_day_of_month(year, month))
+    return value.replace(year=year, month=month, day=day)
+
+
+def _last_day_of_month(year: int, month: int) -> int:
+    if month == 12:
+        return 31
+    next_month = datetime(year, month + 1, 1, tzinfo=KST)
+    return int((next_month - timedelta(days=1)).day)
+
+
 def _parse_run_time(value: str) -> time:
     hour_text, _, minute_text = (value or "00:00").partition(":")
     return time(hour=int(hour_text or 0), minute=int(minute_text or 0))
+
+
+def _format_run_time(value: str) -> str:
+    hour_text, _, minute_text = (value or "00:00").partition(":")
+    hour = int(hour_text or 0)
+    minute = int(minute_text or 0)
+    if minute == 0:
+        return f"{hour:02d}시"
+    return f"{hour:02d}시 {minute:02d}분"
+
+
+def _report_schedule(report: dict[str, Any]) -> dict[str, Any]:
+    value = report.get("schedule_json")
+    parsed = _json_dict(value)
+    if parsed is not None:
+        return parsed
+    return {
+        "type": str(report.get("frequency") or "daily"),
+        "time": str(report.get("run_time") or "00:00"),
+        "timezone": "Asia/Seoul",
+    }
+
+
+def _report_query(report: dict[str, Any]) -> dict[str, Any]:
+    value = report.get("query_json")
+    parsed = _json_dict(value)
+    if parsed is not None:
+        return parsed
+    subject_type = str(report.get("subject_type") or "user")
+    return {
+        "dataset": "attendance",
+        "period": str(report.get("period_type") or "today"),
+        "group_by": "alliance" if subject_type == "alliance" else "none",
+        "rank_target": subject_type,
+        "metric": "attendance_count",
+        "limit": 10,
+    }
+
+
+def _report_render(report: dict[str, Any]) -> dict[str, Any]:
+    value = report.get("render_json")
+    parsed = _json_dict(value)
+    if parsed is not None:
+        return parsed
+    return {
+        "output": "grouped_ranking",
+        "title": str(report.get("report_name") or "통계 알림"),
+        "group_header": "{group_name}",
+        "row": "{rank}. {label} - {value}회",
+        "empty": "출석 기록 없음",
+    }
+
+
+def _json_dict(value: Any) -> dict[str, Any] | None:
+    if isinstance(value, dict):
+        return dict(value)
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return None
+        if isinstance(parsed, dict):
+            return parsed
+    return None
 
 
 def _parse_datetime(value: object) -> datetime | None:

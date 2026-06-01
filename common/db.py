@@ -193,6 +193,27 @@ class Database:
             limit,
         )
 
+    def get_report_attendance_ranking(
+        self,
+        guild_id: int,
+        start_at: str,
+        end_at: str,
+        *,
+        group_by: str,
+        rank_target: str,
+        metric: str,
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        return get_report_attendance_ranking(
+            guild_id,
+            start_at,
+            end_at,
+            group_by=group_by,
+            rank_target=rank_target,
+            metric=metric,
+            limit=limit,
+        )
+
     def get_attendance_export_rows(
         self,
         guild_id: int | None,
@@ -1146,6 +1167,7 @@ def get_active_scheduled_reports() -> list[dict[str, Any]]:
         SELECT
             report_setting_id,
             guild_id,
+            report_name,
             frequency,
             period_type,
             subject_type,
@@ -1153,6 +1175,9 @@ def get_active_scheduled_reports() -> list[dict[str, Any]]:
             run_time,
             channel_id,
             channel_name,
+            schedule_json,
+            query_json,
+            render_json,
             status,
             last_sent_at,
             next_run_at,
@@ -1174,6 +1199,7 @@ def get_active_scheduled_report(report_setting_id: int) -> dict[str, Any] | None
         SELECT
             report_setting_id,
             guild_id,
+            report_name,
             frequency,
             period_type,
             subject_type,
@@ -1181,6 +1207,9 @@ def get_active_scheduled_report(report_setting_id: int) -> dict[str, Any] | None
             run_time,
             channel_id,
             channel_name,
+            schedule_json,
+            query_json,
+            render_json,
             status,
             last_sent_at,
             next_run_at,
@@ -1192,6 +1221,121 @@ def get_active_scheduled_report(report_setting_id: int) -> dict[str, Any] | None
         (int(report_setting_id),),
     )
     return dict(row) if row else None
+
+
+def get_report_attendance_ranking(
+    guild_id: int,
+    start_at: str,
+    end_at: str,
+    *,
+    group_by: str,
+    rank_target: str,
+    metric: str,
+    limit: int,
+) -> list[dict[str, Any]]:
+    group_expr = "COALESCE(a.alliance_name, '미분류')" if group_by == "alliance" else "'전체'"
+    safe_limit = max(1, min(int(limit or 10), 50))
+
+    if rank_target == "alliance":
+        label_expr = "COALESCE(a.alliance_name, '미분류')"
+        value_expr = (
+            "COUNT(DISTINCT u.user_id)"
+            if metric == "unique_user_count"
+            else "COUNT(e.user_id)"
+        )
+        rows = _fetchall(
+            f"""
+            WITH ranked AS (
+                SELECT
+                    {group_expr} AS group_name,
+                    {label_expr} AS label,
+                    {value_expr} AS value,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY {group_expr}
+                        ORDER BY {value_expr} DESC, {label_expr} ASC
+                    ) AS rank
+                FROM attendance_sessions s
+                INNER JOIN attendance_entries e ON e.attendance_id = s.attendance_id
+                INNER JOIN users u ON u.user_id = e.user_id
+                LEFT JOIN alliances a ON a.alliance_id = u.alliance_id
+                WHERE s.guild_id = %s
+                  AND s.started_at >= %s
+                  AND s.started_at <= %s
+                GROUP BY {group_expr}, {label_expr}
+            )
+            SELECT group_name, label, value, rank
+            FROM ranked
+            WHERE rank <= %s
+            ORDER BY group_name ASC, rank ASC
+            """,
+            (guild_id, start_at, end_at, safe_limit),
+        )
+    elif metric == "unique_user_count":
+        rows = _fetchall(
+            f"""
+            WITH ranked AS (
+                SELECT
+                    {group_expr} AS group_name,
+                    u.discord_nickname AS label,
+                    1 AS value,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY {group_expr}
+                        ORDER BY u.discord_nickname ASC
+                    ) AS rank
+                FROM attendance_sessions s
+                INNER JOIN attendance_entries e ON e.attendance_id = s.attendance_id
+                INNER JOIN users u ON u.user_id = e.user_id
+                LEFT JOIN alliances a ON a.alliance_id = u.alliance_id
+                WHERE s.guild_id = %s
+                  AND s.started_at >= %s
+                  AND s.started_at <= %s
+                GROUP BY {group_expr}, u.user_id, u.discord_nickname
+            )
+            SELECT group_name, label, value, rank
+            FROM ranked
+            WHERE rank <= %s
+            ORDER BY group_name ASC, rank ASC
+            """,
+            (guild_id, start_at, end_at, safe_limit),
+        )
+    else:
+        rows = _fetchall(
+            f"""
+            WITH ranked AS (
+                SELECT
+                    {group_expr} AS group_name,
+                    u.discord_nickname AS label,
+                    COUNT(e.user_id) AS value,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY {group_expr}
+                        ORDER BY COUNT(e.user_id) DESC, u.discord_nickname ASC
+                    ) AS rank
+                FROM attendance_sessions s
+                INNER JOIN attendance_entries e ON e.attendance_id = s.attendance_id
+                INNER JOIN users u ON u.user_id = e.user_id
+                LEFT JOIN alliances a ON a.alliance_id = u.alliance_id
+                WHERE s.guild_id = %s
+                  AND s.started_at >= %s
+                  AND s.started_at <= %s
+                GROUP BY {group_expr}, u.user_id, u.discord_nickname
+            )
+            SELECT group_name, label, value, rank
+            FROM ranked
+            WHERE rank <= %s
+            ORDER BY group_name ASC, rank ASC
+            """,
+            (guild_id, start_at, end_at, safe_limit),
+        )
+
+    return [
+        {
+            "group_name": str(row["group_name"]),
+            "label": str(row["label"]),
+            "value": int(row["value"] or 0),
+            "rank": int(row["rank"] or 0),
+        }
+        for row in rows
+    ]
 
 
 def update_scheduled_report_next_run(
@@ -2573,9 +2717,16 @@ def _ensure_postgres_columns(cursor: psycopg2.extensions.cursor) -> None:
         "ALTER TABLE distribution_alliance_payouts ADD COLUMN IF NOT EXISTS payout_status TEXT NOT NULL DEFAULT 'unpaid'",
         "ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP",
         "ALTER TABLE scheduled_report_settings ADD COLUMN IF NOT EXISTS run_time TEXT NOT NULL DEFAULT '00:00'",
+        "ALTER TABLE scheduled_report_settings ADD COLUMN IF NOT EXISTS schedule_json JSONB NOT NULL DEFAULT '{\"type\":\"daily\",\"time\":\"00:00\",\"timezone\":\"Asia/Seoul\"}'::jsonb",
+        "ALTER TABLE scheduled_report_settings ADD COLUMN IF NOT EXISTS query_json JSONB NOT NULL DEFAULT '{\"dataset\":\"attendance\",\"period\":\"today\",\"group_by\":\"alliance\",\"rank_target\":\"user\",\"metric\":\"attendance_count\",\"limit\":10}'::jsonb",
+        "ALTER TABLE scheduled_report_settings ADD COLUMN IF NOT EXISTS render_json JSONB NOT NULL DEFAULT '{\"output\":\"grouped_ranking\",\"title\":\"금일 혈맹별 출석 랭킹 TOP10\",\"group_header\":\"{group_name}\",\"row\":\"{rank}. {label} - {value}회\",\"empty\":\"출석 기록 없음\"}'::jsonb",
     ]
     for sql in column_sql:
         cursor.execute(sql)
+    cursor.execute("ALTER TABLE scheduled_report_settings DROP CONSTRAINT IF EXISTS chk_scheduled_report_frequency")
+    cursor.execute("ALTER TABLE scheduled_report_settings DROP CONSTRAINT IF EXISTS chk_scheduled_report_period_type")
+    cursor.execute("ALTER TABLE scheduled_report_settings DROP CONSTRAINT IF EXISTS chk_scheduled_report_subject_type")
+    cursor.execute("ALTER TABLE scheduled_report_settings DROP CONSTRAINT IF EXISTS chk_scheduled_report_result_type")
     cursor.execute("ALTER TABLE items DROP CONSTRAINT IF EXISTS items_item_name_key")
     cursor.execute("DROP INDEX IF EXISTS idx_items_guild_name_unique")
     cursor.execute("DROP INDEX IF EXISTS idx_items_active_name_unique")
@@ -2822,19 +2973,22 @@ CREATE TABLE IF NOT EXISTS scheduled_report_settings (
     run_time TEXT NOT NULL DEFAULT '00:00',
     channel_id BIGINT NOT NULL,
     channel_name TEXT NOT NULL,
+    schedule_json JSONB NOT NULL DEFAULT '{"type":"daily","time":"00:00","timezone":"Asia/Seoul"}'::jsonb,
+    query_json JSONB NOT NULL DEFAULT '{"dataset":"attendance","period":"today","group_by":"alliance","rank_target":"user","metric":"attendance_count","limit":10}'::jsonb,
+    render_json JSONB NOT NULL DEFAULT '{"output":"grouped_ranking","title":"금일 혈맹별 출석 랭킹 TOP10","group_header":"{group_name}","row":"{rank}. {label} - {value}회","empty":"출석 기록 없음"}'::jsonb,
     status TEXT NOT NULL DEFAULT 'off',
     last_sent_at TEXT,
     next_run_at TEXT,
     memo TEXT,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT chk_scheduled_report_frequency
-        CHECK (frequency IN ('daily', 'every_3_days', 'weekly')),
+        CHECK (frequency IN ('daily', 'every_3_days', 'weekly', 'monthly')),
     CONSTRAINT chk_scheduled_report_period_type
-        CHECK (period_type IN ('recent_7_days', 'yesterday', 'recent_3_days')),
+        CHECK (period_type IN ('today', 'recent_7_days', 'yesterday', 'recent_3_days', 'this_week', 'this_month')),
     CONSTRAINT chk_scheduled_report_subject_type
         CHECK (subject_type IN ('user', 'alliance')),
     CONSTRAINT chk_scheduled_report_result_type
-        CHECK (result_type IN ('ranking', 'all')),
+        CHECK (result_type IN ('ranking', 'all', 'grouped_ranking')),
     CONSTRAINT chk_scheduled_report_status
         CHECK (status IN ('on', 'off', 'delete'))
 );

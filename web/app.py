@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import csv
 import io
+import json
 import os
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -76,19 +77,34 @@ REPORT_FREQUENCY_OPTIONS = (
     {"value": "daily", "label": "매일"},
     {"value": "every_3_days", "label": "3일마다"},
     {"value": "weekly", "label": "일주일마다"},
+    {"value": "monthly", "label": "매월"},
 )
 REPORT_PERIOD_OPTIONS = (
+    {"value": "today", "label": "오늘"},
+    {"value": "yesterday", "label": "어제"},
     {"value": "recent_7_days", "label": "최근 일주일"},
-    {"value": "yesterday", "label": "전날"},
     {"value": "recent_3_days", "label": "최근 3일"},
+    {"value": "this_week", "label": "이번 주"},
+    {"value": "this_month", "label": "이번 달"},
 )
-REPORT_SUBJECT_OPTIONS = (
-    {"value": "user", "label": "유저별"},
+REPORT_DATASET_OPTIONS = (
+    {"value": "attendance", "label": "출석"},
+)
+REPORT_GROUP_OPTIONS = (
     {"value": "alliance", "label": "혈맹별"},
+    {"value": "none", "label": "전체"},
 )
-REPORT_RESULT_OPTIONS = (
-    {"value": "ranking", "label": "순위"},
-    {"value": "all", "label": "전체"},
+REPORT_RANK_TARGET_OPTIONS = (
+    {"value": "user", "label": "유저"},
+    {"value": "alliance", "label": "혈맹"},
+)
+REPORT_METRIC_OPTIONS = (
+    {"value": "attendance_count", "label": "출석 횟수"},
+    {"value": "unique_user_count", "label": "참여 인원"},
+)
+REPORT_OUTPUT_OPTIONS = (
+    {"value": "grouped_ranking", "label": "그룹별 랭킹"},
+    {"value": "ranking", "label": "랭킹"},
 )
 REPORT_STATUS_OPTIONS = (
     {"value": "on", "label": "on"},
@@ -97,8 +113,11 @@ REPORT_STATUS_OPTIONS = (
 REPORT_OPTIONS = {
     "frequencies": REPORT_FREQUENCY_OPTIONS,
     "periods": REPORT_PERIOD_OPTIONS,
-    "subjects": REPORT_SUBJECT_OPTIONS,
-    "results": REPORT_RESULT_OPTIONS,
+    "datasets": REPORT_DATASET_OPTIONS,
+    "groups": REPORT_GROUP_OPTIONS,
+    "rank_targets": REPORT_RANK_TARGET_OPTIONS,
+    "metrics": REPORT_METRIC_OPTIONS,
+    "outputs": REPORT_OUTPUT_OPTIONS,
     "statuses": REPORT_STATUS_OPTIONS,
 }
 
@@ -1434,11 +1453,20 @@ def _settings_active_tab(saved: str | None) -> str:
 
 def _default_report_form() -> dict[str, str]:
     return {
+        "report_name": "일일 혈맹 출석 TOP10",
         "frequency": "daily",
-        "run_time": "00:00",
-        "period_type": "recent_7_days",
-        "subject_type": "user",
-        "result_type": "all",
+        "run_time": "23:59",
+        "period_type": "today",
+        "dataset": "attendance",
+        "group_by": "alliance",
+        "rank_target": "user",
+        "metric": "attendance_count",
+        "limit": "10",
+        "output": "grouped_ranking",
+        "title": "금일 혈맹별 출석 랭킹 TOP10",
+        "group_header": "{group_name}",
+        "row_template": "{rank}. {label} - {value}회",
+        "empty_text": "출석 기록 없음",
         "channel_id": "",
         "status": "on",
     }
@@ -1464,10 +1492,10 @@ def _option_label(options: tuple[dict[str, str], ...], value: str) -> str:
 
 def _report_sentence(report: dict[str, Any]) -> str:
     return (
-        f"{report['frequency_label']} {report['run_time_label']}에 "
-        f"{report['period_label']}의 "
-        f"{report['subject_label']} {report['result_label']} 통계를 "
-        f"#{report['channel_name']}로 받습니다."
+        f"{report['frequency_label']} {report['run_time_label']} · "
+        f"{report['period_label']} · {report['group_label']} "
+        f"{report['metric_label']} TOP {report['limit']} · "
+        f"#{report['channel_name']}"
     )
 
 
@@ -1478,6 +1506,314 @@ def _format_run_time(value: str | None) -> str:
     if minute == "00" or not minute:
         return f"{int(hour):02d}시"
     return f"{int(hour):02d}시 {int(minute):02d}분"
+
+
+def _report_json(value: Any, fallback: dict[str, Any]) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return dict(value)
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            parsed = None
+        if isinstance(parsed, dict):
+            return parsed
+    return dict(fallback)
+
+
+def _coerce_report_limit(raw_value: str | None, errors: list[str]) -> int:
+    try:
+        value = int(raw_value or 10)
+    except ValueError:
+        errors.append("표시 개수는 숫자로 입력해주세요.")
+        return 10
+    if value < 1 or value > 30:
+        errors.append("표시 개수는 1부터 30 사이로 입력해주세요.")
+        return max(1, min(value, 30))
+    return value
+
+
+def _clean_template_value(
+    raw_value: str | None,
+    fallback: str,
+    *,
+    max_length: int = 120,
+) -> str:
+    value = (raw_value or "").strip()
+    if not value:
+        return fallback
+    return value[:max_length]
+
+
+def _report_configs_from_form(
+    form_data: dict[str, Any],
+    errors: list[str],
+    *,
+    require_channel: bool,
+    channels: list[dict[str, Any]] | None = None,
+) -> tuple[dict[str, str], dict[str, Any], dict[str, Any], dict[str, Any], int | None, str | None]:
+    defaults = _default_report_form()
+    report_name = _clean_template_value(
+        form_data.get("report_name"),
+        defaults["report_name"],
+        max_length=80,
+    )
+    frequency = _validate_report_option(
+        "발송 주기",
+        form_data.get("frequency"),
+        REPORT_FREQUENCY_OPTIONS,
+        errors,
+    )
+    run_time = _validate_run_time(form_data.get("run_time"), errors)
+    period_type = _validate_report_option(
+        "조회 기간",
+        form_data.get("period_type"),
+        REPORT_PERIOD_OPTIONS,
+        errors,
+    )
+    dataset = _validate_report_option(
+        "데이터",
+        form_data.get("dataset"),
+        REPORT_DATASET_OPTIONS,
+        errors,
+    )
+    group_by = _validate_report_option(
+        "그룹",
+        form_data.get("group_by"),
+        REPORT_GROUP_OPTIONS,
+        errors,
+    )
+    rank_target = _validate_report_option(
+        "랭킹 대상",
+        form_data.get("rank_target"),
+        REPORT_RANK_TARGET_OPTIONS,
+        errors,
+    )
+    metric = _validate_report_option(
+        "집계값",
+        form_data.get("metric"),
+        REPORT_METRIC_OPTIONS,
+        errors,
+    )
+    output = _validate_report_option(
+        "출력 방식",
+        form_data.get("output"),
+        REPORT_OUTPUT_OPTIONS,
+        errors,
+    )
+    limit = _coerce_report_limit(form_data.get("limit"), errors)
+    title = _clean_template_value(
+        form_data.get("title"),
+        defaults["title"],
+        max_length=100,
+    )
+    group_header = _clean_template_value(
+        form_data.get("group_header"),
+        defaults["group_header"],
+        max_length=80,
+    )
+    row_template = _clean_template_value(
+        form_data.get("row_template"),
+        defaults["row_template"],
+        max_length=100,
+    )
+    empty_text = _clean_template_value(
+        form_data.get("empty_text"),
+        defaults["empty_text"],
+        max_length=80,
+    )
+
+    channel_id: int | None = None
+    channel_name: str | None = None
+    if require_channel:
+        channel_rows = channels or []
+        channel_id = _validate_channel_value(
+            "알람 채널",
+            form_data.get("channel_id"),
+            _channel_ids(channel_rows),
+            errors,
+        )
+        channel_name = (
+            _find_channel_name(channel_rows, channel_id)
+            if channel_id is not None
+            else None
+        )
+        if channel_id is None or channel_name is None:
+            errors.append("알람을 받을 Discord 텍스트 채널을 선택해주세요.")
+    elif form_data.get("channel_id"):
+        try:
+            channel_id = int(form_data.get("channel_id") or "")
+        except ValueError:
+            channel_id = None
+
+    schedule_json = {
+        "type": frequency,
+        "time": run_time,
+        "timezone": "Asia/Seoul",
+    }
+    query_json = {
+        "dataset": dataset,
+        "period": period_type,
+        "group_by": group_by,
+        "rank_target": rank_target,
+        "metric": metric,
+        "limit": limit,
+    }
+    render_json = {
+        "output": output,
+        "title": title,
+        "group_header": group_header,
+        "row": row_template,
+        "empty": empty_text,
+    }
+    report_form = {
+        "report_name": report_name,
+        "frequency": frequency,
+        "run_time": run_time,
+        "period_type": period_type,
+        "dataset": dataset,
+        "group_by": group_by,
+        "rank_target": rank_target,
+        "metric": metric,
+        "limit": str(limit),
+        "output": output,
+        "title": title,
+        "group_header": group_header,
+        "row_template": row_template,
+        "empty_text": empty_text,
+        "channel_id": str(channel_id or form_data.get("channel_id") or ""),
+        "status": "on",
+    }
+    return report_form, schedule_json, query_json, render_json, channel_id, channel_name
+
+
+def _report_period_bounds(period_type: str, now: datetime | None = None) -> tuple[datetime, datetime]:
+    current = (now or datetime.now(KST)).astimezone(KST)
+    today = current.date()
+    if period_type == "yesterday":
+        target = today - timedelta(days=1)
+        return _report_day_start(target), _report_day_end(target)
+    if period_type == "recent_3_days":
+        return _report_day_start(today - timedelta(days=2)), _report_day_end(today)
+    if period_type == "recent_7_days":
+        return _report_day_start(today - timedelta(days=6)), _report_day_end(today)
+    if period_type == "this_week":
+        return _report_day_start(today - timedelta(days=today.weekday())), _report_day_end(today)
+    if period_type == "this_month":
+        return _report_day_start(today.replace(day=1)), _report_day_end(today)
+    return _report_day_start(today), _report_day_end(today)
+
+
+def _report_day_start(value: Any) -> datetime:
+    return datetime.combine(value, datetime.min.time(), tzinfo=KST)
+
+
+def _report_day_end(value: Any) -> datetime:
+    return datetime.combine(value, datetime.max.time().replace(microsecond=0), tzinfo=KST)
+
+
+def _report_format_datetime(value: datetime) -> str:
+    return value.astimezone(KST).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _render_report_preview(
+    guild_id: int,
+    schedule_json: dict[str, Any],
+    query_json: dict[str, Any],
+    render_json: dict[str, Any],
+    *,
+    guild_name: str | None = None,
+) -> str:
+    start_at, end_at = _report_period_bounds(str(query_json.get("period") or "today"))
+    rows = database.get_report_attendance_ranking(
+        guild_id,
+        _report_format_datetime(start_at),
+        _report_format_datetime(end_at),
+        group_by=str(query_json.get("group_by") or "alliance"),
+        rank_target=str(query_json.get("rank_target") or "user"),
+        metric=str(query_json.get("metric") or "attendance_count"),
+        limit=int(query_json.get("limit") or 10),
+    )
+    return _format_report_message(
+        rows,
+        schedule_json,
+        query_json,
+        render_json,
+        guild_name=guild_name,
+        start_at=start_at,
+        end_at=end_at,
+    )
+
+
+def _format_report_message(
+    rows: list[dict[str, Any]],
+    schedule_json: dict[str, Any],
+    query_json: dict[str, Any],
+    render_json: dict[str, Any],
+    *,
+    guild_name: str | None,
+    start_at: datetime,
+    end_at: datetime,
+) -> str:
+    title = str(render_json.get("title") or "통계 알림")
+    group_template = str(render_json.get("group_header") or "{group_name}")
+    row_template = str(render_json.get("row") or "{rank}. {label} - {value}회")
+    empty_text = str(render_json.get("empty") or "출석 기록 없음")
+    output = str(render_json.get("output") or "grouped_ranking")
+    schedule_text = (
+        f"{_option_label(REPORT_FREQUENCY_OPTIONS, str(schedule_json.get('type') or 'daily'))} "
+        f"{_format_run_time(str(schedule_json.get('time') or '00:00'))}"
+    )
+    lines = [
+        f"**{title}**",
+        f"서버: {guild_name or '선택 서버'}",
+        f"기간: {_report_format_datetime(start_at)} ~ {_report_format_datetime(end_at)}",
+        f"예약: {schedule_text}",
+        "",
+    ]
+    if not rows:
+        lines.append(empty_text)
+        return "\n".join(lines)
+
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        grouped.setdefault(str(row.get("group_name") or "전체"), []).append(row)
+
+    if output == "ranking" or str(query_json.get("group_by")) == "none":
+        lines.append("```")
+        lines.extend(_format_report_rows(rows, row_template))
+        lines.append("```")
+        return "\n".join(lines)
+
+    for group_name, group_rows in grouped.items():
+        lines.append(_safe_report_template(group_template, group_name=group_name))
+        lines.append("```")
+        lines.extend(_format_report_rows(group_rows, row_template))
+        lines.append("```")
+        lines.append("")
+    return "\n".join(lines).strip()
+
+
+def _format_report_rows(rows: list[dict[str, Any]], row_template: str) -> list[str]:
+    lines = []
+    for index, row in enumerate(rows, start=1):
+        lines.append(
+            _safe_report_template(
+                row_template,
+                rank=int(row.get("rank") or index),
+                label=str(row.get("label") or "-"),
+                value=int(row.get("value") or 0),
+                group_name=str(row.get("group_name") or "전체"),
+            )
+        )
+    return lines
+
+
+def _safe_report_template(template: str, **values: Any) -> str:
+    try:
+        return template.format(**values)
+    except (KeyError, IndexError, ValueError):
+        return str(template)
 
 
 def _decimal_from_form(
@@ -1705,6 +2041,9 @@ def _load_report_settings(guild_id: int) -> list[dict[str, Any]]:
             r.run_time,
             r.channel_id,
             r.channel_name,
+            r.schedule_json,
+            r.query_json,
+            r.render_json,
             r.status,
             r.last_sent_at,
             r.next_run_at,
@@ -1729,16 +2068,55 @@ def _load_report_settings(guild_id: int) -> list[dict[str, Any]]:
     )
     reports: list[dict[str, Any]] = []
     for row in rows:
+        schedule_json = _report_json(
+            row.get("schedule_json"),
+            {"type": row["frequency"], "time": row["run_time"], "timezone": "Asia/Seoul"},
+        )
+        query_json = _report_json(
+            row.get("query_json"),
+            {
+                "dataset": "attendance",
+                "period": row["period_type"],
+                "group_by": "alliance" if row["subject_type"] == "alliance" else "none",
+                "rank_target": row["subject_type"],
+                "metric": "attendance_count",
+                "limit": 10,
+            },
+        )
+        render_json = _report_json(
+            row.get("render_json"),
+            {
+                "output": "ranking" if row["result_type"] == "ranking" else "grouped_ranking",
+                "title": row["report_name"] or "통계 알림",
+                "group_header": "{group_name}",
+                "row": "{rank}. {label} - {value}회",
+                "empty": "출석 기록 없음",
+            },
+        )
+        frequency = str(schedule_json.get("type") or row["frequency"] or "daily")
+        run_time = str(schedule_json.get("time") or row["run_time"] or "00:00")
+        period_type = str(query_json.get("period") or row["period_type"] or "today")
+        group_by = str(query_json.get("group_by") or "alliance")
+        rank_target = str(query_json.get("rank_target") or row["subject_type"] or "user")
+        metric = str(query_json.get("metric") or "attendance_count")
+        output = str(render_json.get("output") or "grouped_ranking")
+        limit = int(query_json.get("limit") or 10)
         report = {
             "report_setting_id": int(row["report_setting_id"]),
-            "frequency": str(row["frequency"]),
-            "period_type": str(row["period_type"]),
-            "subject_type": str(row["subject_type"]),
-            "result_type": str(row["result_type"]),
-            "run_time": str(row["run_time"] or "00:00"),
-            "run_time_label": _format_run_time(str(row["run_time"] or "00:00")),
+            "report_name": str(row["report_name"] or "통계 알림"),
+            "frequency": frequency,
+            "period_type": period_type,
+            "dataset": str(query_json.get("dataset") or "attendance"),
+            "group_by": group_by,
+            "rank_target": rank_target,
+            "metric": metric,
+            "output": output,
+            "limit": limit,
+            "run_time": run_time,
+            "run_time_label": _format_run_time(run_time),
             "channel_id": row["channel_id"],
             "channel_name": str(row["channel_name"]),
+            "title": str(render_json.get("title") or row["report_name"] or "통계 알림"),
             "status": str(row["status"]),
             "created_by_discord_id": row["created_by_discord_id"],
             "updated_by_discord_id": row["updated_by_discord_id"],
@@ -1749,19 +2127,27 @@ def _load_report_settings(guild_id: int) -> list[dict[str, Any]]:
             "updated_at": row["updated_at"],
             "frequency_label": _option_label(
                 REPORT_FREQUENCY_OPTIONS,
-                str(row["frequency"]),
+                frequency,
             ),
             "period_label": _option_label(
                 REPORT_PERIOD_OPTIONS,
-                str(row["period_type"]),
+                period_type,
             ),
-            "subject_label": _option_label(
-                REPORT_SUBJECT_OPTIONS,
-                str(row["subject_type"]),
+            "group_label": _option_label(
+                REPORT_GROUP_OPTIONS,
+                group_by,
             ),
-            "result_label": _option_label(
-                REPORT_RESULT_OPTIONS,
-                str(row["result_type"]),
+            "rank_target_label": _option_label(
+                REPORT_RANK_TARGET_OPTIONS,
+                rank_target,
+            ),
+            "metric_label": _option_label(
+                REPORT_METRIC_OPTIONS,
+                metric,
+            ),
+            "output_label": _option_label(
+                REPORT_OUTPUT_OPTIONS,
+                output,
             ),
         }
         report["sentence"] = _report_sentence(report)
@@ -3308,55 +3694,19 @@ async def create_report_setting(
     if channel_error:
         errors.append("알람을 받을 채널 목록을 확인할 수 없습니다.")
 
-    frequency = _validate_report_option(
-        "발송 주기",
-        form_data.get("frequency"),
-        REPORT_FREQUENCY_OPTIONS,
+    (
+        report_form,
+        schedule_json,
+        query_json,
+        render_json,
+        channel_id,
+        channel_name,
+    ) = _report_configs_from_form(
+        form_data,
         errors,
+        require_channel=True,
+        channels=channels["text"],
     )
-    run_time = _validate_run_time(form_data.get("run_time"), errors)
-    period_type = _validate_report_option(
-        "조회 기간",
-        form_data.get("period_type"),
-        REPORT_PERIOD_OPTIONS,
-        errors,
-    )
-    subject_type = _validate_report_option(
-        "통계 대상",
-        form_data.get("subject_type"),
-        REPORT_SUBJECT_OPTIONS,
-        errors,
-    )
-    result_type = _validate_report_option(
-        "결과 형태",
-        form_data.get("result_type"),
-        REPORT_RESULT_OPTIONS,
-        errors,
-    )
-    status = "on"
-    channel_id = _validate_channel_value(
-        "알람 채널",
-        form_data.get("channel_id"),
-        _channel_ids(channels["text"]),
-        errors,
-    )
-    channel_name = (
-        _find_channel_name(channels["text"], channel_id)
-        if channel_id is not None
-        else None
-    )
-    if channel_id is None or channel_name is None:
-        errors.append("알람을 받을 Discord 텍스트 채널을 선택해주세요.")
-
-    report_form = {
-        "frequency": frequency,
-        "run_time": run_time,
-        "period_type": period_type,
-        "subject_type": subject_type,
-        "result_type": result_type,
-        "channel_id": str(channel_id or ""),
-        "status": status,
-    }
     guild_settings = database.get_settings(selected_guild_id)
     if errors:
         return _render(
@@ -3387,6 +3737,7 @@ async def create_report_setting(
                     guild_id,
                     created_by_discord_id,
                     updated_by_discord_id,
+                    report_name,
                     frequency,
                     run_time,
                     period_type,
@@ -3394,22 +3745,29 @@ async def create_report_setting(
                     result_type,
                     channel_id,
                     channel_name,
+                    schedule_json,
+                    query_json,
+                    render_json,
                     status
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     selected_guild_id,
                     int(auth["user"]["id"]),
                     int(auth["user"]["id"]),
-                    frequency,
-                    run_time,
-                    period_type,
-                    subject_type,
-                    result_type,
+                    report_form["report_name"],
+                    schedule_json["type"],
+                    schedule_json["time"],
+                    query_json["period"],
+                    query_json["rank_target"],
+                    render_json["output"],
                     channel_id,
                     channel_name,
-                    status,
+                    Json(schedule_json),
+                    Json(query_json),
+                    Json(render_json),
+                    "on",
                 ),
             )
         connection.commit()
@@ -3419,6 +3777,44 @@ async def create_report_setting(
         f"/settings?guild_id={selected_guild_id}&saved=report",
         status_code=303,
     )
+
+
+@app.post("/settings/reports/preview")
+async def preview_report_setting(
+    request: Request,
+    guild_id: str | None = None,
+):
+    auth = _auth_context(request, guild_id)
+    if not auth:
+        return JSONResponse({"ok": False, "errors": ["로그인이 필요합니다."]}, status_code=401)
+
+    selected_guild_id = int(auth["selected_guild_id"])
+    if not _can_manage_selected_server(auth):
+        return JSONResponse({"ok": False, "errors": ["권한이 없습니다."]}, status_code=403)
+
+    body = (await request.body()).decode("utf-8")
+    form_data = {
+        key: values[-1] if values else ""
+        for key, values in parse_qs(body, keep_blank_values=True).items()
+    }
+    errors: list[str] = []
+    _, schedule_json, query_json, render_json, _, _ = _report_configs_from_form(
+        form_data,
+        errors,
+        require_channel=False,
+    )
+    if errors:
+        return JSONResponse({"ok": False, "errors": errors}, status_code=400)
+
+    guild_name = str(auth.get("selected_server", {}).get("name") or "")
+    preview = _render_report_preview(
+        selected_guild_id,
+        schedule_json,
+        query_json,
+        render_json,
+        guild_name=guild_name,
+    )
+    return JSONResponse({"ok": True, "preview": preview})
 
 
 @app.post("/settings/reports/status")
