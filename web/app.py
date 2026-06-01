@@ -1601,6 +1601,9 @@ def _report_configs_from_form(
         REPORT_OUTPUT_OPTIONS,
         errors,
     )
+    if rank_target == "alliance":
+        group_by = "none"
+        output = "ranking"
     limit = _coerce_report_limit(form_data.get("limit"), errors)
     title = _clean_template_value(
         form_data.get("title"),

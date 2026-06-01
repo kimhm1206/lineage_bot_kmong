@@ -1233,7 +1233,6 @@ def get_report_attendance_ranking(
     metric: str,
     limit: int,
 ) -> list[dict[str, Any]]:
-    group_expr = "COALESCE(a.alliance_name, '미분류')" if group_by == "alliance" else "'전체'"
     safe_limit = max(1, min(int(limit or 10), 50))
 
     if rank_target == "alliance":
@@ -1247,11 +1246,10 @@ def get_report_attendance_ranking(
             f"""
             WITH ranked AS (
                 SELECT
-                    {group_expr} AS group_name,
+                    '전체'::text AS group_name,
                     {label_expr} AS label,
                     {value_expr} AS value,
                     ROW_NUMBER() OVER (
-                        PARTITION BY {group_expr}
                         ORDER BY {value_expr} DESC, {label_expr} ASC
                     ) AS rank
                 FROM attendance_sessions s
@@ -1261,35 +1259,7 @@ def get_report_attendance_ranking(
                 WHERE s.guild_id = %s
                   AND s.started_at >= %s
                   AND s.started_at <= %s
-                GROUP BY {group_expr}, {label_expr}
-            )
-            SELECT group_name, label, value, rank
-            FROM ranked
-            WHERE rank <= %s
-            ORDER BY group_name ASC, rank ASC
-            """,
-            (guild_id, start_at, end_at, safe_limit),
-        )
-    elif metric == "unique_user_count":
-        rows = _fetchall(
-            f"""
-            WITH ranked AS (
-                SELECT
-                    {group_expr} AS group_name,
-                    u.discord_nickname AS label,
-                    1 AS value,
-                    ROW_NUMBER() OVER (
-                        PARTITION BY {group_expr}
-                        ORDER BY u.discord_nickname ASC
-                    ) AS rank
-                FROM attendance_sessions s
-                INNER JOIN attendance_entries e ON e.attendance_id = s.attendance_id
-                INNER JOIN users u ON u.user_id = e.user_id
-                LEFT JOIN alliances a ON a.alliance_id = u.alliance_id
-                WHERE s.guild_id = %s
-                  AND s.started_at >= %s
-                  AND s.started_at <= %s
-                GROUP BY {group_expr}, u.user_id, u.discord_nickname
+                GROUP BY {label_expr}
             )
             SELECT group_name, label, value, rank
             FROM ranked
@@ -1299,16 +1269,32 @@ def get_report_attendance_ranking(
             (guild_id, start_at, end_at, safe_limit),
         )
     else:
+        group_select = (
+            "COALESCE(a.alliance_name, '미분류')"
+            if group_by == "alliance"
+            else "'전체'::text"
+        )
+        partition_sql = (
+            f"PARTITION BY {group_select}"
+            if group_by == "alliance"
+            else ""
+        )
+        group_by_sql = (
+            f"{group_select}, u.user_id, u.discord_nickname"
+            if group_by == "alliance"
+            else "u.user_id, u.discord_nickname"
+        )
+        value_expr = "COUNT(e.user_id)"
         rows = _fetchall(
             f"""
             WITH ranked AS (
                 SELECT
-                    {group_expr} AS group_name,
+                    {group_select} AS group_name,
                     u.discord_nickname AS label,
-                    COUNT(e.user_id) AS value,
+                    {value_expr} AS value,
                     ROW_NUMBER() OVER (
-                        PARTITION BY {group_expr}
-                        ORDER BY COUNT(e.user_id) DESC, u.discord_nickname ASC
+                        {partition_sql}
+                        ORDER BY {value_expr} DESC, u.discord_nickname ASC
                     ) AS rank
                 FROM attendance_sessions s
                 INNER JOIN attendance_entries e ON e.attendance_id = s.attendance_id
@@ -1317,7 +1303,7 @@ def get_report_attendance_ranking(
                 WHERE s.guild_id = %s
                   AND s.started_at >= %s
                   AND s.started_at <= %s
-                GROUP BY {group_expr}, u.user_id, u.discord_nickname
+                GROUP BY {group_by_sql}
             )
             SELECT group_name, label, value, rank
             FROM ranked

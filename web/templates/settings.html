@@ -641,11 +641,29 @@
       reportTime.value = `${reportHour.value}:${reportMinute.value}`;
     }
 
+    function syncReportDependencies() {
+      if (!reportBuilder) {
+        return;
+      }
+      const rankTarget = reportBuilder.querySelector("[name='rank_target']");
+      const groupBy = reportBuilder.querySelector("[name='group_by']");
+      const output = reportBuilder.querySelector("[name='output']");
+      if (rankTarget?.value === "alliance") {
+        if (groupBy) {
+          groupBy.value = "none";
+        }
+        if (output) {
+          output.value = "ranking";
+        }
+      }
+    }
+
     async function updateReportPreview() {
       if (!reportBuilder || !reportPreviewOutput) {
         return;
       }
       syncReportTime();
+      syncReportDependencies();
       reportPreviewOutput.textContent = "미리보기를 불러오는 중입니다.";
       try {
         const response = await fetch(`/settings/reports/preview?guild_id={{ auth.selected_guild_id }}`, {
