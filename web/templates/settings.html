@@ -230,12 +230,8 @@
       </div>
     </article>
 
-    <form
-      id="report-settings"
+    <article
       class="panel settings-form report-builder"
-      method="post"
-      action="/settings/reports?guild_id={{ auth.selected_guild_id }}"
-      data-report-builder
       data-settings-panel="reports"
       {% if settings_active_tab != "reports" %}hidden{% endif %}
     >
@@ -244,7 +240,13 @@
         <span class="panel-caption">저장 전 미리보기</span>
       </header>
 
-      <div class="report-builder-shell">
+      <form
+        id="report-settings"
+        method="post"
+        action="/settings/reports?guild_id={{ auth.selected_guild_id }}"
+        data-report-builder
+      >
+        <div class="report-builder-shell">
         <div class="report-field-board">
           <div class="report-field-group">
             <div class="report-field-heading">기본</div>
@@ -444,8 +446,9 @@
             </button>
           </div>
         </aside>
-      </div>
-    </form>
+        </div>
+      </form>
+    </article>
 
     <article class="panel" data-settings-panel="reports" {% if settings_active_tab != "reports" %}hidden{% endif %}>
       <header class="panel-header">
