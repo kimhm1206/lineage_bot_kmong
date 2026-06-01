@@ -356,10 +356,16 @@ async def persist_attendance_snapshot(
     snapshot: AttendanceSnapshot,
 ) -> int:
     participants = []
+    alliance_by_role_id = await asyncio.to_thread(_alliance_role_map, guild.id)
     for discord_id in snapshot.participant_ids:
         member = guild.get_member(discord_id)
         nickname = member.display_name if member is not None else str(discord_id)
-        alliance_id = _resolve_alliance_id_from_nickname(nickname)
+        alliance_id = _resolve_alliance_id_from_member_roles(
+            member,
+            alliance_by_role_id,
+        )
+        if alliance_id is None:
+            alliance_id = _resolve_alliance_id_from_nickname(nickname)
         participants.append(
             {
                 "discord_id": discord_id,
@@ -488,6 +494,7 @@ def build_live_attendance_state(bot: discord.Bot, guild_id: int) -> dict[str, An
         }
 
     participant_times = _participant_times(state)
+    alliance_by_role_id = _alliance_role_map(guild_id)
     participants: list[dict[str, Any]] = []
     for discord_id in sorted(_participant_ids(state)):
         member = guild.get_member(discord_id) if guild is not None else None
@@ -496,7 +503,11 @@ def build_live_attendance_state(bot: discord.Bot, guild_id: int) -> dict[str, An
             {
                 "discord_id": discord_id,
                 "display_name": display_name,
-                "alliance_name": _resolve_alliance_name_from_nickname(display_name),
+                "alliance_name": _resolve_alliance_name_from_member(
+                    member,
+                    display_name,
+                    alliance_by_role_id,
+                ),
                 "joined_voice_at": "",
                 "attended_at": participant_times.get(discord_id, ""),
                 "source": "discord",
@@ -710,6 +721,60 @@ def _resolve_alliance_id_from_nickname(nickname: str) -> int | None:
     return alliance.alliance_id
 
 
+def _resolve_alliance_id_from_member_roles(
+    member: discord.Member | None,
+    alliance_by_role_id: dict[int, dict[str, Any]],
+) -> int | None:
+    if member is None or not alliance_by_role_id:
+        return None
+    role_ids = [
+        int(role.id)
+        for role in sorted(
+            member.roles,
+            key=lambda role: (role.position, role.id),
+            reverse=True,
+        )
+        if not role.is_default()
+    ]
+    for role_id in role_ids:
+        mapped = alliance_by_role_id.get(role_id)
+        if mapped is not None:
+            return int(mapped["alliance_id"])
+    return None
+
+
+def _resolve_alliance_name_from_member(
+    member: discord.Member | None,
+    nickname: str,
+    alliance_by_role_id: dict[int, dict[str, Any]],
+) -> str:
+    if member is not None and alliance_by_role_id:
+        role_ids = [
+            int(role.id)
+            for role in sorted(
+                member.roles,
+                key=lambda role: (role.position, role.id),
+                reverse=True,
+            )
+            if not role.is_default()
+        ]
+        for role_id in role_ids:
+            mapped = alliance_by_role_id.get(role_id)
+            if mapped is not None:
+                return str(mapped["alliance_name"])
+    return _resolve_alliance_name_from_nickname(nickname)
+
+
+def _alliance_role_map(guild_id: int) -> dict[int, dict[str, Any]]:
+    return {
+        int(mapping["role_id"]): {
+            "alliance_id": int(mapping["alliance_id"]),
+            "alliance_name": str(mapping["alliance_name"]),
+        }
+        for mapping in database.get_guild_alliance_role_mappings(guild_id)
+    }
+
+
 def _resolve_alliance_name_from_nickname(nickname: str) -> str:
     match = ALLIANCE_PATTERN.search(nickname)
     if match is None:
@@ -765,10 +830,15 @@ def _get_clan_members_for_snapshot(
     snapshot: AttendanceSnapshot,
 ) -> dict[str, list[str]]:
     counts: dict[str, list[str]] = {}
+    alliance_by_role_id = _alliance_role_map(guild.id)
     for discord_id in snapshot.participant_ids:
         member = guild.get_member(discord_id)
         nickname = member.display_name if member is not None else str(discord_id)
-        alliance_name = _resolve_alliance_name_from_nickname(nickname)
+        alliance_name = _resolve_alliance_name_from_member(
+            member,
+            nickname,
+            alliance_by_role_id,
+        )
         counts.setdefault(alliance_name, []).append(nickname)
     for nicknames in counts.values():
         nicknames.sort()

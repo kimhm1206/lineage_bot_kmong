@@ -257,6 +257,7 @@
                   name="report_name"
                   type="text"
                   value="{{ report_form.report_name }}"
+                  placeholder="예: 오늘의 혈맹 출석 순위"
                   maxlength="80"
                   data-report-part
                   {% if not auth.selected_server.can_manage %}disabled{% endif %}
@@ -283,6 +284,7 @@
               <label class="field">
                 <span>발송 주기</span>
                 <select name="frequency" data-report-part {% if not auth.selected_server.can_manage %}disabled{% endif %}>
+                  <option value="" data-label="">선택</option>
                   {% for option in report_options.frequencies %}
                     <option value="{{ option.value }}" data-label="{{ option.label }}" {% if report_form.frequency == option.value %}selected{% endif %}>
                       {{ option.label }}
@@ -293,13 +295,14 @@
 
               <label class="field">
                 <span>발송 시간</span>
-                {% set report_run_time = report_form.run_time or '00:00' %}
+                {% set report_run_time = report_form.run_time or '' %}
                 {% set report_time_parts = report_run_time.split(':') %}
                 {% set report_run_hour = report_time_parts[0] %}
-                {% set report_run_minute = report_time_parts[1] if report_time_parts|length > 1 else '00' %}
+                {% set report_run_minute = report_time_parts[1] if report_time_parts|length > 1 else '' %}
                 <input name="run_time" type="hidden" value="{{ report_run_time }}" data-report-time>
                 <div class="time-select-row">
                   <select data-report-hour {% if not auth.selected_server.can_manage %}disabled{% endif %}>
+                    <option value="">시</option>
                     {% for hour in range(0, 24) %}
                       {% set hour_value = "%02d"|format(hour) %}
                       <option value="{{ hour_value }}" {% if report_run_hour == hour_value %}selected{% endif %}>
@@ -309,6 +312,7 @@
                   </select>
                   <span>:</span>
                   <select data-report-minute {% if not auth.selected_server.can_manage %}disabled{% endif %}>
+                    <option value="">분</option>
                     {% for minute in range(0, 60) %}
                       {% set minute_value = "%02d"|format(minute) %}
                       <option value="{{ minute_value }}" {% if report_run_minute == minute_value %}selected{% endif %}>
@@ -327,6 +331,7 @@
               <label class="field">
                 <span>데이터</span>
                 <select name="dataset" data-report-part {% if not auth.selected_server.can_manage %}disabled{% endif %}>
+                  <option value="" data-label="">선택</option>
                   {% for option in report_options.datasets %}
                     <option value="{{ option.value }}" data-label="{{ option.label }}" {% if report_form.dataset == option.value %}selected{% endif %}>
                       {{ option.label }}
@@ -338,6 +343,7 @@
               <label class="field">
                 <span>조회 기간</span>
                 <select name="period_type" data-report-part {% if not auth.selected_server.can_manage %}disabled{% endif %}>
+                  <option value="" data-label="">선택</option>
                   {% for option in report_options.periods %}
                     <option value="{{ option.value }}" data-label="{{ option.label }}" {% if report_form.period_type == option.value %}selected{% endif %}>
                       {{ option.label }}
@@ -349,6 +355,7 @@
               <label class="field">
                 <span>묶음</span>
                 <select name="group_by" data-report-part {% if not auth.selected_server.can_manage %}disabled{% endif %}>
+                  <option value="" data-label="">선택</option>
                   {% for option in report_options.groups %}
                     <option value="{{ option.value }}" data-label="{{ option.label }}" {% if report_form.group_by == option.value %}selected{% endif %}>
                       {{ option.label }}
@@ -360,6 +367,7 @@
               <label class="field">
                 <span>랭킹 대상</span>
                 <select name="rank_target" data-report-part {% if not auth.selected_server.can_manage %}disabled{% endif %}>
+                  <option value="" data-label="">선택</option>
                   {% for option in report_options.rank_targets %}
                     <option value="{{ option.value }}" data-label="{{ option.label }}" {% if report_form.rank_target == option.value %}selected{% endif %}>
                       {{ option.label }}
@@ -371,6 +379,7 @@
               <label class="field">
                 <span>집계값</span>
                 <select name="metric" data-report-part {% if not auth.selected_server.can_manage %}disabled{% endif %}>
+                  <option value="" data-label="">선택</option>
                   {% for option in report_options.metrics %}
                     <option value="{{ option.value }}" data-label="{{ option.label }}" {% if report_form.metric == option.value %}selected{% endif %}>
                       {{ option.label }}
@@ -387,6 +396,7 @@
                   min="1"
                   max="30"
                   value="{{ report_form.limit }}"
+                  placeholder="예: 10"
                   data-report-part
                   {% if not auth.selected_server.can_manage %}disabled{% endif %}
                 >
@@ -400,6 +410,7 @@
               <label class="field">
                 <span>출력 방식</span>
                 <select name="output" data-report-part {% if not auth.selected_server.can_manage %}disabled{% endif %}>
+                  <option value="" data-label="">선택</option>
                   {% for option in report_options.outputs %}
                     <option value="{{ option.value }}" data-label="{{ option.label }}" {% if report_form.output == option.value %}selected{% endif %}>
                       {{ option.label }}
@@ -410,22 +421,22 @@
 
               <label class="field">
                 <span>제목</span>
-                <input name="title" type="text" value="{{ report_form.title }}" maxlength="100" data-report-part {% if not auth.selected_server.can_manage %}disabled{% endif %}>
+                <input name="title" type="text" value="{{ report_form.title }}" placeholder="예: 오늘의 혈맹 출석 순위" maxlength="100" data-report-part {% if not auth.selected_server.can_manage %}disabled{% endif %}>
               </label>
 
               <label class="field">
                 <span>그룹 제목</span>
-                <input name="group_header" type="text" value="{{ report_form.group_header }}" maxlength="80" data-report-part {% if not auth.selected_server.can_manage %}disabled{% endif %}>
+                <input name="group_header" type="text" value="{{ report_form.group_header }}" placeholder="{group_name}" maxlength="80" data-report-part {% if not auth.selected_server.can_manage %}disabled{% endif %}>
               </label>
 
               <label class="field">
                 <span>행 템플릿</span>
-                <input name="row_template" type="text" value="{{ report_form.row_template }}" maxlength="100" data-report-part {% if not auth.selected_server.can_manage %}disabled{% endif %}>
+                <input name="row_template" type="text" value="{{ report_form.row_template }}" placeholder="{rank}. {label} - {value}회" maxlength="100" data-report-part {% if not auth.selected_server.can_manage %}disabled{% endif %}>
               </label>
 
               <label class="field">
                 <span>빈 결과 문구</span>
-                <input name="empty_text" type="text" value="{{ report_form.empty_text }}" maxlength="80" data-report-part {% if not auth.selected_server.can_manage %}disabled{% endif %}>
+                <input name="empty_text" type="text" value="{{ report_form.empty_text }}" placeholder="출석 기록 없음" maxlength="80" data-report-part {% if not auth.selected_server.can_manage %}disabled{% endif %}>
               </label>
             </div>
           </div>
@@ -638,7 +649,11 @@
       if (!reportTime || !reportHour || !reportMinute) {
         return;
       }
-      reportTime.value = `${reportHour.value}:${reportMinute.value}`;
+      if (!reportHour.value && !reportMinute.value) {
+        reportTime.value = "";
+        return;
+      }
+      reportTime.value = `${reportHour.value || "00"}:${reportMinute.value || "00"}`;
     }
 
     function syncReportDependencies() {
