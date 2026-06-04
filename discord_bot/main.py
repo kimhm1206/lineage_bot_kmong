@@ -2,6 +2,7 @@ import asyncio
 import io
 import os
 import re
+import time
 import unicodedata
 from datetime import datetime, timedelta, timezone
 
@@ -54,6 +55,7 @@ bot.runtime_label = (
 )
 
 ALLIANCE_LABEL_PATTERN = re.compile(r"\[([^\[\]]+)\]")
+ROLE_MATCHING_FETCH_TIMEOUT_SECONDS = 120
 
 
 @bot.event
@@ -165,9 +167,40 @@ async def role_matching(ctx: discord.ApplicationContext) -> None:
         await ctx.followup.send("등록된 혈맹 역할 매핑이 없습니다.", ephemeral=True)
         return
 
-    await _ensure_member_cache(guild)
-    mismatches = _find_role_nickname_mismatches(guild, role_alliance_by_id)
-    message = _build_role_matching_message(guild, mismatches)
+    await ctx.followup.send(
+        "서버 전체 멤버를 조회해서 역할 매칭을 점검합니다. 잠시만 기다려주세요.",
+        ephemeral=True,
+    )
+    try:
+        started_at = time.monotonic()
+        members = await asyncio.wait_for(
+            _fetch_all_guild_members(guild),
+            timeout=ROLE_MATCHING_FETCH_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        await ctx.followup.send(
+            (
+                "전체 멤버 조회가 120초 안에 끝나지 않아 중단했습니다.\n"
+                "디스코드 멤버 조회 응답이 지연된 상태라 봇 재시작 후 다시 시도해주세요."
+            ),
+            ephemeral=True,
+        )
+        return
+    except Exception as exc:
+        await ctx.followup.send(
+            f"전체 멤버 조회에 실패했습니다. {exc}",
+            ephemeral=True,
+        )
+        return
+
+    elapsed_seconds = time.monotonic() - started_at
+    mismatches = _find_role_nickname_mismatches(members, role_alliance_by_id)
+    message = _build_role_matching_message(
+        guild,
+        mismatches,
+        checked_count=len(members),
+        elapsed_seconds=elapsed_seconds,
+    )
     if len(message) <= 1900:
         await ctx.followup.send(message, ephemeral=True)
         return
@@ -179,6 +212,7 @@ async def role_matching(ctx: discord.ApplicationContext) -> None:
     await ctx.followup.send(
         (
             f"닉네임 혈맹과 역할 매핑이 다른 유저가 {len(mismatches)}명입니다.\n"
+            f"점검 인원: {len(members)}명 / 소요 시간: {elapsed_seconds:.1f}초\n"
             "목록이 길어서 파일로 첨부합니다."
         ),
         file=attachment,
@@ -242,19 +276,19 @@ def _format_weekly_ranking_table(rows: list[dict[str, object]]) -> str:
     return "\n".join(lines)
 
 
-async def _ensure_member_cache(guild: discord.Guild) -> None:
-    try:
-        await guild.chunk(cache=True)
-    except Exception as exc:
-        print(f"멤버 캐시 갱신 실패: guild={guild.id} error={exc}")
+async def _fetch_all_guild_members(guild: discord.Guild) -> list[discord.Member]:
+    members: list[discord.Member] = []
+    async for member in guild.fetch_members(limit=None):
+        members.append(member)
+    return members
 
 
 def _find_role_nickname_mismatches(
-    guild: discord.Guild,
+    members: list[discord.Member],
     role_alliance_by_id: dict[int, str],
 ) -> list[dict[str, str]]:
     mismatches: list[dict[str, str]] = []
-    for member in sorted(guild.members, key=lambda item: item.display_name):
+    for member in sorted(members, key=lambda item: item.display_name):
         if member.bot:
             continue
 
@@ -315,11 +349,16 @@ def _normalize_alliance_label(value: str | None) -> str:
 def _build_role_matching_message(
     guild: discord.Guild,
     mismatches: list[dict[str, str]],
+    *,
+    checked_count: int,
+    elapsed_seconds: float,
 ) -> str:
     lines = [
         "**역할 매칭 점검**",
         f"서버: {guild.name}",
+        f"점검 인원: {checked_count}명",
         f"불일치: {len(mismatches)}명",
+        f"소요 시간: {elapsed_seconds:.1f}초",
         "",
     ]
     if not mismatches:
