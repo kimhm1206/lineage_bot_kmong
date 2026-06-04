@@ -22,6 +22,14 @@ class AdminPanelView(discord.ui.View):
         self._apply_attendance_button_state()
         self.add_item(
             discord.ui.Button(
+                label="드랍&분배",
+                style=discord.ButtonStyle.link,
+                url=_build_web_loot_url(guild_id),
+                row=0,
+            )
+        )
+        self.add_item(
+            discord.ui.Button(
                 label="통계",
                 style=discord.ButtonStyle.link,
                 url=_build_web_statistics_url(guild_id),
@@ -124,6 +132,11 @@ async def _safe_response(
 def _build_web_statistics_url(guild_id: int) -> str:
     base_url = os.getenv("WEB_BASE_URL", "https://test.meetloa.online").rstrip("/")
     return f"{base_url}/dashboard?{urlencode({'guild_id': str(guild_id)})}"
+
+
+def _build_web_loot_url(guild_id: int) -> str:
+    base_url = os.getenv("WEB_BASE_URL", "https://test.meetloa.online").rstrip("/")
+    return f"{base_url}/loot?{urlencode({'guild_id': str(guild_id)})}"
 
 
 def _build_web_settings_url(guild_id: int) -> str:
