@@ -18,12 +18,6 @@
     <div class="alert success">설정을 저장했고 봇 패널 새로고침 요청을 등록했습니다.</div>
   {% elif saved == "report" %}
     <div class="alert success">통계 알림 설정을 추가했습니다.</div>
-  {% elif saved == "item_price" %}
-    <div class="alert success">아이템을 저장했습니다.</div>
-  {% elif saved == "item_price_deleted" %}
-    <div class="alert success">아이템을 숨김 처리했습니다.</div>
-  {% elif saved == "item_price_error" %}
-    <div class="alert error">아이템을 변경하지 못했습니다.</div>
   {% elif saved == "alliance_role" %}
     <div class="alert success">혈맹 역할 매핑을 저장했습니다.</div>
   {% elif saved == "alliance_role_deleted" %}
@@ -61,10 +55,6 @@
       <a class="settings-menu-item {% if settings_active_tab == 'alliance' %}is-active{% endif %}" href="#alliance" data-settings-tab="alliance">
         <strong>혈맹 관리</strong>
         <span>역할 매핑</span>
-      </a>
-      <a class="settings-menu-item {% if settings_active_tab == 'items' %}is-active{% endif %}" href="#items" data-settings-tab="items">
-        <strong>아이템</strong>
-        <span>이름/원화 시세</span>
       </a>
       <a class="settings-menu-item {% if settings_active_tab == 'reports' %}is-active{% endif %}" href="#reports" data-settings-tab="reports">
         <strong>통계 알림</strong>
@@ -145,89 +135,6 @@
           {% endfor %}
         </tbody>
       </table>
-    </article>
-
-    <article class="panel settings-form" data-settings-panel="items" {% if settings_active_tab != "items" %}hidden{% endif %}>
-      <header class="panel-header">
-        <h2>아이템 추가</h2>
-        <span class="panel-caption">전 서버 통합 원화 시세입니다</span>
-      </header>
-
-      <form
-        class="settings-section item-price-create-grid"
-        method="post"
-        action="/settings/items?guild_id={{ auth.selected_guild_id }}"
-      >
-        <label class="field">
-          <span>아이템 이름</span>
-          <input
-            name="item_name"
-            value="{{ item_price_form.item_name }}"
-            placeholder="예: 스턴"
-            {% if not auth.selected_server.can_manage %}disabled{% endif %}
-          >
-        </label>
-        <label class="field">
-          <span>원화 시세</span>
-          <input
-            name="default_price"
-            type="number"
-            min="0"
-            step="0.01"
-            value="{{ item_price_form.default_price }}"
-            placeholder="예: 5000000"
-            {% if not auth.selected_server.can_manage %}disabled{% endif %}
-          >
-        </label>
-        <div class="form-actions inline-form-actions">
-          <button class="primary-button" type="submit" {% if not auth.selected_server.can_manage %}disabled{% endif %}>
-            아이템 추가
-          </button>
-        </div>
-      </form>
-    </article>
-
-    <article class="panel" data-settings-panel="items" {% if settings_active_tab != "items" %}hidden{% endif %}>
-      <header class="panel-header">
-        <h2>등록된 아이템</h2>
-        <span class="panel-caption">전 서버 공통 {{ item_prices|length }}개</span>
-      </header>
-
-      <div class="item-price-list">
-        {% for item in item_prices %}
-          <div class="item-price-card">
-            <form class="item-price-edit-form" method="post" action="/settings/items/update?guild_id={{ auth.selected_guild_id }}">
-              <input type="hidden" name="item_id" value="{{ item.item_id }}">
-              <label class="field">
-                <span>아이템</span>
-                <input name="item_name" value="{{ item.item_name }}" {% if not auth.selected_server.can_manage %}disabled{% endif %}>
-              </label>
-              <label class="field">
-                <span>원화 시세</span>
-                <input
-                  name="default_price"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value="{{ item.default_price_input }}"
-                  {% if not auth.selected_server.can_manage %}disabled{% endif %}
-                >
-              </label>
-              <button class="tiny-button" type="submit" {% if not auth.selected_server.can_manage %}disabled{% endif %}>
-                저장
-              </button>
-            </form>
-            <form class="item-price-delete-form" method="post" action="/settings/items/delete?guild_id={{ auth.selected_guild_id }}">
-              <input type="hidden" name="item_id" value="{{ item.item_id }}">
-              <button class="tiny-button danger-text-button" type="submit" {% if not auth.selected_server.can_manage %}disabled{% endif %}>
-                삭제
-              </button>
-            </form>
-          </div>
-        {% else %}
-          <div class="empty report-empty">등록된 아이템이 없습니다.</div>
-        {% endfor %}
-      </div>
     </article>
 
     <article

@@ -389,6 +389,50 @@ textarea {
   display: none !important;
 }
 
+.loot-hero-tools {
+  display: grid;
+  justify-items: end;
+  gap: 8px;
+  max-width: 420px;
+  text-align: right;
+}
+
+.loot-hero-tools p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.55;
+}
+
+.currency-toggle {
+  display: inline-flex;
+  gap: 6px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.currency-toggle-button {
+  min-height: 34px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.currency-toggle-button:hover,
+.currency-toggle-button.is-active {
+  background: rgba(20, 108, 148, 0.14);
+  color: var(--accent-strong);
+}
+
 .attendance-stop-actions {
   display: flex;
   gap: 10px;
@@ -726,6 +770,22 @@ button:disabled {
 }
 
 .tiny-button:hover {
+  background: var(--surface-muted);
+}
+
+.icon-button {
+  width: 34px;
+  min-width: 34px;
+  min-height: 34px;
+  padding: 0;
+  border-color: var(--line);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 20px;
+  line-height: 1;
+}
+
+.icon-button:hover {
   background: var(--surface-muted);
 }
 
@@ -1623,38 +1683,82 @@ button:disabled {
 
 .item-price-list {
   display: grid;
-  gap: 10px;
-  padding: 14px;
+  gap: 6px;
+  max-height: 640px;
+  overflow: auto;
+  padding: 12px;
+}
+
+.item-price-list-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: minmax(150px, 1.2fr) minmax(118px, 0.72fr) minmax(110px, auto);
+  gap: 8px;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
 }
 
 .item-price-card {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
-  align-items: end;
-  padding: 12px;
+  gap: 8px;
+  align-items: center;
+  min-height: 44px;
+  padding: 8px 10px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.72);
+  background: var(--panel-soft);
 }
 
 .item-price-edit-form {
   display: grid;
-  grid-template-columns: minmax(180px, 1.1fr) minmax(150px, 0.8fr) auto;
-  gap: 10px;
-  align-items: end;
+  grid-template-columns: minmax(150px, 1.2fr) minmax(118px, 0.72fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.item-price-edit-form input {
+  min-height: 34px;
+  padding: 7px 9px;
+  font-size: 13px;
 }
 
 .item-price-delete-form {
   display: flex;
-  align-items: end;
+  align-items: center;
+}
+
+.item-price-card .tiny-button {
+  min-height: 34px;
+  padding: 0 10px;
+}
+
+.loot-item-settings-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.72fr) minmax(0, 1.28fr);
+  gap: 14px;
+  align-items: start;
 }
 
 .loot-tabs {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
   margin: 0 0 18px;
+}
+
+.loot-tab-spacer {
+  flex: 1 1 auto;
 }
 
 .loot-tab-button {
@@ -1671,6 +1775,40 @@ button:disabled {
   font-weight: 900;
 }
 
+.loot-alliance-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 8px 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.loot-alliance-select[hidden],
+.loot-tab-spacer[hidden] {
+  display: none !important;
+}
+
+.loot-alliance-select span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.loot-alliance-select select {
+  min-width: 140px;
+  min-height: 30px;
+  padding: 0 28px 0 8px;
+  border: 0;
+  background-color: transparent;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 900;
+}
+
 .loot-tab-button:hover,
 .loot-tab-button.is-active {
   border-color: rgba(20, 108, 148, 0.24);
@@ -1680,6 +1818,72 @@ button:disabled {
 
 .loot-tab-panel[hidden] {
   display: none !important;
+}
+
+.loot-overview-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.9fr) minmax(180px, 0.55fr) minmax(280px, 1.2fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.loot-distribution-overview-grid {
+  grid-template-columns: minmax(210px, 0.85fr) minmax(180px, 0.65fr) minmax(180px, 0.65fr) minmax(300px, 1.05fr);
+}
+
+.loot-total-card,
+.loot-filter-card {
+  display: grid;
+  gap: 8px;
+  align-content: center;
+  min-height: 104px;
+  padding: 18px;
+}
+
+.loot-total-card span,
+.loot-filter-card > span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.loot-distribution-filter-card {
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px 10px;
+  min-height: 0;
+  padding: 14px;
+}
+
+.loot-distribution-filter-card .loot-filter-label {
+  align-self: center;
+  min-width: 34px;
+}
+
+.loot-distribution-filter-card .quick-filter-row {
+  gap: 6px;
+  padding: 0;
+}
+
+.loot-distribution-filter-card .quick-filter {
+  min-height: 30px;
+  padding: 0 10px;
+}
+
+.loot-total-card strong {
+  color: var(--accent-strong);
+  font-size: 30px;
+  line-height: 1;
+}
+
+.loot-total-card small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.loot-total-card.is-muted strong {
+  color: var(--text);
+  font-size: 22px;
 }
 
 .loot-layout {
@@ -1768,6 +1972,39 @@ button:disabled {
   list-style: none;
 }
 
+.loot-event-card.distribution-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.loot-event-card.distribution-card::before {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 6px;
+  content: "";
+}
+
+.loot-event-card.distribution-card.is-viewer::before {
+  background: var(--green);
+}
+
+.loot-event-card.distribution-card.is-not-viewer::before {
+  background: rgba(101, 117, 138, 0.34);
+}
+
+.loot-event-card.distribution-card summary {
+  grid-template-columns: minmax(220px, 0.8fr) minmax(360px, 1.1fr) minmax(128px, 0.36fr) auto;
+  padding-left: 24px;
+}
+
+.loot-event-card.payout-card summary {
+  grid-template-columns: minmax(240px, 0.78fr) minmax(320px, 1.25fr) minmax(144px, 0.36fr) auto;
+  min-height: 118px;
+  padding: 20px 22px;
+}
+
 .loot-event-card summary::-webkit-details-marker {
   display: none;
 }
@@ -1804,6 +2041,10 @@ button:disabled {
   white-space: nowrap;
 }
 
+.payout-card .loot-event-main strong {
+  font-size: 20px;
+}
+
 .loot-event-main > span:not(.status-id) {
   margin-top: 6px;
   color: var(--muted);
@@ -1825,6 +2066,15 @@ button:disabled {
   background: rgba(246, 247, 249, 0.78);
 }
 
+.payout-card .loot-event-metrics {
+  gap: 10px;
+}
+
+.payout-card .loot-event-metrics div {
+  min-height: 76px;
+  padding: 14px;
+}
+
 .loot-event-metrics span,
 .loot-event-metrics strong {
   display: block;
@@ -1841,6 +2091,15 @@ button:disabled {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.payout-card .loot-event-metrics span {
+  font-size: 12px;
+}
+
+.payout-card .loot-event-metrics strong {
+  margin-top: 8px;
+  font-size: 20px;
 }
 
 .loot-summary-status {
@@ -1872,6 +2131,19 @@ button:disabled {
   font-size: 11px;
   font-weight: 900;
   white-space: nowrap;
+}
+
+.payout-card .loot-summary-status {
+  min-height: 76px;
+  padding: 12px 14px;
+}
+
+.payout-card .loot-summary-status strong {
+  font-size: 17px;
+}
+
+.payout-card .loot-summary-status span {
+  font-size: 12px;
 }
 
 .loot-summary-status.is-paid {
@@ -1906,7 +2178,7 @@ button:disabled {
 
 .loot-update-form {
   display: grid;
-  grid-template-columns: minmax(118px, 0.75fr) minmax(118px, 0.75fr) minmax(130px, 0.85fr) minmax(120px, 0.85fr) minmax(160px, 1.1fr) auto;
+  grid-template-columns: minmax(118px, 0.72fr) minmax(118px, 0.72fr) minmax(130px, 0.82fr) minmax(108px, 0.55fr) minmax(180px, 1.05fr) auto;
   gap: 10px;
   align-items: end;
   padding: 12px;
@@ -1930,12 +2202,29 @@ button:disabled {
   gap: 10px;
 }
 
+.distribution-detail-summary {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.payout-detail-summary {
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+}
+
+.my-payout-detail-summary {
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+}
+
 .loot-fee-summary div {
   min-width: 0;
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.84);
+}
+
+.payout-detail-summary div {
+  min-height: 78px;
+  padding: 16px;
 }
 
 .loot-fee-summary span,
@@ -1954,6 +2243,11 @@ button:disabled {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.payout-detail-summary strong {
+  margin-top: 8px;
+  font-size: 19px;
 }
 
 .loot-breakdown-grid {
@@ -1990,6 +2284,29 @@ button:disabled {
   font-weight: 900;
 }
 
+.payout-card .loot-breakdown-card > header {
+  min-height: 60px;
+  padding: 0 18px;
+}
+
+.payout-card .loot-breakdown-card h2 {
+  font-size: 18px;
+}
+
+.payout-card .loot-breakdown-card th,
+.payout-card .loot-breakdown-card td {
+  padding: 16px 20px;
+}
+
+.payout-card .loot-breakdown-card td {
+  font-size: 15px;
+}
+
+.payout-card .loot-breakdown-card td [data-money-value] {
+  font-size: 16px;
+  font-weight: 900;
+}
+
 .loot-member-groups {
   display: grid;
   gap: 10px;
@@ -2020,6 +2337,171 @@ button:disabled {
 .payout-status-badge.is-unpaid {
   background: rgba(101, 117, 138, 0.12);
   color: var(--muted);
+}
+
+.member-pill.is-viewer {
+  border-color: rgba(18, 128, 92, 0.28);
+  background: rgba(18, 128, 92, 0.13);
+  color: var(--green);
+}
+
+.my-payout-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.my-payout-rule-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.my-payout-rule-strip {
+  align-content: start;
+  min-height: 104px;
+  padding: 14px;
+}
+
+.my-payout-rule-strip .panel-header {
+  align-items: center;
+  min-height: 0;
+}
+
+.my-payout-rule-strip .fee-rule-list {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  max-height: 120px;
+  overflow: auto;
+}
+
+.my-payout-rule-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(86px, 0.45fr);
+  gap: 10px;
+}
+
+.my-payout-rule-form .primary-button,
+.my-payout-complete-all .primary-button {
+  grid-column: 1 / -1;
+  width: 100%;
+}
+
+.fee-rule-list {
+  display: grid;
+  gap: 8px;
+}
+
+.fee-rule-card {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-soft);
+}
+
+.fee-rule-card > div {
+  display: grid;
+  gap: 2px;
+}
+
+.fee-rule-card strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.fee-rule-card span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.modal-backdrop {
+  position: fixed;
+  z-index: 80;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(244, 247, 251, 0.98);
+}
+
+.modal-backdrop[hidden] {
+  display: none;
+}
+
+.modal-card {
+  display: grid;
+  gap: 16px;
+  width: min(520px, 100%);
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.modal-card .my-payout-rule-form {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.my-payout-card {
+  border-left: 4px solid var(--blue);
+}
+
+.my-payout-fee-card-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.my-payout-fee-card {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-soft);
+}
+
+.my-payout-fee-card span,
+.my-payout-fee-card small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.my-payout-fee-card strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.my-member-payout-table-card {
+  grid-column: 1 / -1;
+}
+
+.table-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  align-items: center;
+}
+
+.member-payout-filter-row {
+  padding: 0;
+}
+
+.member-payout-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .report-empty {
@@ -2428,6 +2910,10 @@ button:disabled {
   color: #728196;
 }
 
+:root[data-theme="dark"] .modal-backdrop {
+  background: rgba(8, 14, 24, 0.98);
+}
+
 :root[data-theme="dark"] .ops-hero,
 :root[data-theme="dark"] .filter-panel,
 :root[data-theme="dark"] .stat-card,
@@ -2449,10 +2935,14 @@ button:disabled {
 :root[data-theme="dark"] .settings-sidebar,
 :root[data-theme="dark"] .settings-menu-item,
 :root[data-theme="dark"] .buyer-picker-menu,
+:root[data-theme="dark"] .currency-toggle,
 :root[data-theme="dark"] .report-card,
 :root[data-theme="dark"] .session-summary-card,
 :root[data-theme="dark"] .item-price-card,
 :root[data-theme="dark"] .loot-tab-button,
+:root[data-theme="dark"] .loot-alliance-select,
+:root[data-theme="dark"] .loot-total-card,
+:root[data-theme="dark"] .loot-filter-card,
 :root[data-theme="dark"] .loot-preview-summary,
 :root[data-theme="dark"] .loot-preview-group,
 :root[data-theme="dark"] .loot-member-group,
@@ -2492,6 +2982,8 @@ button:disabled {
 :root[data-theme="dark"] .settings-menu-item.is-active,
 :root[data-theme="dark"] .buyer-option:hover,
 :root[data-theme="dark"] .buyer-option.is-selected,
+:root[data-theme="dark"] .currency-toggle-button:hover,
+:root[data-theme="dark"] .currency-toggle-button.is-active,
 :root[data-theme="dark"] .loot-tab-button:hover,
 :root[data-theme="dark"] .loot-tab-button.is-active,
 :root[data-theme="dark"] .log-tab.is-active,
@@ -2526,7 +3018,8 @@ button:disabled {
 }
 
 :root[data-theme="dark"] .alliance-detail h2,
-:root[data-theme="dark"] .member-pill {
+:root[data-theme="dark"] .member-pill,
+:root[data-theme="dark"] .loot-total-card.is-muted strong {
   color: var(--text);
 }
 
@@ -2551,7 +3044,8 @@ button:disabled {
 :root[data-theme="dark"] .live-state.is-active,
 :root[data-theme="dark"] .loot-summary-status.is-paid,
 :root[data-theme="dark"] .payout-status-badge.is-paid,
-:root[data-theme="dark"] .alliance-chip.is-paid {
+:root[data-theme="dark"] .alliance-chip.is-paid,
+:root[data-theme="dark"] .member-pill.is-viewer {
   background: rgba(85, 217, 159, 0.14);
   color: var(--green);
 }
@@ -2689,6 +3183,12 @@ button:disabled {
     padding: 18px;
   }
 
+  .loot-hero-tools {
+    justify-items: start;
+    max-width: none;
+    text-align: left;
+  }
+
   .hero-actions {
     width: 100%;
   }
@@ -2811,6 +3311,8 @@ button:disabled {
   .item-price-create-grid,
   .item-price-card,
   .item-price-edit-form,
+  .loot-overview-grid,
+  .loot-item-settings-layout,
   .loot-layout,
   .loot-create-grid,
   .loot-event-card summary,
@@ -2818,8 +3320,31 @@ button:disabled {
   .loot-edit-row,
   .loot-update-form,
   .loot-fee-summary,
+  .distribution-detail-summary,
+  .my-payout-layout,
+  .my-payout-rule-form,
   .loot-breakdown-grid {
     grid-template-columns: 1fr;
+  }
+
+  .loot-tab-spacer {
+    display: none;
+  }
+
+  .loot-alliance-select {
+    width: 100%;
+  }
+
+  .loot-alliance-select select {
+    flex: 1;
+  }
+
+  .loot-distribution-filter-card {
+    grid-template-columns: 1fr;
+  }
+
+  .item-price-list-header {
+    display: none;
   }
 
   .loot-session-field,

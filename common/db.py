@@ -393,7 +393,7 @@ class Database:
         cash_price_krw: Decimal,
         sale_price: Decimal,
         adena_rate: Decimal,
-        buyer_name: str | None,
+        fee_rate: Decimal = DEFAULT_DISTRIBUTION_FEE_RATE,
         memo: str | None,
         created_by_discord_id: int | None,
     ) -> int:
@@ -405,7 +405,7 @@ class Database:
             cash_price_krw=cash_price_krw,
             sale_price=sale_price,
             adena_rate=adena_rate,
-            buyer_name=buyer_name,
+            fee_rate=fee_rate,
             memo=memo,
             created_by_discord_id=created_by_discord_id,
         )
@@ -418,7 +418,7 @@ class Database:
         cash_price_krw: Decimal,
         sale_price: Decimal,
         adena_rate: Decimal,
-        buyer_name: str | None,
+        fee_rate: Decimal = DEFAULT_DISTRIBUTION_FEE_RATE,
         memo: str | None,
     ) -> None:
         update_loot_drop(
@@ -427,7 +427,7 @@ class Database:
             cash_price_krw=cash_price_krw,
             sale_price=sale_price,
             adena_rate=adena_rate,
-            buyer_name=buyer_name,
+            fee_rate=fee_rate,
             memo=memo,
         )
 
@@ -449,6 +449,104 @@ class Database:
             distribution_id,
             alliance_id,
             payout_status,
+        )
+
+    def update_all_distribution_alliance_payout_status(
+        self,
+        guild_id: int,
+        distribution_id: int,
+        payout_status: str,
+    ) -> None:
+        update_all_distribution_alliance_payout_status(
+            guild_id,
+            distribution_id,
+            payout_status,
+        )
+
+    def get_alliance_payout_fee_rules(
+        self,
+        guild_id: int,
+        alliance_id: int,
+    ) -> list[dict[str, Any]]:
+        return get_alliance_payout_fee_rules(guild_id, alliance_id)
+
+    def create_alliance_payout_fee_rule(
+        self,
+        guild_id: int,
+        alliance_id: int,
+        *,
+        rule_name: str,
+        fee_rate: Decimal,
+        created_by_discord_id: int | None,
+    ) -> int:
+        return create_alliance_payout_fee_rule(
+            guild_id,
+            alliance_id,
+            rule_name=rule_name,
+            fee_rate=fee_rate,
+            created_by_discord_id=created_by_discord_id,
+        )
+
+    def deactivate_alliance_payout_fee_rule(
+        self,
+        guild_id: int,
+        alliance_id: int,
+        rule_id: int,
+    ) -> None:
+        deactivate_alliance_payout_fee_rule(guild_id, alliance_id, rule_id)
+
+    def get_member_payout_groups(
+        self,
+        guild_id: int,
+        alliance_id: int,
+    ) -> dict[int, dict[str, Any]]:
+        return get_member_payout_groups(guild_id, alliance_id)
+
+    def settle_member_payout(
+        self,
+        guild_id: int,
+        distribution_id: int,
+        alliance_id: int,
+        *,
+        updated_by_discord_id: int | None,
+    ) -> int:
+        return settle_member_payout(
+            guild_id,
+            distribution_id,
+            alliance_id,
+            updated_by_discord_id=updated_by_discord_id,
+        )
+
+    def settle_all_member_payouts(
+        self,
+        guild_id: int,
+        alliance_id: int,
+        *,
+        updated_by_discord_id: int | None,
+    ) -> int:
+        return settle_all_member_payouts(
+            guild_id,
+            alliance_id,
+            updated_by_discord_id=updated_by_discord_id,
+        )
+
+    def update_member_payout_recipient_status(
+        self,
+        guild_id: int,
+        distribution_id: int,
+        alliance_id: int,
+        user_id: int,
+        payout_status: str,
+        *,
+        updated_by_discord_id: int | None,
+    ) -> int:
+        return update_member_payout_recipient_status(
+            guild_id,
+            distribution_id,
+            alliance_id,
+            user_id,
+            payout_status,
+            updated_by_discord_id=updated_by_discord_id,
         )
 
 
@@ -515,6 +613,8 @@ def init_db() -> None:
             cursor.execute(SCHEMA_SQL)
             _ensure_postgres_columns(cursor)
             _drop_redundant_timestamp_columns(cursor)
+            _drop_obsolete_member_payout_tables(cursor)
+            _drop_obsolete_loot_boss_schema(cursor)
             _seed_default_alliances(cursor)
         connection.commit()
 
@@ -1845,7 +1945,7 @@ def create_loot_drop(
     cash_price_krw: Decimal,
     sale_price: Decimal,
     adena_rate: Decimal,
-    buyer_name: str | None,
+    fee_rate: Decimal = DEFAULT_DISTRIBUTION_FEE_RATE,
     memo: str | None,
     created_by_discord_id: int | None,
 ) -> int:
@@ -1856,7 +1956,10 @@ def create_loot_drop(
 
     cash_amount = _decimal(cash_price_krw)
     sale_amount = _decimal(sale_price)
-    net_amount = sale_amount - (sale_amount * DEFAULT_DISTRIBUTION_FEE_RATE)
+    normalized_fee_rate = _decimal(fee_rate)
+    if normalized_fee_rate < 0:
+        raise ValueError("Fee rate must not be negative.")
+    net_amount = sale_amount - (sale_amount * normalized_fee_rate)
     with _connect() as connection:
         with connection.cursor() as cursor:
             session = _get_attendance_session_for_loot(cursor, guild_id, attendance_id)
@@ -1957,24 +2060,21 @@ def create_loot_drop(
                     loot_event_id,
                     item_id,
                     item_name_snapshot,
-                    buyer_name,
                     cash_price_krw,
                     sale_price,
                     fee_rate,
-                    net_amount,
-                    memo
+                    net_amount
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NULL)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
                 RETURNING loot_item_id
                 """,
                 (
                     loot_event_id,
                     resolved_item_id,
                     resolved_item_name,
-                    _blank_to_none(buyer_name),
                     cash_amount,
                     sale_amount,
-                    DEFAULT_DISTRIBUTION_FEE_RATE,
+                    normalized_fee_rate,
                     net_amount,
                 ),
             )
@@ -1986,6 +2086,7 @@ def create_loot_drop(
                 loot_item_id,
                 sale_amount,
                 participant_counts,
+                normalized_fee_rate,
             )
         connection.commit()
     return loot_event_id
@@ -1998,12 +2099,15 @@ def update_loot_drop(
     cash_price_krw: Decimal,
     sale_price: Decimal,
     adena_rate: Decimal,
-    buyer_name: str | None,
+    fee_rate: Decimal = DEFAULT_DISTRIBUTION_FEE_RATE,
     memo: str | None,
 ) -> None:
     cash_amount = _decimal(cash_price_krw)
     sale_amount = _decimal(sale_price)
-    net_amount = sale_amount - (sale_amount * DEFAULT_DISTRIBUTION_FEE_RATE)
+    normalized_fee_rate = _decimal(fee_rate)
+    if normalized_fee_rate < 0:
+        raise ValueError("Fee rate must not be negative.")
+    net_amount = sale_amount - (sale_amount * normalized_fee_rate)
     with _connect() as connection:
         with connection.cursor() as cursor:
             cursor.execute(
@@ -2046,18 +2150,16 @@ def update_loot_drop(
             cursor.execute(
                 """
                 UPDATE loot_event_items
-                SET buyer_name = %s,
-                    cash_price_krw = %s,
+                SET cash_price_krw = %s,
                     sale_price = %s,
                     fee_rate = %s,
                     net_amount = %s
                 WHERE loot_item_id = %s
                 """,
                 (
-                    _blank_to_none(buyer_name),
                     cash_amount,
                     sale_amount,
-                    DEFAULT_DISTRIBUTION_FEE_RATE,
+                    normalized_fee_rate,
                     net_amount,
                     loot_item_id,
                 ),
@@ -2070,6 +2172,7 @@ def update_loot_drop(
                 loot_item_id,
                 sale_amount,
                 participant_counts,
+                normalized_fee_rate,
             )
         connection.commit()
 
@@ -2119,7 +2222,6 @@ def get_loot_drop_events(guild_id: int, limit: int = 30) -> list[dict[str, Any]]
             li.loot_item_id,
             li.item_id,
             li.item_name_snapshot,
-            li.buyer_name,
             li.cash_price_krw,
             li.sale_price,
             li.net_amount,
@@ -2128,8 +2230,7 @@ def get_loot_drop_events(guild_id: int, limit: int = 30) -> list[dict[str, Any]]
             db.total_net_amount,
             db.total_participant_count,
             db.fee_rate,
-            db.fee_amount,
-            db.status AS distribution_status
+            db.fee_amount
         FROM loot_events le
         LEFT JOIN attendance_sessions s ON s.attendance_id = le.attendance_id
         LEFT JOIN LATERAL (
@@ -2137,7 +2238,6 @@ def get_loot_drop_events(guild_id: int, limit: int = 30) -> list[dict[str, Any]]
                 loot_item_id,
                 item_id,
                 item_name_snapshot,
-                buyer_name,
                 cash_price_krw,
                 sale_price,
                 net_amount
@@ -2167,7 +2267,6 @@ def get_loot_drop_events(guild_id: int, limit: int = 30) -> list[dict[str, Any]]
             p.alliance_id,
             COALESCE(a.alliance_name, '미분류') AS alliance_name,
             p.participant_count,
-            p.gross_amount,
             p.net_amount,
             p.payout_status
         FROM distribution_batches db
@@ -2183,7 +2282,10 @@ def get_loot_drop_events(guild_id: int, limit: int = 30) -> list[dict[str, Any]]
         """
         SELECT
             lep.loot_event_id,
+            u.user_id,
+            u.discord_id,
             COALESCE(a.alliance_name, '미분류') AS alliance_name,
+            lep.alliance_id,
             u.discord_nickname
         FROM loot_event_participants lep
         INNER JOIN users u ON u.user_id = lep.user_id
@@ -2203,19 +2305,34 @@ def get_loot_drop_events(guild_id: int, limit: int = 30) -> list[dict[str, Any]]
                 "alliance_id": _optional_int(row["alliance_id"]),
                 "alliance_name": str(row["alliance_name"]),
                 "participant_count": count,
-                "gross_amount": _decimal(row["gross_amount"]),
                 "net_amount": net_amount,
                 "per_member_amount": _safe_divide(net_amount, count),
                 "payout_status": str(row["payout_status"]),
             }
         )
 
-    member_map: dict[int, dict[str, list[str]]] = {event_id: {} for event_id in event_ids}
+    member_map: dict[int, dict[int | None, dict[str, Any]]] = {
+        event_id: {} for event_id in event_ids
+    }
     for row in participant_rows:
         event_id = int(row["loot_event_id"])
         alliance_name = str(row["alliance_name"])
-        member_map.setdefault(event_id, {}).setdefault(alliance_name, []).append(
-            str(row["discord_nickname"])
+        alliance_id = _optional_int(row["alliance_id"])
+        group = member_map.setdefault(event_id, {}).setdefault(
+            alliance_id,
+            {
+                "alliance_id": alliance_id,
+                "alliance_name": alliance_name,
+                "members": [],
+            },
+        )
+        group["members"].append(
+            {
+                "user_id": int(row["user_id"]),
+                "discord_id": int(row["discord_id"]),
+                "discord_nickname": str(row["discord_nickname"]),
+                "alliance_id": alliance_id,
+            }
         )
 
     events: list[dict[str, Any]] = []
@@ -2225,11 +2342,15 @@ def get_loot_drop_events(guild_id: int, limit: int = 30) -> list[dict[str, Any]]
         total_net_amount = _decimal(row["total_net_amount"])
         alliances = [
             {
-                "alliance_name": alliance_name,
-                "count": len(members),
-                "members": members,
+                "alliance_id": group["alliance_id"],
+                "alliance_name": group["alliance_name"],
+                "count": len(group["members"]),
+                "members": group["members"],
             }
-            for alliance_name, members in sorted(member_map.get(loot_event_id, {}).items())
+            for group in sorted(
+                member_map.get(loot_event_id, {}).values(),
+                key=lambda item: str(item["alliance_name"]),
+            )
         ]
         events.append(
             {
@@ -2245,7 +2366,6 @@ def get_loot_drop_events(guild_id: int, limit: int = 30) -> list[dict[str, Any]]
                 "loot_item_id": _optional_int(row["loot_item_id"]),
                 "item_id": _optional_int(row["item_id"]),
                 "item_name": row["item_name_snapshot"] or "",
-                "buyer_name": row["buyer_name"] or "",
                 "cash_price_krw": _decimal(row["cash_price_krw"]),
                 "sale_price": _decimal(row["sale_price"]),
                 "net_amount": _decimal(row["net_amount"]),
@@ -2256,7 +2376,6 @@ def get_loot_drop_events(guild_id: int, limit: int = 30) -> list[dict[str, Any]]
                 "fee_rate": _decimal(row["fee_rate"]),
                 "fee_amount": _decimal(row["fee_amount"]),
                 "per_member_amount": _safe_divide(total_net_amount, participant_count),
-                "distribution_status": row["distribution_status"] or "draft",
                 "alliance_payouts": payouts_by_event.get(loot_event_id, []),
                 "alliances": alliances,
                 "updated_at": row["updated_at"],
@@ -2291,25 +2410,513 @@ def update_distribution_alliance_payout_status(
             )
             if cursor.rowcount == 0:
                 raise ValueError("Distribution payout was not found.")
+        connection.commit()
+
+
+def update_all_distribution_alliance_payout_status(
+    guild_id: int,
+    distribution_id: int,
+    payout_status: str,
+) -> None:
+    if payout_status not in {"paid", "unpaid"}:
+        raise ValueError("Payout status must be paid or unpaid.")
+
+    with _connect() as connection:
+        with connection.cursor() as cursor:
             cursor.execute(
                 """
-                UPDATE distribution_batches db
-                SET status = CASE
-                    WHEN EXISTS (
-                        SELECT 1
-                        FROM distribution_alliance_payouts p
-                        WHERE p.distribution_id = db.distribution_id
-                          AND p.payout_status <> 'paid'
-                    )
-                    THEN 'draft'
-                    ELSE 'paid'
-                END
-                WHERE db.guild_id = %s
-                  AND db.distribution_id = %s
+                UPDATE distribution_alliance_payouts p
+                SET payout_status = %s,
+                    updated_at = CURRENT_TIMESTAMP
+                FROM distribution_batches db
+                WHERE p.distribution_id = db.distribution_id
+                  AND db.guild_id = %s
+                  AND p.distribution_id = %s
                 """,
-                (guild_id, distribution_id),
+                (payout_status, guild_id, distribution_id),
+            )
+            if cursor.rowcount == 0:
+                raise ValueError("Distribution payout was not found.")
+        connection.commit()
+
+
+def get_alliance_payout_fee_rules(
+    guild_id: int,
+    alliance_id: int,
+) -> list[dict[str, Any]]:
+    rows = _fetchall(
+        """
+        SELECT
+            rule_id,
+            guild_id,
+            alliance_id,
+            rule_name,
+            fee_rate,
+            sort_order,
+            updated_at
+        FROM alliance_payout_fee_rules
+        WHERE guild_id = %s
+          AND alliance_id = %s
+          AND is_active = TRUE
+        ORDER BY sort_order ASC, rule_id ASC
+        """,
+        (guild_id, alliance_id),
+    )
+    return [
+        {
+            "rule_id": int(row["rule_id"]),
+            "guild_id": int(row["guild_id"]),
+            "alliance_id": int(row["alliance_id"]),
+            "rule_name": str(row["rule_name"]),
+            "fee_rate": _decimal(row["fee_rate"]),
+            "sort_order": int(row["sort_order"] or 0),
+            "updated_at": row["updated_at"],
+        }
+        for row in rows
+    ]
+
+
+def create_alliance_payout_fee_rule(
+    guild_id: int,
+    alliance_id: int,
+    *,
+    rule_name: str,
+    fee_rate: Decimal,
+    created_by_discord_id: int | None,
+) -> int:
+    normalized_name = rule_name.strip()
+    normalized_fee_rate = _decimal(fee_rate)
+    if not normalized_name:
+        raise ValueError("Fee rule name must not be empty.")
+    if normalized_fee_rate < 0:
+        raise ValueError("Fee rule rate must not be negative.")
+
+    with _connect() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT COALESCE(MAX(sort_order), 0) + 1 AS next_order
+                FROM alliance_payout_fee_rules
+                WHERE guild_id = %s
+                  AND alliance_id = %s
+                """,
+                (guild_id, alliance_id),
+            )
+            next_order = int(cursor.fetchone()["next_order"] or 1)
+            cursor.execute(
+                """
+                INSERT INTO alliance_payout_fee_rules (
+                    guild_id,
+                    alliance_id,
+                    rule_name,
+                    fee_rate,
+                    sort_order,
+                    is_active,
+                    created_by_discord_id,
+                    updated_at
+                )
+                VALUES (%s, %s, %s, %s, %s, TRUE, %s, CURRENT_TIMESTAMP)
+                RETURNING rule_id
+                """,
+                (
+                    guild_id,
+                    alliance_id,
+                    normalized_name,
+                    normalized_fee_rate,
+                    next_order,
+                    created_by_discord_id,
+                ),
+            )
+            rule_id = int(cursor.fetchone()["rule_id"])
+        connection.commit()
+    return rule_id
+
+
+def deactivate_alliance_payout_fee_rule(
+    guild_id: int,
+    alliance_id: int,
+    rule_id: int,
+) -> None:
+    with _connect() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE alliance_payout_fee_rules
+                SET is_active = FALSE,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE guild_id = %s
+                  AND alliance_id = %s
+                  AND rule_id = %s
+                """,
+                (guild_id, alliance_id, rule_id),
+            )
+            if cursor.rowcount == 0:
+                raise ValueError("Fee rule was not found.")
+        connection.commit()
+
+
+def get_member_payout_groups(
+    guild_id: int,
+    alliance_id: int,
+) -> dict[int, dict[str, Any]]:
+    snapshot_rows = _fetchall(
+        """
+        SELECT
+            mprs.distribution_id,
+            mprs.alliance_id,
+            mprs.rule_name_snapshot,
+            mprs.fee_rate_snapshot,
+            mprs.sort_order
+        FROM member_payout_rule_snapshots mprs
+        INNER JOIN distribution_batches db
+            ON db.distribution_id = mprs.distribution_id
+        WHERE db.guild_id = %s
+          AND mprs.alliance_id = %s
+        ORDER BY mprs.distribution_id DESC, mprs.sort_order ASC, mprs.snapshot_id ASC
+        """,
+        (guild_id, alliance_id),
+    )
+    status_rows = _fetchall(
+        """
+        SELECT
+            mps.distribution_id,
+            mps.alliance_id,
+            mps.user_id,
+            mps.is_paid,
+            mps.updated_at
+        FROM member_payout_statuses mps
+        INNER JOIN distribution_batches db
+            ON db.distribution_id = mps.distribution_id
+        WHERE db.guild_id = %s
+          AND mps.alliance_id = %s
+        ORDER BY mps.distribution_id DESC, mps.user_id ASC
+        """,
+        (guild_id, alliance_id),
+    )
+
+    groups: dict[int, dict[str, Any]] = {}
+    for row in snapshot_rows:
+        distribution_id = int(row["distribution_id"])
+        group = groups.setdefault(
+            distribution_id,
+            {
+                "distribution_id": distribution_id,
+                "alliance_id": int(row["alliance_id"]),
+                "fee_lines": [],
+                "statuses": {},
+            },
+        )
+        group["fee_lines"].append(
+            {
+                "rule_name": str(row["rule_name_snapshot"]),
+                "fee_rate": _decimal(row["fee_rate_snapshot"]),
+                "sort_order": int(row["sort_order"] or 0),
+            }
+        )
+    for row in status_rows:
+        distribution_id = int(row["distribution_id"])
+        group = groups.setdefault(
+            distribution_id,
+            {
+                "distribution_id": distribution_id,
+                "alliance_id": int(row["alliance_id"]),
+                "fee_lines": [],
+                "statuses": {},
+            },
+        )
+        group["statuses"][int(row["user_id"])] = bool(row["is_paid"])
+    return groups
+
+
+def settle_member_payout(
+    guild_id: int,
+    distribution_id: int,
+    alliance_id: int,
+    *,
+    updated_by_discord_id: int | None,
+) -> int:
+    with _connect() as connection:
+        with connection.cursor() as cursor:
+            payout = _get_distribution_alliance_payout_for_settlement(
+                cursor,
+                guild_id,
+                distribution_id,
+                alliance_id,
+            )
+            participants = _get_loot_participants_for_alliance(
+                cursor,
+                int(payout["loot_event_id"]),
+                alliance_id,
+            )
+            if not participants:
+                raise ValueError("Member payout has no recipients.")
+
+            _ensure_member_payout_rule_snapshot(
+                cursor,
+                guild_id,
+                distribution_id,
+                alliance_id,
+            )
+            for participant in participants:
+                cursor.execute(
+                    """
+                    INSERT INTO member_payout_statuses (
+                        distribution_id,
+                        alliance_id,
+                        user_id,
+                        is_paid,
+                        updated_at
+                    )
+                    VALUES (%s, %s, %s, TRUE, CURRENT_TIMESTAMP)
+                    ON CONFLICT (distribution_id, alliance_id, user_id)
+                    DO UPDATE SET
+                        is_paid = TRUE,
+                        updated_at = CURRENT_TIMESTAMP
+                    """,
+                    (distribution_id, alliance_id, int(participant["user_id"])),
+                )
+        connection.commit()
+    return distribution_id
+
+
+def update_member_payout_recipient_status(
+    guild_id: int,
+    distribution_id: int,
+    alliance_id: int,
+    user_id: int,
+    payout_status: str,
+    *,
+    updated_by_discord_id: int | None,
+) -> int:
+    if payout_status not in {"paid", "unpaid"}:
+        raise ValueError("Member payout status must be paid or unpaid.")
+
+    with _connect() as connection:
+        with connection.cursor() as cursor:
+            payout = _get_distribution_alliance_payout_for_settlement(
+                cursor,
+                guild_id,
+                distribution_id,
+                alliance_id,
+            )
+            cursor.execute(
+                """
+                SELECT 1
+                FROM loot_event_participants
+                WHERE loot_event_id = %s
+                  AND alliance_id = %s
+                  AND user_id = %s
+                """,
+                (int(payout["loot_event_id"]), alliance_id, user_id),
+            )
+            if cursor.fetchone() is None:
+                raise ValueError("Member payout recipient was not found.")
+
+            _ensure_member_payout_rule_snapshot(
+                cursor,
+                guild_id,
+                distribution_id,
+                alliance_id,
+            )
+            cursor.execute(
+                """
+                INSERT INTO member_payout_statuses (
+                    distribution_id,
+                    alliance_id,
+                    user_id,
+                    is_paid,
+                    updated_at
+                )
+                VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
+                ON CONFLICT (distribution_id, alliance_id, user_id)
+                DO UPDATE SET
+                    is_paid = EXCLUDED.is_paid,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                (distribution_id, alliance_id, user_id, payout_status == "paid"),
             )
         connection.commit()
+    return distribution_id
+
+
+def _ensure_member_payout_rule_snapshot(
+    cursor: psycopg2.extensions.cursor,
+    guild_id: int,
+    distribution_id: int,
+    alliance_id: int,
+) -> None:
+    cursor.execute(
+        """
+        SELECT 1
+        FROM member_payout_rule_snapshots
+        WHERE distribution_id = %s
+          AND alliance_id = %s
+        UNION ALL
+        SELECT 1
+        FROM member_payout_statuses
+        WHERE distribution_id = %s
+          AND alliance_id = %s
+        LIMIT 1
+        """,
+        (distribution_id, alliance_id, distribution_id, alliance_id),
+    )
+    if cursor.fetchone() is not None:
+        return
+    cursor.execute(
+        """
+        INSERT INTO member_payout_rule_snapshots (
+            distribution_id,
+            alliance_id,
+            rule_name_snapshot,
+            fee_rate_snapshot,
+            sort_order,
+            created_at
+        )
+        SELECT
+            %s,
+            %s,
+            rule_name,
+            fee_rate,
+            sort_order,
+            CURRENT_TIMESTAMP
+        FROM alliance_payout_fee_rules
+        WHERE guild_id = %s
+          AND alliance_id = %s
+          AND is_active = TRUE
+        ON CONFLICT DO NOTHING
+        """,
+        (distribution_id, alliance_id, guild_id, alliance_id),
+    )
+
+
+def settle_all_member_payouts(
+    guild_id: int,
+    alliance_id: int,
+    *,
+    updated_by_discord_id: int | None,
+) -> int:
+    rows = _fetchall(
+        """
+        SELECT db.distribution_id
+        FROM distribution_batches db
+        INNER JOIN distribution_alliance_payouts p
+            ON p.distribution_id = db.distribution_id
+        WHERE db.guild_id = %s
+          AND p.alliance_id = %s
+          AND EXISTS (
+              SELECT 1
+              FROM loot_event_participants lep
+              WHERE lep.loot_event_id = db.loot_event_id
+                AND lep.alliance_id = p.alliance_id
+          )
+          AND EXISTS (
+              SELECT 1
+              FROM loot_event_participants lep
+              WHERE lep.loot_event_id = db.loot_event_id
+                AND lep.alliance_id = p.alliance_id
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM member_payout_statuses mps
+                    WHERE mps.distribution_id = db.distribution_id
+                      AND mps.alliance_id = p.alliance_id
+                      AND mps.user_id = lep.user_id
+                      AND mps.is_paid = TRUE
+                )
+          )
+        ORDER BY db.distribution_id ASC
+        """,
+        (guild_id, alliance_id),
+    )
+    completed_count = 0
+    for row in rows:
+        settle_member_payout(
+            guild_id,
+            int(row["distribution_id"]),
+            alliance_id,
+            updated_by_discord_id=updated_by_discord_id,
+        )
+        completed_count += 1
+    return completed_count
+
+
+def _get_distribution_alliance_payout_for_settlement(
+    cursor: psycopg2.extensions.cursor,
+    guild_id: int,
+    distribution_id: int,
+    alliance_id: int,
+) -> dict[str, Any]:
+    cursor.execute(
+        """
+        SELECT
+            db.distribution_id,
+            db.loot_event_id,
+            p.alliance_id,
+            p.net_amount,
+            le.title,
+            COALESCE(li.item_id, 0) AS item_id,
+            COALESCE(li.item_name_snapshot, le.title, '') AS item_name
+        FROM distribution_batches db
+        INNER JOIN distribution_alliance_payouts p
+            ON p.distribution_id = db.distribution_id
+        INNER JOIN loot_events le
+            ON le.loot_event_id = db.loot_event_id
+        LEFT JOIN LATERAL (
+            SELECT item_id, item_name_snapshot
+            FROM loot_event_items
+            WHERE loot_event_id = le.loot_event_id
+            ORDER BY loot_item_id ASC
+            LIMIT 1
+        ) li ON TRUE
+        WHERE db.guild_id = %s
+          AND db.distribution_id = %s
+          AND p.alliance_id = %s
+        """,
+        (guild_id, distribution_id, alliance_id),
+    )
+    row = cursor.fetchone()
+    if row is None:
+        raise ValueError("Distribution payout was not found.")
+    return dict(row)
+
+
+def _get_alliance_payout_fee_rules_for_update(
+    cursor: psycopg2.extensions.cursor,
+    guild_id: int,
+    alliance_id: int,
+) -> list[dict[str, Any]]:
+    cursor.execute(
+        """
+        SELECT rule_name, fee_rate, sort_order
+        FROM alliance_payout_fee_rules
+        WHERE guild_id = %s
+          AND alliance_id = %s
+          AND is_active = TRUE
+        ORDER BY sort_order ASC, rule_id ASC
+        """,
+        (guild_id, alliance_id),
+    )
+    return [dict(row) for row in cursor.fetchall()]
+
+
+def _get_loot_participants_for_alliance(
+    cursor: psycopg2.extensions.cursor,
+    loot_event_id: int,
+    alliance_id: int,
+) -> list[dict[str, Any]]:
+    cursor.execute(
+        """
+        SELECT
+            u.user_id,
+            u.discord_nickname
+        FROM loot_event_participants lep
+        INNER JOIN users u ON u.user_id = lep.user_id
+        WHERE lep.loot_event_id = %s
+          AND lep.alliance_id = %s
+        ORDER BY u.discord_nickname ASC
+        """,
+        (loot_event_id, alliance_id),
+    )
+    return [dict(row) for row in cursor.fetchall()]
 
 
 def _get_attendance_session_for_loot(
@@ -2419,10 +3026,11 @@ def _upsert_distribution_for_loot(
     loot_item_id: int,
     total_amount: Decimal,
     participant_counts: dict[int, int],
+    fee_rate: Decimal,
 ) -> int:
     participant_total = sum(participant_counts.values())
     total_sale_amount = _decimal(total_amount)
-    fee_rate = DEFAULT_DISTRIBUTION_FEE_RATE
+    fee_rate = _decimal(fee_rate)
     fee_amount = total_sale_amount * fee_rate
     total_net_amount = total_sale_amount - fee_amount
     cursor.execute(
@@ -2446,10 +3054,9 @@ def _upsert_distribution_for_loot(
                 total_net_amount,
                 total_participant_count,
                 fee_rate,
-                fee_amount,
-                status
+                fee_amount
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, 'draft')
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             RETURNING distribution_id
             """,
             (
@@ -2487,42 +3094,6 @@ def _upsert_distribution_for_loot(
             ),
         )
 
-    cursor.execute(
-        """
-        DELETE FROM distribution_lines
-        WHERE distribution_id = %s
-          AND line_type IN ('item', 'fee')
-        """,
-        (distribution_id,),
-    )
-    cursor.execute(
-        """
-        INSERT INTO distribution_lines (
-            distribution_id,
-            loot_item_id,
-            line_type,
-            amount,
-            memo
-        )
-        VALUES (%s, %s, 'item', %s, NULL)
-        """,
-        (distribution_id, loot_item_id, total_sale_amount),
-    )
-    if fee_amount:
-        cursor.execute(
-            """
-            INSERT INTO distribution_lines (
-                distribution_id,
-                loot_item_id,
-                line_type,
-                amount,
-                memo
-            )
-            VALUES (%s, %s, 'fee', %s, '경리 수수료 10%%')
-            """,
-            (distribution_id, loot_item_id, fee_amount),
-        )
-
     active_alliance_ids = list(participant_counts.keys())
     if active_alliance_ids:
         cursor.execute(
@@ -2542,15 +3113,13 @@ def _upsert_distribution_for_loot(
                 distribution_id,
                 alliance_id,
                 participant_count,
-                gross_amount,
                 net_amount,
                 payout_status,
                 updated_at
             )
-            VALUES (%s, %s, %s, %s, %s, 'unpaid', CURRENT_TIMESTAMP)
+            VALUES (%s, %s, %s, %s, 'unpaid', CURRENT_TIMESTAMP)
             ON CONFLICT (distribution_id, alliance_id) DO UPDATE SET
                 participant_count = EXCLUDED.participant_count,
-                gross_amount = EXCLUDED.gross_amount,
                 net_amount = EXCLUDED.net_amount,
                 payout_status = distribution_alliance_payouts.payout_status,
                 updated_at = CURRENT_TIMESTAMP
@@ -2559,7 +3128,6 @@ def _upsert_distribution_for_loot(
                 distribution_id,
                 alliance_id,
                 count,
-                alliance_amount,
                 alliance_amount,
             ),
         )
@@ -2701,6 +3269,8 @@ def _ensure_postgres_columns(cursor: psycopg2.extensions.cursor) -> None:
         "ALTER TABLE distribution_batches ADD COLUMN IF NOT EXISTS fee_rate NUMERIC(8, 6) NOT NULL DEFAULT 0",
         "ALTER TABLE distribution_batches ADD COLUMN IF NOT EXISTS fee_amount NUMERIC(18, 2) NOT NULL DEFAULT 0",
         "ALTER TABLE distribution_alliance_payouts ADD COLUMN IF NOT EXISTS payout_status TEXT NOT NULL DEFAULT 'unpaid'",
+        "ALTER TABLE alliance_payout_fee_rules ADD COLUMN IF NOT EXISTS created_by_discord_id BIGINT",
+        "ALTER TABLE alliance_payout_fee_rules ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP",
         "ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP",
         "ALTER TABLE scheduled_report_settings ADD COLUMN IF NOT EXISTS run_time TEXT NOT NULL DEFAULT '00:00'",
         "ALTER TABLE scheduled_report_settings ADD COLUMN IF NOT EXISTS schedule_json JSONB NOT NULL DEFAULT '{\"type\":\"daily\",\"time\":\"00:00\",\"timezone\":\"Asia/Seoul\"}'::jsonb",
@@ -2782,10 +3352,7 @@ def _ensure_postgres_columns(cursor: psycopg2.extensions.cursor) -> None:
     cursor.execute(
         """
         UPDATE distribution_alliance_payouts p
-        SET gross_amount = (
-                db.total_net_amount / NULLIF(db.total_participant_count, 0)
-            ) * p.participant_count,
-            net_amount = (
+        SET net_amount = (
                 db.total_net_amount / NULLIF(db.total_participant_count, 0)
             ) * p.participant_count,
             updated_at = CURRENT_TIMESTAMP
@@ -2813,6 +3380,33 @@ def _ensure_postgres_columns(cursor: psycopg2.extensions.cursor) -> None:
         "ON distribution_batches(guild_id)"
     )
     cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_member_payout_rule_snapshots_distribution_alliance "
+        "ON member_payout_rule_snapshots(distribution_id, alliance_id)"
+    )
+    cursor.execute(
+        """
+        DELETE FROM member_payout_rule_snapshots newer
+        USING member_payout_rule_snapshots older
+        WHERE newer.snapshot_id > older.snapshot_id
+          AND newer.distribution_id = older.distribution_id
+          AND newer.alliance_id = older.alliance_id
+          AND newer.rule_name_snapshot = older.rule_name_snapshot
+          AND newer.sort_order = older.sort_order
+        """
+    )
+    cursor.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_member_payout_rule_snapshots_unique "
+        "ON member_payout_rule_snapshots(distribution_id, alliance_id, rule_name_snapshot, sort_order)"
+    )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_member_payout_statuses_alliance_paid "
+        "ON member_payout_statuses(alliance_id, is_paid)"
+    )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_alliance_payout_fee_rules_active "
+        "ON alliance_payout_fee_rules(guild_id, alliance_id, is_active)"
+    )
+    cursor.execute(
         "CREATE INDEX IF NOT EXISTS idx_bot_command_queue_guild_status "
         "ON bot_command_queue(guild_id, status, created_at)"
     )
@@ -2827,18 +3421,47 @@ def _drop_redundant_timestamp_columns(cursor: psycopg2.extensions.cursor) -> Non
         "attendance_entries": ("created_at",),
         "attendance_live_sessions": ("created_at", "updated_at"),
         "attendance_live_participants": ("created_at",),
-        "bosses": ("created_at",),
-        "boss_spawn_schedules": ("created_at",),
-        "boss_hunt_sessions": ("created_at",),
-        "boss_hunt_participants": ("created_at",),
-        "boss_attendance_snapshots": ("created_at",),
         "items": ("created_at",),
         "loot_events": ("created_at",),
-        "member_payout_groups": ("created_at",),
     }
     for table_name, column_names in redundant_columns.items():
         for column_name in column_names:
-            cursor.execute(f"ALTER TABLE {table_name} DROP COLUMN IF EXISTS {column_name}")
+            cursor.execute(f"ALTER TABLE IF EXISTS {table_name} DROP COLUMN IF EXISTS {column_name}")
+
+
+def _drop_obsolete_member_payout_tables(cursor: psycopg2.extensions.cursor) -> None:
+    for table_name in (
+        "payout_transactions",
+        "member_payout_fee_lines",
+        "member_payout_recipients",
+        "member_payout_items",
+        "member_payout_groups",
+    ):
+        cursor.execute(f"DROP TABLE IF EXISTS {table_name} CASCADE")
+
+
+def _drop_obsolete_loot_boss_schema(cursor: psycopg2.extensions.cursor) -> None:
+    for table_name in (
+        "boss_attendance_snapshot_rows",
+        "boss_hunt_participants",
+        "boss_spawn_schedules",
+        "boss_attendance_snapshots",
+        "boss_hunt_sessions",
+        "bosses",
+        "distribution_lines",
+    ):
+        cursor.execute(f"DROP TABLE IF EXISTS {table_name} CASCADE")
+
+    obsolete_columns = {
+        "loot_event_items": ("buyer_name", "buyer_alliance_id", "memo"),
+        "distribution_batches": ("status", "closed_at", "created_at"),
+        "distribution_alliance_payouts": ("gross_amount", "payout_method", "memo"),
+    }
+    for table_name, column_names in obsolete_columns.items():
+        for column_name in column_names:
+            cursor.execute(
+                f"ALTER TABLE IF EXISTS {table_name} DROP COLUMN IF EXISTS {column_name}"
+            )
 
 
 def _seed_default_alliances(cursor: psycopg2.extensions.cursor) -> None:
@@ -3002,60 +3625,6 @@ CREATE TABLE IF NOT EXISTS attendance_live_participants (
     PRIMARY KEY (live_session_id, discord_id)
 );
 
-CREATE TABLE IF NOT EXISTS bosses (
-    boss_id BIGSERIAL PRIMARY KEY,
-    boss_name TEXT NOT NULL UNIQUE,
-    alias TEXT,
-    is_active BOOLEAN NOT NULL DEFAULT TRUE,
-    sort_order INTEGER,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS boss_spawn_schedules (
-    schedule_id BIGSERIAL PRIMARY KEY,
-    boss_id BIGINT NOT NULL REFERENCES bosses(boss_id) ON DELETE CASCADE,
-    time_label TEXT NOT NULL,
-    is_active BOOLEAN NOT NULL DEFAULT TRUE,
-    memo TEXT
-);
-
-CREATE TABLE IF NOT EXISTS boss_hunt_sessions (
-    hunt_id BIGSERIAL PRIMARY KEY,
-    guild_id BIGINT REFERENCES guilds(guild_id) ON DELETE CASCADE,
-    boss_id BIGINT REFERENCES bosses(boss_id),
-    hunt_at TEXT NOT NULL,
-    title TEXT,
-    source TEXT NOT NULL DEFAULT 'web',
-    memo TEXT
-);
-
-CREATE TABLE IF NOT EXISTS boss_hunt_participants (
-    hunt_id BIGINT NOT NULL REFERENCES boss_hunt_sessions(hunt_id) ON DELETE CASCADE,
-    user_id BIGINT NOT NULL REFERENCES users(user_id),
-    discord_id BIGINT,
-    alliance_id BIGINT REFERENCES alliances(alliance_id),
-    attended_at TEXT,
-    PRIMARY KEY (hunt_id, user_id)
-);
-
-CREATE TABLE IF NOT EXISTS boss_attendance_snapshots (
-    snapshot_id BIGSERIAL PRIMARY KEY,
-    period_start TEXT NOT NULL,
-    period_end TEXT NOT NULL,
-    total_hunts INTEGER NOT NULL DEFAULT 0
-);
-
-CREATE TABLE IF NOT EXISTS boss_attendance_snapshot_rows (
-    snapshot_id BIGINT NOT NULL REFERENCES boss_attendance_snapshots(snapshot_id) ON DELETE CASCADE,
-    user_id BIGINT NOT NULL REFERENCES users(user_id),
-    class_name TEXT,
-    attendance_count INTEGER NOT NULL DEFAULT 0,
-    attendance_rate NUMERIC(10, 6) NOT NULL DEFAULT 0,
-    rank_overall INTEGER,
-    rank_by_class INTEGER,
-    PRIMARY KEY (snapshot_id, user_id)
-);
-
 CREATE TABLE IF NOT EXISTS items (
     item_id BIGSERIAL PRIMARY KEY,
     guild_id BIGINT REFERENCES guilds(guild_id) ON DELETE CASCADE,
@@ -3122,13 +3691,10 @@ CREATE TABLE IF NOT EXISTS loot_event_items (
     loot_event_id BIGINT NOT NULL REFERENCES loot_events(loot_event_id) ON DELETE CASCADE,
     item_id BIGINT REFERENCES items(item_id),
     item_name_snapshot TEXT NOT NULL,
-    buyer_name TEXT,
-    buyer_alliance_id BIGINT REFERENCES alliances(alliance_id),
     cash_price_krw NUMERIC(18, 2) NOT NULL DEFAULT 0,
     sale_price NUMERIC(18, 2) NOT NULL DEFAULT 0,
     fee_rate NUMERIC(8, 6) NOT NULL DEFAULT 0,
-    net_amount NUMERIC(18, 2) NOT NULL DEFAULT 0,
-    memo TEXT
+    net_amount NUMERIC(18, 2) NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS loot_event_alliance_counts (
@@ -3155,77 +3721,48 @@ CREATE TABLE IF NOT EXISTS distribution_batches (
     total_net_amount NUMERIC(18, 2) NOT NULL DEFAULT 0,
     total_participant_count INTEGER NOT NULL DEFAULT 0,
     fee_rate NUMERIC(8, 6) NOT NULL DEFAULT 0,
-    fee_amount NUMERIC(18, 2) NOT NULL DEFAULT 0,
-    status TEXT NOT NULL DEFAULT 'draft',
-    closed_at TEXT
-);
-
-CREATE TABLE IF NOT EXISTS distribution_lines (
-    line_id BIGSERIAL PRIMARY KEY,
-    distribution_id BIGINT NOT NULL REFERENCES distribution_batches(distribution_id) ON DELETE CASCADE,
-    loot_item_id BIGINT REFERENCES loot_event_items(loot_item_id),
-    line_type TEXT NOT NULL DEFAULT 'item',
-    amount NUMERIC(18, 2) NOT NULL DEFAULT 0,
-    memo TEXT
+    fee_amount NUMERIC(18, 2) NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS distribution_alliance_payouts (
     distribution_id BIGINT NOT NULL REFERENCES distribution_batches(distribution_id) ON DELETE CASCADE,
     alliance_id BIGINT NOT NULL REFERENCES alliances(alliance_id),
     participant_count INTEGER NOT NULL DEFAULT 0,
-    gross_amount NUMERIC(18, 2) NOT NULL DEFAULT 0,
     net_amount NUMERIC(18, 2) NOT NULL DEFAULT 0,
     payout_status TEXT NOT NULL DEFAULT 'unpaid',
-    payout_method TEXT,
-    memo TEXT,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (distribution_id, alliance_id)
 );
 
-CREATE TABLE IF NOT EXISTS member_payout_groups (
-    payout_group_id BIGSERIAL PRIMARY KEY,
-    distribution_id BIGINT REFERENCES distribution_batches(distribution_id) ON DELETE SET NULL,
-    alliance_id BIGINT REFERENCES alliances(alliance_id),
-    title TEXT NOT NULL,
-    total_amount NUMERIC(18, 2) NOT NULL DEFAULT 0,
+CREATE TABLE IF NOT EXISTS alliance_payout_fee_rules (
+    rule_id BIGSERIAL PRIMARY KEY,
+    guild_id BIGINT NOT NULL REFERENCES guilds(guild_id) ON DELETE CASCADE,
+    alliance_id BIGINT NOT NULL REFERENCES alliances(alliance_id) ON DELETE CASCADE,
+    rule_name TEXT NOT NULL,
     fee_rate NUMERIC(8, 6) NOT NULL DEFAULT 0,
-    fee_amount NUMERIC(18, 2) NOT NULL DEFAULT 0,
-    per_member_amount NUMERIC(18, 2) NOT NULL DEFAULT 0,
-    status TEXT NOT NULL DEFAULT 'draft'
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_by_discord_id BIGINT,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS member_payout_items (
-    payout_item_id BIGSERIAL PRIMARY KEY,
-    payout_group_id BIGINT NOT NULL REFERENCES member_payout_groups(payout_group_id) ON DELETE CASCADE,
-    item_id BIGINT REFERENCES items(item_id),
-    item_name_snapshot TEXT,
-    amount NUMERIC(18, 2) NOT NULL DEFAULT 0,
-    memo TEXT
-);
-
-CREATE TABLE IF NOT EXISTS member_payout_recipients (
-    payout_group_id BIGINT NOT NULL REFERENCES member_payout_groups(payout_group_id) ON DELETE CASCADE,
-    user_id BIGINT NOT NULL REFERENCES users(user_id),
-    display_name_snapshot TEXT NOT NULL,
-    share_weight NUMERIC(10, 4) NOT NULL DEFAULT 1,
-    payout_amount NUMERIC(18, 2) NOT NULL DEFAULT 0,
-    payout_status TEXT NOT NULL DEFAULT 'unpaid',
-    paid_at TEXT,
-    memo TEXT,
-    PRIMARY KEY (payout_group_id, user_id)
-);
-
-CREATE TABLE IF NOT EXISTS payout_transactions (
-    transaction_id BIGSERIAL PRIMARY KEY,
-    payout_group_id BIGINT REFERENCES member_payout_groups(payout_group_id) ON DELETE SET NULL,
-    user_id BIGINT REFERENCES users(user_id),
-    alliance_id BIGINT REFERENCES alliances(alliance_id),
-    amount NUMERIC(18, 2) NOT NULL DEFAULT 0,
-    transaction_type TEXT NOT NULL DEFAULT 'payout',
-    status TEXT NOT NULL DEFAULT 'pending',
-    processed_at TEXT,
-    memo TEXT,
+CREATE TABLE IF NOT EXISTS member_payout_rule_snapshots (
+    snapshot_id BIGSERIAL PRIMARY KEY,
+    distribution_id BIGINT NOT NULL REFERENCES distribution_batches(distribution_id) ON DELETE CASCADE,
+    alliance_id BIGINT NOT NULL REFERENCES alliances(alliance_id) ON DELETE CASCADE,
+    rule_name_snapshot TEXT NOT NULL,
+    fee_rate_snapshot NUMERIC(8, 6) NOT NULL DEFAULT 0,
+    sort_order INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS member_payout_statuses (
+    distribution_id BIGINT NOT NULL REFERENCES distribution_batches(distribution_id) ON DELETE CASCADE,
+    alliance_id BIGINT NOT NULL REFERENCES alliances(alliance_id) ON DELETE CASCADE,
+    user_id BIGINT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    is_paid BOOLEAN NOT NULL DEFAULT FALSE,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (distribution_id, alliance_id, user_id)
 );
 
 CREATE TABLE IF NOT EXISTS websocket_events (

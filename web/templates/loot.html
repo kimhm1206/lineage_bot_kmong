@@ -1,33 +1,44 @@
 {% extends "base.html" %}
 
-{% block title %}드랍 관리{% endblock %}
+{% block title %}드랍&분배{% endblock %}
 
 {% block content %}
   <section class="ops-hero">
     <div>
       <p class="eyebrow">{{ auth.selected_server.name }}</p>
-      <h1>{% if auth.selected_server.can_manage %}드랍 관리{% else %}드랍 현황{% endif %}</h1>
-      <p class="hero-copy">
-        {% if auth.selected_server.can_manage %}
-          출석 회차를 기준으로 드랍, 원화 시세, 혈맹별 분배 상태를 관리합니다.
-        {% else %}
-          출석 회차를 기준으로 드랍, 원화 시세, 혈맹별 분배 상태를 확인합니다.
-        {% endif %}
-      </p>
+      <h1>드랍&분배</h1>
+      <p class="hero-copy">드랍별 분배 아데나와 혈맹별 분배 상태를 확인합니다.</p>
     </div>
-    <div class="server-summary">
-      최근 {{ loot_events|length }}건
+    <div class="loot-hero-tools">
+      <div class="currency-toggle" role="group" aria-label="분배금 표시 방식">
+        <button class="currency-toggle-button is-active" type="button" data-currency-mode-button="adena">아데나로 보기</button>
+        <button class="currency-toggle-button" type="button" data-currency-mode-button="cash">현금으로 보기</button>
+      </div>
+      <p>현금과 아데나는 드랍 등록 시 입력한 시세를 기준으로 각 드랍마다 따로 환산됩니다.</p>
+      <div class="server-summary">
+        {{ loot_period.label }} {{ distribution_events|length }}건
+      </div>
     </div>
   </section>
 
   {% if saved == "created" %}
     <div class="alert success">드랍 기록을 등록했습니다.</div>
   {% elif saved == "updated" %}
-    <div class="alert success">드랍 시세와 분배 금액을 다시 계산했습니다.</div>
+    <div class="alert success">드랍 시세와 분배 아데나를 다시 계산했습니다.</div>
   {% elif saved == "deleted" %}
     <div class="alert success">드랍 기록을 삭제했습니다.</div>
   {% elif saved == "payout" %}
     <div class="alert success">혈맹 분배 상태를 변경했습니다.</div>
+  {% elif saved == "member_payout" %}
+    <div class="alert success">혈맹원 분배를 완료 처리했습니다.</div>
+  {% elif saved == "fee_rule" %}
+    <div class="alert success">혈맹 내부 수수료 설정을 저장했습니다.</div>
+  {% elif saved == "item_price" %}
+    <div class="alert success">아이템을 저장했습니다.</div>
+  {% elif saved == "item_price_deleted" %}
+    <div class="alert success">아이템을 숨김 처리했습니다.</div>
+  {% elif saved == "item_price_error" %}
+    <div class="alert error">아이템을 변경하지 못했습니다.</div>
   {% elif saved == "error" %}
     <div class="alert error">드랍 기록을 변경하지 못했습니다.</div>
   {% elif saved == "forbidden" %}
@@ -42,22 +53,163 @@
     </div>
   {% endif %}
 
-  <nav class="loot-tabs" aria-label="드랍 관리 탭">
+  <nav class="loot-tabs" aria-label="드랍&분배 탭">
+    <a class="loot-tab-button is-active" href="#distribution" data-loot-tab="distribution">분배금 현황</a>
     {% if auth.selected_server.can_manage %}
-      <a class="loot-tab-button is-active" href="#create" data-loot-tab="create">드랍 등록</a>
-      <a class="loot-tab-button" href="#payouts" data-loot-tab="payouts">분배 현황</a>
-    {% else %}
-      <a class="loot-tab-button is-active" href="#payouts" data-loot-tab="payouts">분배 현황</a>
+      <a class="loot-tab-button" href="#create" data-loot-tab="create">드랍 등록</a>
+      <a class="loot-tab-button" href="#alliance-payouts" data-loot-tab="alliance-payouts">각혈 분배</a>
+    {% endif %}
+    {% if auth.selected_server.my_alliance.can_view %}
+      <a class="loot-tab-button" href="#my-alliance-payouts" data-loot-tab="my-alliance-payouts">내 혈맹</a>
+    {% endif %}
+    {% if auth.selected_server.can_manage %}
+      <a class="loot-tab-button" href="#item-settings" data-loot-tab="item-settings">아이템 설정</a>
+    {% endif %}
+    {% if auth.selected_server.my_alliance.can_select %}
+      <div class="loot-tab-spacer" data-loot-alliance-control hidden></div>
+      <label class="loot-alliance-select" data-loot-alliance-control hidden>
+        <span>혈맹</span>
+        <select data-loot-alliance-select>
+          {% for alliance in loot_alliance_options %}
+            <option
+              value="/loot?guild_id={{ auth.selected_guild_id }}&alliance_id={{ alliance.alliance_id }}#my-alliance-payouts"
+              {% if my_alliance_payouts.selected_alliance and alliance.alliance_id == my_alliance_payouts.selected_alliance.alliance_id %}selected{% endif %}
+            >
+              {{ alliance.alliance_name }}
+            </option>
+          {% endfor %}
+        </select>
+      </label>
     {% endif %}
   </nav>
 
+  <section class="loot-tab-panel" data-loot-panel="distribution">
+    <section class="loot-overview-grid loot-distribution-overview-grid">
+      <article class="panel loot-total-card">
+        <span data-currency-label data-adena-label="받아야 할 분배 아데나" data-cash-label="받아야 할 분배 현금">받아야 할 분배 아데나</span>
+        <strong data-money-value data-adena-text="{{ loot_summary.total_amount_text }}" data-cash-text="{{ loot_summary.total_cash_text }}">{{ loot_summary.total_amount_text }}</strong>
+        <small>{{ loot_period.label }} · 참여 {{ loot_summary.participated_count }}건</small>
+      </article>
+      <article class="panel loot-total-card is-muted">
+        <span data-currency-label data-adena-label="받은 분배 아데나" data-cash-label="받은 분배 현금">받은 분배 아데나</span>
+        <strong data-money-value data-adena-text="{{ loot_summary.paid_amount_text }}" data-cash-text="{{ loot_summary.paid_cash_text }}">{{ loot_summary.paid_amount_text }}</strong>
+        <small>수령완료 {{ loot_summary.paid_count }}건</small>
+      </article>
+      <article class="panel loot-total-card is-muted">
+        <span data-currency-label data-adena-label="미수령 잔여 아데나" data-cash-label="미수령 잔여 현금">미수령 잔여 아데나</span>
+        <strong data-money-value data-adena-text="{{ loot_summary.unpaid_amount_text }}" data-cash-text="{{ loot_summary.unpaid_cash_text }}">{{ loot_summary.unpaid_amount_text }}</strong>
+        <small>미수령 {{ loot_summary.unpaid_count }}건</small>
+      </article>
+      <article class="panel loot-filter-card loot-distribution-filter-card">
+        <span class="loot-filter-label">기간</span>
+        <div class="quick-filter-row">
+          {% for filter in loot_period.filters %}
+            <a class="quick-filter {% if filter.active %}is-active{% endif %}" href="{{ filter.href }}">
+              {{ filter.label }}
+            </a>
+          {% endfor %}
+        </div>
+        <span class="loot-filter-label">참여</span>
+        <div class="quick-filter-row">
+          {% for filter in loot_period.participation_filters %}
+            <a class="quick-filter {% if filter.active %}is-active{% endif %}" href="{{ filter.href }}">
+              {{ filter.label }}
+            </a>
+          {% endfor %}
+        </div>
+      </article>
+    </section>
+
+    <section class="loot-event-list" aria-label="분배금 현황">
+      {% for event in distribution_events %}
+        <details class="panel loot-event-card distribution-card {% if event.viewer_participated %}is-viewer{% else %}is-not-viewer{% endif %}">
+          <summary>
+            <div class="loot-event-main">
+              <span class="status-id">{{ event.viewer_participation_label }}</span>
+              <strong>{{ event.item_name }}</strong>
+              <span>{{ event.attendance_started_at or event.event_date }}</span>
+            </div>
+            <div class="loot-event-metrics">
+              <div>
+                <span>드랍 시간</span>
+                <strong>{{ event.attendance_started_at or event.event_time_label }}</strong>
+              </div>
+              <div>
+                <span>참여 인원</span>
+                <strong>{{ event.total_participant_count }}명</strong>
+              </div>
+              <div>
+                <span data-currency-label data-adena-label="실 지급 분배금" data-cash-label="실 지급 분배 현금">실 지급 분배금</span>
+                <strong data-money-value data-adena-text="{{ event.viewer_event_amount_text }}" data-cash-text="{{ event.viewer_event_cash_text }}">{{ event.viewer_event_amount_text }}</strong>
+              </div>
+            </div>
+            <div class="loot-summary-status {{ event.viewer_payout_class }}">
+              <strong>{{ event.viewer_payout_label }}</strong>
+              <span>{{ event.viewer_payout_meta }}</span>
+            </div>
+          </summary>
+
+          <div class="loot-event-body">
+            <div class="loot-fee-summary distribution-detail-summary">
+              <div>
+                <span>드랍 시간</span>
+                <strong>{{ event.attendance_started_at or event.event_date }}</strong>
+              </div>
+              <div>
+                <span>아이템명</span>
+                <strong>{{ event.item_name }}</strong>
+              </div>
+              <div>
+                <span>현금가격</span>
+                <strong>{{ event.cash_price_text }}원</strong>
+              </div>
+              <div>
+                <span>아데나 시세</span>
+                <strong>{{ event.adena_rate_text }}</strong>
+              </div>
+              <div>
+                <span data-currency-label data-adena-label="1인당 분배 아데나[수수료 차감X]" data-cash-label="1인당 분배 현금[수수료 차감X]">1인당 분배 아데나[수수료 차감X]</span>
+                <strong data-money-value data-adena-text="{{ event.viewer_gross_per_member_text }}" data-cash-text="{{ event.viewer_gross_per_member_cash_text }}">{{ event.viewer_gross_per_member_text }}</strong>
+              </div>
+              <div>
+                <span data-currency-label data-adena-label="연맹 수수료" data-cash-label="연맹 수수료 현금">연맹 수수료</span>
+                <strong data-money-value data-adena-text="{{ event.viewer_alliance_fee_amount_text }}" data-cash-text="{{ event.viewer_alliance_fee_cash_text }}">{{ event.viewer_alliance_fee_amount_text }}</strong>
+              </div>
+              <div>
+                <span data-currency-label data-adena-label="혈맹 내부 수수료" data-cash-label="혈맹 내부 수수료 현금">혈맹 내부 수수료</span>
+                <strong data-money-value data-adena-text="{{ event.viewer_internal_fee_share_amount_text }}" data-cash-text="{{ event.viewer_internal_fee_share_cash_text }}">{{ event.viewer_internal_fee_share_amount_text }}</strong>
+              </div>
+              <div>
+                <span data-currency-label data-adena-label="실 지급 분배금" data-cash-label="실 지급 분배 현금">실 지급 분배금</span>
+                <strong data-money-value data-adena-text="{{ event.viewer_event_amount_text }}" data-cash-text="{{ event.viewer_event_cash_text }}">{{ event.viewer_event_amount_text }}</strong>
+              </div>
+            </div>
+            <div class="alliance-chip-row">
+              {% for payout in event.alliance_payouts %}
+                <span class="alliance-chip {% if payout.payout_status == 'paid' %}is-paid{% endif %}">
+                  {{ payout.alliance_name }} {{ payout.participant_count }}명
+                </span>
+              {% else %}
+                <span class="alliance-chip is-empty">분배 없음</span>
+              {% endfor %}
+            </div>
+          </div>
+        </details>
+      {% else %}
+        <article class="panel">
+          <div class="empty report-empty">조회할 드랍 기록이 없습니다.</div>
+        </article>
+      {% endfor %}
+    </section>
+  </section>
+
   {% if auth.selected_server.can_manage %}
-    <section class="loot-tab-panel" data-loot-panel="create">
+    <section class="loot-tab-panel" data-loot-panel="create" hidden>
       <section class="loot-layout">
         <form class="panel loot-create-panel" method="post" action="/loot?guild_id={{ auth.selected_guild_id }}" data-loot-form>
           <header class="panel-header">
             <h2>드랍 등록</h2>
-            <a class="tiny-button" href="/settings?guild_id={{ auth.selected_guild_id }}#items">아이템 추가하기</a>
+            <a class="tiny-button" href="#item-settings" data-loot-tab-link="item-settings">아이템 추가하기</a>
           </header>
 
           <div class="loot-create-grid">
@@ -103,7 +255,7 @@
             </label>
 
             <label class="field">
-              <span>머니 시세</span>
+              <span>아데나 시세</span>
               <input
                 name="adena_rate"
                 type="number"
@@ -116,43 +268,29 @@
             </label>
 
             <label class="field">
-              <span>게임머니 판매금</span>
+              <span>분배 아데나</span>
               <input
                 name="sale_price"
                 type="number"
                 min="0"
-                step="0.01"
+                step="1"
                 value="{{ loot_form.sale_price }}"
                 data-loot-sale-price
                 readonly
               >
             </label>
 
-            <div class="field buyer-field" data-buyer-picker data-buyer-source="attendance">
-              <span>입찰자</span>
+            <label class="field">
+              <span>수수료(%)</span>
               <input
-                name="buyer_name"
-                type="hidden"
-                value="{{ loot_form.buyer_name }}"
-                data-buyer-value
+                name="fee_percent"
+                type="number"
+                min="0"
+                step="0.01"
+                value="{{ loot_form.fee_percent }}"
+                placeholder="10"
               >
-              <button
-                class="buyer-picker-button"
-                type="button"
-                data-buyer-trigger
-              >
-                <span data-buyer-label>{{ loot_form.buyer_name or "입찰자 선택" }}</span>
-              </button>
-              <div class="buyer-picker-menu" data-buyer-menu hidden>
-                <input
-                  class="buyer-search-input"
-                  type="search"
-                  placeholder="참여자 검색"
-                  data-buyer-search
-                >
-                <div class="buyer-option-list" data-buyer-list></div>
-              </div>
-            </div>
+            </label>
 
             <label class="field loot-memo-field">
               <span>메모</span>
@@ -182,60 +320,43 @@
         </article>
       </section>
     </section>
-  {% endif %}
 
-  <section class="loot-tab-panel" data-loot-panel="payouts" {% if auth.selected_server.can_manage %}hidden{% endif %}>
-    <section class="loot-event-list" aria-label="드랍 기록">
-      {% for event in loot_events %}
-        <details
-          class="panel loot-event-card"
-          data-loot-event-card
-          data-loot-event-id="{{ event.loot_event_id }}"
-          data-distribution-id="{{ event.distribution_id }}"
-        >
-          <summary>
-            <div class="loot-event-main">
-              <span class="status-id">#{{ event.loot_event_id }}</span>
-              <strong>{{ event.item_name }}</strong>
-              <span>출석 #{{ event.attendance_id }} · {{ event.attendance_started_at or event.event_date }}</span>
-            </div>
-            <div class="loot-event-metrics">
-              <div>
-                <span>게임머니</span>
-                <strong>{{ event.sale_price_text }}</strong>
+    <section class="loot-tab-panel" data-loot-panel="alliance-payouts" hidden>
+      <section class="loot-event-list" aria-label="각혈 분배 현황">
+        {% for event in loot_events %}
+          <details
+            class="panel loot-event-card payout-card"
+            data-loot-event-card
+            data-loot-event-id="{{ event.loot_event_id }}"
+            data-distribution-id="{{ event.distribution_id }}"
+          >
+            <summary>
+              <div class="loot-event-main">
+                <span class="status-id">#{{ event.loot_event_id }}</span>
+                <strong>{{ event.item_name }}</strong>
+                <span>출석 #{{ event.attendance_id }} · {{ event.attendance_started_at or event.event_date }}</span>
               </div>
-              <div>
-                <span>수수료</span>
-                <strong>{{ event.fee_amount_text }}</strong>
+              <div class="loot-event-metrics">
+                <div>
+                  <span data-currency-label data-adena-label="분배 아데나" data-cash-label="분배 현금">분배 아데나</span>
+                  <strong data-money-value data-adena-text="{{ event.sale_price_text }}" data-cash-text="{{ event.total_sale_cash_text }}">{{ event.sale_price_text }}</strong>
+                </div>
+                <div>
+                  <span>수수료</span>
+                  <strong data-money-value data-adena-text="{{ event.fee_amount_text }}" data-cash-text="{{ event.fee_amount_cash_text }}">{{ event.fee_amount_text }}</strong>
+                </div>
+                <div>
+                  <span data-currency-label data-adena-label="1인당" data-cash-label="1인당">1인당</span>
+                  <strong data-money-value data-adena-text="{{ event.per_member_text }}" data-cash-text="{{ event.per_member_cash_text }}">{{ event.per_member_text }}</strong>
+                </div>
               </div>
-              <div>
-                <span>1인</span>
-                <strong>{{ event.per_member_text }}</strong>
+              <div class="loot-summary-status {{ event.payout_summary_class }}" data-payout-summary>
+                <strong data-payout-summary-label>{{ event.payout_summary_label }}</strong>
+                <span data-payout-summary-meta>{{ event.payout_summary_meta }}</span>
               </div>
-            </div>
-            <div class="loot-summary-status {{ event.payout_summary_class }}" data-payout-summary>
-              <strong data-payout-summary-label>{{ event.payout_summary_label }}</strong>
-              <span data-payout-summary-meta>{{ event.payout_summary_meta }}</span>
-            </div>
-            <div class="alliance-chip-row">
-              {% for payout in event.alliance_payouts[:4] %}
-                <span
-                  class="alliance-chip {% if payout.payout_status == 'paid' %}is-paid{% endif %}"
-                  data-summary-alliance-id="{{ payout.alliance_id }}"
-                >
-                  {{ payout.alliance_name }} {{ payout.participant_count }}명
-                </span>
-              {% else %}
-                <span class="alliance-chip is-empty">분배 없음</span>
-              {% endfor %}
-              {% if event.alliance_payouts|length > 4 %}
-                <span class="alliance-chip is-empty">+{{ event.alliance_payouts|length - 4 }}</span>
-              {% endif %}
-            </div>
-          </summary>
+            </summary>
 
-          <div class="loot-event-body">
-            {% if auth.selected_server.can_manage %}
+            <div class="loot-event-body">
               <div class="loot-edit-row">
                 <form class="loot-update-form" method="post" action="/loot/update?guild_id={{ auth.selected_guild_id }}" data-loot-event-form>
                   <input type="hidden" name="loot_event_id" value="{{ event.loot_event_id }}">
@@ -251,7 +372,7 @@
                     >
                   </label>
                   <label class="field">
-                    <span>머니 시세</span>
+                    <span>아데나 시세</span>
                     <input
                       name="adena_rate"
                       type="number"
@@ -262,42 +383,27 @@
                     >
                   </label>
                   <label class="field">
-                    <span>게임머니 판매금</span>
+                    <span>분배 아데나</span>
                     <input
                       name="sale_price"
                       type="number"
                       min="0"
-                      step="0.01"
+                      step="1"
                       value="{{ event.sale_price_input }}"
                       data-loot-sale-price
                       readonly
                     >
                   </label>
-                  <div class="field buyer-field" data-buyer-picker data-buyer-options='{{ event.buyer_options | tojson }}'>
-                    <span>입찰자</span>
+                  <label class="field">
+                    <span>수수료(%)</span>
                     <input
-                      name="buyer_name"
-                      type="hidden"
-                      value="{{ event.buyer_name }}"
-                      data-buyer-value
+                      name="fee_percent"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value="{{ event.fee_percent_input }}"
                     >
-                    <button
-                      class="buyer-picker-button"
-                      type="button"
-                      data-buyer-trigger
-                    >
-                      <span data-buyer-label>{{ event.buyer_name or "입찰자 선택" }}</span>
-                    </button>
-                    <div class="buyer-picker-menu" data-buyer-menu hidden>
-                      <input
-                        class="buyer-search-input"
-                        type="search"
-                        placeholder="참여자 검색"
-                        data-buyer-search
-                      >
-                      <div class="buyer-option-list" data-buyer-list></div>
-                    </div>
-                  </div>
+                  </label>
                   <label class="field loot-update-memo">
                     <span>메모</span>
                     <input name="memo" value="{{ event.memo }}">
@@ -313,70 +419,72 @@
                   </button>
                 </form>
               </div>
-            {% endif %}
 
-            <div class="loot-fee-summary">
-              <div>
-                <span>원화 시세</span>
-                <strong>{{ event.cash_price_text }}원</strong>
+              <div class="loot-fee-summary payout-detail-summary">
+                <div>
+                  <span>원화 시세</span>
+                  <strong>{{ event.cash_price_text }}원</strong>
+                </div>
+                <div>
+                  <span data-currency-label data-adena-label="총 분배 아데나" data-cash-label="총 분배 현금">총 분배 아데나</span>
+                  <strong data-money-value data-adena-text="{{ event.total_sale_text }}" data-cash-text="{{ event.total_sale_cash_text }}">{{ event.total_sale_text }}</strong>
+                </div>
+                <div>
+                  <span>경리 수수료 {{ event.fee_rate_percent_text }}%</span>
+                  <strong data-money-value data-adena-text="{{ event.fee_amount_text }}" data-cash-text="{{ event.fee_amount_cash_text }}">{{ event.fee_amount_text }}</strong>
+                </div>
+                <div>
+                  <span data-currency-label data-adena-label="실분배 아데나" data-cash-label="실분배 현금">실분배 아데나</span>
+                  <strong data-money-value data-adena-text="{{ event.total_net_text }}" data-cash-text="{{ event.total_net_cash_text }}">{{ event.total_net_text }}</strong>
+                </div>
+                <div>
+                  <span>총 인원</span>
+                  <strong>{{ event.total_participant_count }}명</strong>
+                </div>
+                <div>
+                  <span>1인 분배</span>
+                  <strong data-money-value data-adena-text="{{ event.per_member_text }}" data-cash-text="{{ event.per_member_cash_text }}">{{ event.per_member_text }}</strong>
+                </div>
               </div>
-              <div>
-                <span>총 판매금</span>
-                <strong>{{ event.total_sale_text }}</strong>
-              </div>
-              <div>
-                <span>경리 수수료 {{ event.fee_rate_percent_text }}%</span>
-                <strong>{{ event.fee_amount_text }}</strong>
-              </div>
-              <div>
-                <span>실분배금</span>
-                <strong>{{ event.total_net_text }}</strong>
-              </div>
-              <div>
-                <span>총 인원</span>
-                <strong>{{ event.total_participant_count }}명</strong>
-              </div>
-              <div>
-                <span>1인 분배</span>
-                <strong>{{ event.per_member_text }}</strong>
-              </div>
-            </div>
 
-            <section class="loot-breakdown-grid">
-              <article class="loot-breakdown-card">
-                <header>
-                  <h2>혈맹별 분배</h2>
-                  <span>{% if auth.selected_server.can_manage %}완료 상태 관리{% else %}분배 상태{% endif %}</span>
-                </header>
-                <table>
-                  <thead>
-                    <tr>
-                      <th>혈맹</th>
-                      <th>인원</th>
-                      <th>분배금</th>
-                      <th>1인</th>
-                      <th>상태</th>
-                      {% if auth.selected_server.can_manage %}
+              <section class="loot-breakdown-grid">
+                <article class="loot-breakdown-card">
+                  <header>
+                    <h2>혈맹별 분배</h2>
+                    <form class="inline-actions" method="post" action="/loot/payout-status-all?guild_id={{ auth.selected_guild_id }}" data-payout-all-form>
+                      <input type="hidden" name="distribution_id" value="{{ event.distribution_id }}">
+                      <input type="hidden" name="payout_status" value="paid">
+                      <button class="tiny-button" type="submit" data-payout-button>
+                        전체완료
+                      </button>
+                    </form>
+                  </header>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>혈맹</th>
+                        <th>인원</th>
+                        <th data-currency-label data-adena-label="분배 아데나" data-cash-label="분배 현금">분배 아데나</th>
+                        <th>1인</th>
+                        <th>상태</th>
                         <th>관리</th>
-                      {% endif %}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {% for payout in event.alliance_payouts %}
-                      <tr data-payout-row data-alliance-id="{{ payout.alliance_id }}">
-                        <td>{{ payout.alliance_name }}</td>
-                        <td>{{ payout.participant_count }}</td>
-                        <td>{{ payout.net_amount_text }}</td>
-                        <td>{{ payout.per_member_text }}</td>
-                        <td>
-                          <span
-                            class="payout-status-badge {% if payout.payout_status == 'paid' %}is-paid{% else %}is-unpaid{% endif %}"
-                            data-payout-badge
-                          >
-                            {{ payout.status_label }}
-                          </span>
-                        </td>
-                        {% if auth.selected_server.can_manage %}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {% for payout in event.alliance_payouts %}
+                        <tr data-payout-row data-alliance-id="{{ payout.alliance_id }}">
+                          <td>{{ payout.alliance_name }}</td>
+                          <td>{{ payout.participant_count }}</td>
+                          <td><span data-money-value data-adena-text="{{ payout.net_amount_text }}" data-cash-text="{{ payout.net_amount_cash_text }}">{{ payout.net_amount_text }}</span></td>
+                          <td><span data-money-value data-adena-text="{{ payout.per_member_text }}" data-cash-text="{{ payout.per_member_cash_text }}">{{ payout.per_member_text }}</span></td>
+                          <td>
+                            <span
+                              class="payout-status-badge {% if payout.payout_status == 'paid' %}is-paid{% else %}is-unpaid{% endif %}"
+                              data-payout-badge
+                            >
+                              {{ payout.status_label }}
+                            </span>
+                          </td>
                           <td>
                             <form class="inline-actions" method="post" action="/loot/payout-status?guild_id={{ auth.selected_guild_id }}" data-payout-form>
                               <input type="hidden" name="distribution_id" value="{{ event.distribution_id }}">
@@ -387,206 +495,361 @@
                               </button>
                             </form>
                           </td>
-                        {% endif %}
-                      </tr>
-                    {% else %}
-                      <tr><td colspan="{% if auth.selected_server.can_manage %}6{% else %}5{% endif %}" class="empty">분배 데이터가 없습니다.</td></tr>
-                    {% endfor %}
-                  </tbody>
-                </table>
-              </article>
+                        </tr>
+                      {% else %}
+                        <tr><td colspan="6" class="empty">분배 데이터가 없습니다.</td></tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </article>
 
-              <article class="loot-breakdown-card">
-                <header>
-                  <h2>출석 유저</h2>
-                  <span>머니 시세 {{ event.adena_rate_text }}</span>
-                </header>
-                <div class="loot-member-groups">
-                  {% for alliance in event.alliances %}
-                    <div class="loot-member-group">
-                      <div>
-                        <strong>{{ alliance.alliance_name }}</strong>
-                        <span>{{ alliance.count }}명</span>
+                <article class="loot-breakdown-card">
+                  <header>
+                    <h2>출석 유저</h2>
+                    <span>아데나 시세 {{ event.adena_rate_text }}</span>
+                  </header>
+                  <div class="loot-member-groups">
+                    {% for alliance in event.alliances %}
+                      <div class="loot-member-group">
+                        <div>
+                          <strong>{{ alliance.alliance_name }}</strong>
+                          <span>{{ alliance.count }}명</span>
+                        </div>
+                        <div class="member-pill-row">
+                          {% for member in alliance.members %}
+                            <span class="member-pill {% if member.is_viewer %}is-viewer{% endif %}">{{ member.discord_nickname }}</span>
+                          {% endfor %}
+                        </div>
                       </div>
-                      <div class="member-pill-row">
-                        {% for member in alliance.members %}
-                          <span class="member-pill">{{ member }}</span>
-                        {% endfor %}
-                      </div>
-                    </div>
-                  {% else %}
-                    <div class="empty report-empty">출석 유저가 없습니다.</div>
-                  {% endfor %}
+                    {% else %}
+                      <div class="empty report-empty">출석 유저가 없습니다.</div>
+                    {% endfor %}
+                  </div>
+                </article>
+              </section>
+            </div>
+          </details>
+        {% else %}
+          <article class="panel">
+            <div class="empty report-empty">등록된 드랍 기록이 없습니다.</div>
+          </article>
+        {% endfor %}
+      </section>
+    </section>
+  {% endif %}
+
+  {% if auth.selected_server.my_alliance.can_view %}
+    <section class="loot-tab-panel" data-loot-panel="my-alliance-payouts" hidden>
+      {% if my_alliance_payouts.selected_alliance %}
+        <section class="loot-overview-grid">
+          <article class="panel loot-total-card">
+            <span data-currency-label data-adena-label="혈맹 실분배 합계" data-cash-label="혈맹 실분배 현금">혈맹 실분배 합계</span>
+            <strong data-money-value data-adena-text="{{ my_alliance_payouts.summary.total_text }}" data-cash-text="{{ my_alliance_payouts.summary.total_cash_text }}">{{ my_alliance_payouts.summary.total_text }}</strong>
+            <small>{{ my_alliance_payouts.selected_alliance.alliance_name }}</small>
+          </article>
+          <article class="panel loot-total-card is-muted">
+            <span data-currency-label data-adena-label="미정산 잔여" data-cash-label="미정산 현금">미정산 잔여</span>
+            <strong data-money-value data-adena-text="{{ my_alliance_payouts.summary.unsettled_text }}" data-cash-text="{{ my_alliance_payouts.summary.unsettled_cash_text }}">{{ my_alliance_payouts.summary.unsettled_text }}</strong>
+            <small>미정산 {{ my_alliance_payouts.summary.unsettled_count }}건 · 완료 {{ my_alliance_payouts.summary.settled_count }}건</small>
+          </article>
+          {% if auth.selected_server.can_manage %}
+            <article class="panel my-payout-rule-panel my-payout-rule-strip">
+              <header class="panel-header">
+                <div>
+                  <h2>내부 수수료 설정</h2>
+                  <span class="panel-caption">미정산 건에만 즉시 반영됩니다</span>
                 </div>
-              </article>
-            </section>
+                <button class="tiny-button" type="button" data-fee-rule-modal-open>수수료 추가</button>
+              </header>
+
+              <div class="fee-rule-list">
+                {% for rule in my_alliance_payouts.fee_rules %}
+                  <div class="fee-rule-card">
+                    <div>
+                      <strong>{{ rule.rule_name }}</strong>
+                      <span>{{ rule.fee_percent_text }}%</span>
+                    </div>
+                    <form method="post" action="/loot/alliance-fee-rules/delete?guild_id={{ auth.selected_guild_id }}">
+                      <input type="hidden" name="alliance_id" value="{{ my_alliance_payouts.selected_alliance.alliance_id }}">
+                      <input type="hidden" name="rule_id" value="{{ rule.rule_id }}">
+                      <button class="tiny-button danger-text-button" type="submit">삭제</button>
+                    </form>
+                  </div>
+                {% else %}
+                  <div class="empty report-empty">등록된 내부 수수료가 없습니다.</div>
+                {% endfor %}
+              </div>
+            </article>
+          {% endif %}
+        </section>
+
+        {% if auth.selected_server.can_manage %}
+          <div class="modal-backdrop" data-fee-rule-modal hidden>
+            <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="fee-rule-modal-title">
+              <header class="panel-header">
+                <div>
+                  <h2 id="fee-rule-modal-title">수수료 추가</h2>
+                  <span class="panel-caption">{{ my_alliance_payouts.selected_alliance.alliance_name }} 내부 분배 룰</span>
+                </div>
+                <button class="icon-button" type="button" aria-label="닫기" data-fee-rule-modal-close>&times;</button>
+              </header>
+              <form class="my-payout-rule-form" method="post" action="/loot/alliance-fee-rules?guild_id={{ auth.selected_guild_id }}">
+                <input type="hidden" name="alliance_id" value="{{ my_alliance_payouts.selected_alliance.alliance_id }}">
+                <label class="field">
+                  <span>수수료 이름</span>
+                  <input name="rule_name" placeholder="예: 경리 수수료">
+                </label>
+                <label class="field">
+                  <span>퍼센트</span>
+                  <input name="fee_percent" type="number" min="0" step="0.01" placeholder="예: 5">
+                </label>
+                <button class="primary-button" type="submit">추가</button>
+              </form>
+            </div>
           </div>
-        </details>
+        {% endif %}
+
+        <section class="my-payout-layout">
+          <section class="loot-event-list" aria-label="내 혈맹 분배 현황">
+            {% for payout in my_alliance_payouts.events %}
+              <details class="panel loot-event-card payout-card my-payout-card" data-loot-event-card data-member-payout-card>
+                <summary>
+                  <div class="loot-event-main">
+                    <span class="status-id">#{{ payout.loot_event_id }}</span>
+                    <strong>{{ payout.item_name }}</strong>
+                    <span>{{ payout.attendance_started_at }}</span>
+                  </div>
+                  <div class="loot-event-metrics">
+                    <div>
+                      <span>참여 인원</span>
+                      <strong>{{ payout.participant_count }}명</strong>
+                    </div>
+                    <div>
+                      <span data-currency-label data-adena-label="실분배 아데나" data-cash-label="실분배 현금">실분배 아데나</span>
+                      <strong data-money-value data-adena-text="{{ payout.distributable_amount_text }}" data-cash-text="{{ payout.distributable_amount_cash_text }}">{{ payout.distributable_amount_text }}</strong>
+                    </div>
+                    <div>
+                      <span data-currency-label data-adena-label="1인당" data-cash-label="1인당">1인당</span>
+                      <strong data-money-value data-adena-text="{{ payout.per_member_text }}" data-cash-text="{{ payout.per_member_cash_text }}">{{ payout.per_member_text }}</strong>
+                    </div>
+                  </div>
+                  <div class="loot-summary-status {{ payout.status_class }}" data-member-payout-summary>
+                    <strong data-member-payout-summary-label>{{ payout.status_label }}</strong>
+                    <span>혈맹원 분배</span>
+                  </div>
+                </summary>
+
+                <div class="loot-event-body">
+                  <div class="loot-fee-summary payout-detail-summary my-payout-detail-summary">
+                    <div>
+                      <span>혈맹 분배금</span>
+                      <strong data-money-value data-adena-text="{{ payout.total_amount_text }}" data-cash-text="{{ payout.total_amount_cash_text }}">{{ payout.total_amount_text }}</strong>
+                    </div>
+                    <div>
+                      <span>내부 수수료</span>
+                      <strong data-money-value data-adena-text="{{ payout.fee_amount_text }}" data-cash-text="{{ payout.fee_amount_cash_text }}">{{ payout.fee_amount_text }}</strong>
+                    </div>
+                  </div>
+
+                  {% if payout.fee_lines %}
+                    <div class="my-payout-fee-card-row">
+                      {% for fee in payout.fee_lines %}
+                        <article class="my-payout-fee-card">
+                          <span>{{ fee.rule_name }}</span>
+                          <strong data-money-value data-adena-text="{{ fee.fee_amount_text }}" data-cash-text="{{ fee.fee_amount_cash_text }}">{{ fee.fee_amount_text }}</strong>
+                          <small>{{ fee.fee_percent_text }}%</small>
+                        </article>
+                      {% endfor %}
+                    </div>
+                  {% endif %}
+
+                  <section class="loot-breakdown-grid">
+                    <article class="loot-breakdown-card my-member-payout-table-card">
+                      <header>
+                        <h2>혈맹원 분배</h2>
+                        <div class="table-header-actions">
+                          <div class="quick-filter-row member-payout-filter-row">
+                            <button class="quick-filter is-active" type="button" data-member-payout-filter="all">전체</button>
+                            <button class="quick-filter" type="button" data-member-payout-filter="paid">지급 완료</button>
+                            <button class="quick-filter" type="button" data-member-payout-filter="unpaid">미완료</button>
+                          </div>
+                          {% if auth.selected_server.can_manage %}
+                            <form
+                              method="post"
+                              action="/loot/member-payouts/settle?guild_id={{ auth.selected_guild_id }}"
+                              data-member-payout-settle-form
+                              {% if payout.status == "paid" %}hidden{% endif %}
+                            >
+                              <input type="hidden" name="alliance_id" value="{{ my_alliance_payouts.selected_alliance.alliance_id }}">
+                              <input type="hidden" name="distribution_id" value="{{ payout.distribution_id }}">
+                              <button class="tiny-button" type="submit" data-member-payout-button>전체완료</button>
+                            </form>
+                          {% endif %}
+                        </div>
+                      </header>
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>닉네임</th>
+                            <th data-currency-label data-adena-label="분배 아데나" data-cash-label="분배 현금">분배 아데나</th>
+                            <th>상태</th>
+                            {% if auth.selected_server.can_manage %}
+                              <th>관리</th>
+                            {% endif %}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {% for recipient in payout.recipients %}
+                            <tr data-member-payout-row data-member-status="{{ recipient.payout_status }}">
+                              <td>{{ recipient.display_name }}</td>
+                              <td><span data-money-value data-adena-text="{{ recipient.payout_amount_text }}" data-cash-text="{{ recipient.payout_amount_cash_text }}">{{ recipient.payout_amount_text }}</span></td>
+                              <td>
+                                <span class="payout-status-badge {{ recipient.status_class }}" data-member-payout-badge>
+                                  {{ recipient.status_label }}
+                                </span>
+                              </td>
+                              {% if auth.selected_server.can_manage %}
+                                <td>
+                                  <form class="inline-actions" method="post" action="/loot/member-payouts/recipient-status?guild_id={{ auth.selected_guild_id }}" data-member-payout-form>
+                                    <input type="hidden" name="alliance_id" value="{{ my_alliance_payouts.selected_alliance.alliance_id }}">
+                                    <input type="hidden" name="distribution_id" value="{{ payout.distribution_id }}">
+                                    <input type="hidden" name="user_id" value="{{ recipient.user_id }}">
+                                    <input type="hidden" name="payout_status" value="{{ recipient.next_status }}" data-member-payout-status-input>
+                                    <button class="tiny-button" type="submit" data-member-payout-button>
+                                      {{ recipient.next_status_label }}
+                                    </button>
+                                  </form>
+                                </td>
+                              {% endif %}
+                            </tr>
+                          {% else %}
+                            <tr><td colspan="{% if auth.selected_server.can_manage %}4{% else %}3{% endif %}" class="empty">분배 대상자가 없습니다.</td></tr>
+                          {% endfor %}
+                        </tbody>
+                      </table>
+                    </article>
+                  </section>
+                </div>
+              </details>
+            {% else %}
+              <article class="panel">
+                <div class="empty report-empty">내 혈맹 분배 기록이 없습니다.</div>
+              </article>
+            {% endfor %}
+          </section>
+        </section>
       {% else %}
         <article class="panel">
-          <div class="empty report-empty">등록된 드랍 기록이 없습니다.</div>
+          <div class="empty report-empty">매핑된 혈맹이 없습니다.</div>
         </article>
-      {% endfor %}
+      {% endif %}
     </section>
-  </section>
+  {% endif %}
+
+  {% if auth.selected_server.can_manage %}
+    <section class="loot-tab-panel" data-loot-panel="item-settings" hidden>
+      <section class="loot-item-settings-layout">
+        <article class="panel settings-form">
+          <header class="panel-header">
+            <h2>아이템 추가</h2>
+            <span class="panel-caption">전 서버 통합 원화 시세입니다</span>
+          </header>
+
+          <form
+            class="settings-section item-price-create-grid"
+            method="post"
+            action="/settings/items?guild_id={{ auth.selected_guild_id }}&return_to=loot"
+          >
+            <label class="field">
+              <span>아이템 이름</span>
+              <input
+                name="item_name"
+                value="{{ item_price_form.item_name }}"
+                placeholder="예: 스턴"
+              >
+            </label>
+            <label class="field">
+              <span>원화 시세</span>
+              <input
+                name="default_price"
+                type="number"
+                min="0"
+                step="0.01"
+                value="{{ item_price_form.default_price }}"
+                placeholder="예: 5000000"
+              >
+            </label>
+            <div class="form-actions inline-form-actions">
+              <button class="primary-button" type="submit">
+                아이템 추가
+              </button>
+            </div>
+          </form>
+        </article>
+
+        <article class="panel">
+          <header class="panel-header">
+            <h2>등록된 아이템</h2>
+            <span class="panel-caption">전 서버 공통 {{ item_prices|length }}개</span>
+          </header>
+
+          <div class="item-price-list">
+            <div class="item-price-list-header" aria-hidden="true">
+              <span>아이템</span>
+              <span>원화 시세</span>
+              <span>관리</span>
+            </div>
+            {% for item in item_prices %}
+              <div class="item-price-card">
+                <form class="item-price-edit-form" method="post" action="/settings/items/update?guild_id={{ auth.selected_guild_id }}&return_to=loot">
+                  <input type="hidden" name="item_id" value="{{ item.item_id }}">
+                  <input
+                    name="item_name"
+                    value="{{ item.item_name }}"
+                    aria-label="아이템 이름"
+                  >
+                  <input
+                    name="default_price"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value="{{ item.default_price_input }}"
+                    aria-label="원화 시세"
+                  >
+                  <button class="tiny-button" type="submit">
+                    저장
+                  </button>
+                </form>
+                <form class="item-price-delete-form" method="post" action="/settings/items/delete?guild_id={{ auth.selected_guild_id }}&return_to=loot">
+                  <input type="hidden" name="item_id" value="{{ item.item_id }}">
+                  <button class="tiny-button danger-text-button" type="submit">
+                    삭제
+                  </button>
+                </form>
+              </div>
+            {% else %}
+              <div class="empty report-empty">등록된 아이템이 없습니다.</div>
+            {% endfor %}
+          </div>
+        </article>
+      </section>
+    </section>
+  {% endif %}
 {% endblock %}
 
 {% block scripts %}
   <script>
     const canManageLoot = {{ auth.selected_server.can_manage | tojson }};
+    const canViewMyAlliancePayouts = {{ auth.selected_server.my_alliance.can_view | tojson }};
     const attendanceOptions = {{ attendance_options | tojson }};
     const attendanceSelect = document.querySelector("[data-loot-attendance]");
     const attendancePreview = document.querySelector("[data-loot-attendance-preview]");
     const itemSelect = document.querySelector("[data-loot-item]");
     const createForm = document.querySelector("[data-loot-form]");
-    const createBuyerPicker = document.querySelector("[data-buyer-source='attendance']");
-
-    function attendanceBuyerOptions(session) {
-      if (!session) {
-        return [];
-      }
-      return (session.alliances || []).flatMap((alliance) => {
-        return (alliance.members || []).map((member) => ({
-          name: member.discord_nickname || member.display_name || "",
-          alliance: alliance.alliance_name || "미분류",
-        })).filter((member) => member.name);
-      });
-    }
+    let currencyMode = "adena";
 
     function selectedAttendance() {
       return attendanceOptions.find((session) => String(session.attendance_id) === attendanceSelect?.value);
-    }
-
-    function closeBuyerMenus(exceptPicker = null) {
-      document.querySelectorAll("[data-buyer-picker]").forEach((picker) => {
-        if (picker !== exceptPicker) {
-          picker.querySelector("[data-buyer-menu]").hidden = true;
-        }
-      });
-    }
-
-    function renderBuyerOptions(picker) {
-      const list = picker.querySelector("[data-buyer-list]");
-      const search = picker.querySelector("[data-buyer-search]");
-      const valueInput = picker.querySelector("[data-buyer-value]");
-      if (!list || !search || !valueInput) {
-        return;
-      }
-      const query = search.value.trim().toLowerCase();
-      const options = (picker._buyerOptions || []).filter((option) => {
-        return !query
-          || option.name.toLowerCase().includes(query)
-          || option.alliance.toLowerCase().includes(query);
-      });
-      list.innerHTML = "";
-
-      if (valueInput.value) {
-        const clearButton = document.createElement("button");
-        clearButton.type = "button";
-        clearButton.className = "buyer-option is-clear";
-        clearButton.textContent = "선택 해제";
-        clearButton.addEventListener("click", () => {
-          valueInput.value = "";
-          picker.querySelector("[data-buyer-label]").textContent = "입찰자 선택";
-          picker.querySelector("[data-buyer-menu]").hidden = true;
-        });
-        list.appendChild(clearButton);
-      }
-
-      if (!options.length) {
-        const empty = document.createElement("div");
-        empty.className = "buyer-option-empty";
-        empty.textContent = query ? "검색 결과가 없습니다." : "출석 참여자가 없습니다.";
-        list.appendChild(empty);
-        return;
-      }
-
-      options.forEach((option) => {
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = "buyer-option";
-        if (option.name === valueInput.value) {
-          button.classList.add("is-selected");
-        }
-        const name = document.createElement("strong");
-        const alliance = document.createElement("span");
-        name.textContent = option.name;
-        alliance.textContent = option.alliance;
-        button.appendChild(name);
-        button.appendChild(alliance);
-        button.addEventListener("click", () => {
-          valueInput.value = option.name;
-          picker.querySelector("[data-buyer-label]").textContent = option.name;
-          picker.querySelector("[data-buyer-menu]").hidden = true;
-        });
-        list.appendChild(button);
-      });
-    }
-
-    function setBuyerOptions(picker, options, clearInvalid = false) {
-      if (!picker) {
-        return;
-      }
-      const valueInput = picker.querySelector("[data-buyer-value]");
-      const label = picker.querySelector("[data-buyer-label]");
-      picker._buyerOptions = options || [];
-      if (clearInvalid && valueInput?.value) {
-        const exists = picker._buyerOptions.some((option) => option.name === valueInput.value);
-        if (!exists) {
-          valueInput.value = "";
-        }
-      }
-      if (label && valueInput) {
-        label.textContent = valueInput.value || "입찰자 선택";
-      }
-      renderBuyerOptions(picker);
-    }
-
-    function setupBuyerPicker(picker) {
-      const trigger = picker.querySelector("[data-buyer-trigger]");
-      const menu = picker.querySelector("[data-buyer-menu]");
-      const search = picker.querySelector("[data-buyer-search]");
-      if (!trigger || !menu || !search) {
-        return;
-      }
-
-      if (picker.dataset.buyerOptions) {
-        try {
-          setBuyerOptions(picker, JSON.parse(picker.dataset.buyerOptions));
-        } catch {
-          setBuyerOptions(picker, []);
-        }
-      }
-
-      trigger.addEventListener("click", () => {
-        const willOpen = menu.hidden;
-        closeBuyerMenus(picker);
-        menu.hidden = !willOpen;
-        if (willOpen) {
-          search.value = "";
-          renderBuyerOptions(picker);
-          search.focus();
-        }
-      });
-      search.addEventListener("input", () => renderBuyerOptions(picker));
-      search.addEventListener("keydown", (event) => {
-        if (event.key === "Escape") {
-          menu.hidden = true;
-          trigger.focus();
-        } else if (event.key === "Enter") {
-          event.preventDefault();
-          const firstOption = menu.querySelector(".buyer-option:not(.is-clear)");
-          firstOption?.click();
-        }
-      });
-    }
-
-    function syncCreateBuyerOptions() {
-      setBuyerOptions(
-        createBuyerPicker,
-        attendanceBuyerOptions(selectedAttendance()),
-        true,
-      );
     }
 
     function renderAttendancePreview() {
@@ -635,7 +898,7 @@
       if (!Number.isFinite(value) || value <= 0) {
         return "";
       }
-      return String(Math.round(value * 100) / 100);
+      return String(Math.round(value));
     }
 
     function syncLootPrice(form) {
@@ -664,14 +927,48 @@
       syncLootPrice(createForm);
     }
 
+    function normalizeLootTab(tabName) {
+      if (tabName === "create" || tabName === "alliance-payouts" || tabName === "item-settings") {
+        return canManageLoot ? tabName : "distribution";
+      }
+      if (tabName === "my-alliance-payouts") {
+        return canViewMyAlliancePayouts ? tabName : "distribution";
+      }
+      return "distribution";
+    }
+
     function activateLootTab(tabName) {
-      const normalized = canManageLoot && tabName !== "payouts" ? "create" : "payouts";
+      const normalized = normalizeLootTab(tabName);
       document.querySelectorAll("[data-loot-tab]").forEach((tab) => {
         tab.classList.toggle("is-active", tab.dataset.lootTab === normalized);
       });
       document.querySelectorAll("[data-loot-panel]").forEach((panel) => {
         panel.hidden = panel.dataset.lootPanel !== normalized;
       });
+      document.querySelectorAll("[data-loot-alliance-control]").forEach((element) => {
+        element.hidden = normalized !== "my-alliance-payouts";
+      });
+    }
+
+    function setCurrencyMode(mode) {
+      currencyMode = mode === "cash" ? "cash" : "adena";
+      document.querySelectorAll("[data-money-value]").forEach((element) => {
+        element.textContent = currencyMode === "cash"
+          ? element.dataset.cashText || "0원"
+          : element.dataset.adenaText || "0";
+      });
+      document.querySelectorAll("[data-currency-label]").forEach((element) => {
+        element.textContent = currencyMode === "cash"
+          ? element.dataset.cashLabel || element.textContent
+          : element.dataset.adenaLabel || element.textContent;
+      });
+      document.querySelectorAll("[data-currency-mode-button]").forEach((button) => {
+        button.classList.toggle("is-active", button.dataset.currencyModeButton === currencyMode);
+      });
+      try {
+        localStorage.setItem("lineage-loot-currency-mode", currencyMode);
+      } catch (error) {
+      }
     }
 
     function findByData(container, selector, dataKey, value) {
@@ -751,7 +1048,7 @@
       return payload;
     }
 
-    document.querySelectorAll("[data-payout-form]").forEach((form) => {
+    document.querySelectorAll("[data-payout-form], [data-payout-all-form]").forEach((form) => {
       form.addEventListener("submit", async (event) => {
         event.preventDefault();
         const button = form.querySelector("[data-payout-button]");
@@ -774,6 +1071,156 @@
           }
         }
       });
+    });
+
+    function memberStatusText(status) {
+      return status === "paid" ? "지급 완료" : "미완료";
+    }
+
+    function memberNextStatusText(status) {
+      return status === "paid" ? "미완료로 변경" : "완료 처리";
+    }
+
+    function setMemberPayoutRow(row, status) {
+      const normalized = status === "paid" ? "paid" : "unpaid";
+      const badge = row.querySelector("[data-member-payout-badge]");
+      const input = row.querySelector("[data-member-payout-status-input]");
+      const button = row.querySelector("[data-member-payout-button]");
+      row.dataset.memberStatus = normalized;
+      if (badge) {
+        badge.textContent = memberStatusText(normalized);
+        badge.classList.toggle("is-paid", normalized === "paid");
+        badge.classList.toggle("is-unpaid", normalized !== "paid");
+      }
+      if (input) {
+        input.value = normalized === "paid" ? "unpaid" : "paid";
+      }
+      if (button) {
+        button.textContent = memberNextStatusText(normalized);
+      }
+    }
+
+    function activeMemberPayoutFilter(card) {
+      return card.querySelector("[data-member-payout-filter].is-active")?.dataset.memberPayoutFilter || "all";
+    }
+
+    function applyMemberPayoutFilter(card) {
+      const filterValue = activeMemberPayoutFilter(card);
+      card.querySelectorAll("[data-member-payout-row]").forEach((row) => {
+        row.hidden = filterValue !== "all" && row.dataset.memberStatus !== filterValue;
+      });
+    }
+
+    function updateMemberPayoutCard(card) {
+      const rows = Array.from(card.querySelectorAll("[data-member-payout-row]"));
+      const hasRows = rows.length > 0;
+      const allPaid = hasRows && rows.every((row) => row.dataset.memberStatus === "paid");
+      const summary = card.querySelector("[data-member-payout-summary]");
+      if (summary) {
+        summary.classList.toggle("is-paid", allPaid);
+        summary.classList.toggle("is-unpaid", !allPaid);
+        const label = summary.querySelector("[data-member-payout-summary-label]");
+        if (label) {
+          label.textContent = allPaid ? "정산완료" : "미정산";
+        }
+      }
+      const settleForm = card.querySelector("[data-member-payout-settle-form]");
+      if (settleForm) {
+        settleForm.hidden = allPaid;
+      }
+      applyMemberPayoutFilter(card);
+    }
+
+    document.querySelectorAll("[data-member-payout-form]").forEach((form) => {
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const row = form.closest("[data-member-payout-row]");
+        const card = form.closest("[data-member-payout-card]");
+        const button = form.querySelector("[data-member-payout-button]");
+        const statusInput = form.querySelector("[data-member-payout-status-input]");
+        if (!row || !card || !button || button.disabled || !statusInput) {
+          return;
+        }
+        const nextStatus = statusInput.value === "paid" ? "paid" : "unpaid";
+        const originalText = button.textContent;
+        button.disabled = true;
+        button.textContent = "처리중";
+        try {
+          await submitJsonForm(form);
+          setMemberPayoutRow(row, nextStatus);
+          updateMemberPayoutCard(card);
+        } catch (error) {
+          alert(error.message);
+          button.textContent = originalText;
+        } finally {
+          button.disabled = false;
+        }
+      });
+    });
+
+    document.querySelectorAll("[data-member-payout-settle-form]").forEach((form) => {
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const card = form.closest("[data-member-payout-card]");
+        const button = form.querySelector("[data-member-payout-button]");
+        if (!card || !button || button.disabled) {
+          return;
+        }
+        const originalText = button.textContent;
+        button.disabled = true;
+        button.textContent = "처리중";
+        try {
+          await submitJsonForm(form);
+          card.querySelectorAll("[data-member-payout-row]").forEach((row) => {
+            setMemberPayoutRow(row, "paid");
+          });
+          updateMemberPayoutCard(card);
+        } catch (error) {
+          alert(error.message);
+          button.textContent = originalText;
+        } finally {
+          button.disabled = false;
+        }
+      });
+    });
+
+    document.querySelectorAll("[data-member-payout-filter]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const card = button.closest("[data-member-payout-card]");
+        const filterValue = button.dataset.memberPayoutFilter || "all";
+        if (!card) {
+          return;
+        }
+        card.querySelectorAll("[data-member-payout-filter]").forEach((filterButton) => {
+          filterButton.classList.toggle("is-active", filterButton === button);
+        });
+        applyMemberPayoutFilter(card);
+      });
+    });
+
+    const feeRuleModal = document.querySelector("[data-fee-rule-modal]");
+    const openFeeRuleModalButton = document.querySelector("[data-fee-rule-modal-open]");
+    const closeFeeRuleModalButton = document.querySelector("[data-fee-rule-modal-close]");
+    function setFeeRuleModalOpen(isOpen) {
+      if (!feeRuleModal) {
+        return;
+      }
+      feeRuleModal.hidden = !isOpen;
+      if (isOpen) {
+        feeRuleModal.querySelector("input[name='rule_name']")?.focus();
+      }
+    }
+    openFeeRuleModalButton?.addEventListener("click", () => setFeeRuleModalOpen(true));
+    closeFeeRuleModalButton?.addEventListener("click", () => setFeeRuleModalOpen(false));
+    feeRuleModal?.addEventListener("click", (event) => {
+      if (event.target === feeRuleModal) {
+        setFeeRuleModalOpen(false);
+      }
+    });
+    window.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && feeRuleModal && !feeRuleModal.hidden) {
+        setFeeRuleModalOpen(false);
+      }
     });
 
     document.querySelectorAll("[data-loot-delete-form]").forEach((form) => {
@@ -803,19 +1250,21 @@
     document.querySelectorAll("[data-loot-tab]").forEach((tab) => {
       tab.addEventListener("click", () => activateLootTab(tab.dataset.lootTab));
     });
+    document.querySelectorAll("[data-loot-tab-link]").forEach((link) => {
+      link.addEventListener("click", () => activateLootTab(link.dataset.lootTabLink));
+    });
     window.addEventListener("hashchange", () => activateLootTab(location.hash.replace("#", "")));
-
-    document.querySelectorAll("[data-buyer-picker]").forEach(setupBuyerPicker);
-    document.addEventListener("click", (event) => {
-      if (!event.target.closest("[data-buyer-picker]")) {
-        closeBuyerMenus();
+    document.querySelectorAll("[data-currency-mode-button]").forEach((button) => {
+      button.addEventListener("click", () => setCurrencyMode(button.dataset.currencyModeButton));
+    });
+    document.querySelector("[data-loot-alliance-select]")?.addEventListener("change", (event) => {
+      const targetUrl = event.target.value;
+      if (targetUrl) {
+        window.location.href = targetUrl;
       }
     });
 
-    attendanceSelect?.addEventListener("change", () => {
-      renderAttendancePreview();
-      syncCreateBuyerOptions();
-    });
+    attendanceSelect?.addEventListener("change", renderAttendancePreview);
     itemSelect?.addEventListener("change", syncItemPrice);
     createForm?.querySelectorAll("[data-loot-cash-price], [data-loot-adena-rate]").forEach((input) => {
       input.addEventListener("input", () => syncLootPrice(createForm));
@@ -828,8 +1277,12 @@
 
     renderAttendancePreview();
     syncItemPrice();
-    syncCreateBuyerOptions();
     document.querySelectorAll("[data-loot-event-form]").forEach(syncLootPrice);
-    activateLootTab(location.hash.replace("#", "") || (canManageLoot ? "create" : "payouts"));
+    activateLootTab(location.hash.replace("#", "") || "distribution");
+    try {
+      setCurrencyMode(localStorage.getItem("lineage-loot-currency-mode") || "adena");
+    } catch (error) {
+      setCurrencyMode("adena");
+    }
   </script>
 {% endblock %}

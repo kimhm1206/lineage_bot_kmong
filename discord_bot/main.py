@@ -1,5 +1,8 @@
 import asyncio
+import io
 import os
+import re
+import unicodedata
 from datetime import datetime, timedelta, timezone
 
 import discord
@@ -15,7 +18,7 @@ from discord_bot.utils.attendance import (
     seed_voice_entry_times,
     sync_voice_entry_time,
 )
-from discord_bot.utils.guild import is_supported_guild
+from discord_bot.utils.guild import is_admin_member, is_supported_guild
 from discord_bot.utils.panel import update_admin_panel
 from discord_bot.views.admin_panel import AdminPanelView
 
@@ -49,6 +52,8 @@ bot.runtime_label = (
     f"{datetime.now(timezone(timedelta(hours=9))).strftime('%Y-%m-%d %H:%M')} "
     "구동 Ver3.0 Web."
 )
+
+ALLIANCE_LABEL_PATTERN = re.compile(r"\[([^\[\]]+)\]")
 
 
 @bot.event
@@ -130,6 +135,57 @@ async def weekly_ranking(ctx: discord.ApplicationContext) -> None:
     await ctx.followup.send(_build_weekly_ranking_message(guild, rows, start, now))
 
 
+@bot.slash_command(
+    name="역할매칭",
+    description="닉네임 혈맹 표기와 혈맹 역할 매핑이 다른 유저를 조회합니다.",
+)
+async def role_matching(ctx: discord.ApplicationContext) -> None:
+    guild = ctx.guild
+    author = ctx.author
+    if guild is None or not isinstance(author, discord.Member):
+        await ctx.respond("서버에서만 사용할 수 있습니다.", ephemeral=True)
+        return
+
+    if not is_supported_guild(bot, guild.id):
+        await ctx.respond("이 서버에서는 사용할 수 없습니다.", ephemeral=True)
+        return
+
+    if not is_admin_member(author):
+        await ctx.respond("권한이 없습니다.", ephemeral=True)
+        return
+
+    await ctx.defer(ephemeral=True)
+
+    mappings = await asyncio.to_thread(database.get_guild_alliance_role_mappings, guild.id)
+    role_alliance_by_id = {
+        int(mapping["role_id"]): str(mapping["alliance_name"])
+        for mapping in mappings
+    }
+    if not role_alliance_by_id:
+        await ctx.followup.send("등록된 혈맹 역할 매핑이 없습니다.", ephemeral=True)
+        return
+
+    await _ensure_member_cache(guild)
+    mismatches = _find_role_nickname_mismatches(guild, role_alliance_by_id)
+    message = _build_role_matching_message(guild, mismatches)
+    if len(message) <= 1900:
+        await ctx.followup.send(message, ephemeral=True)
+        return
+
+    attachment = discord.File(
+        io.BytesIO(message.encode("utf-8")),
+        filename=f"role_matching_{guild.id}.txt",
+    )
+    await ctx.followup.send(
+        (
+            f"닉네임 혈맹과 역할 매핑이 다른 유저가 {len(mismatches)}명입니다.\n"
+            "목록이 길어서 파일로 첨부합니다."
+        ),
+        file=attachment,
+        ephemeral=True,
+    )
+
+
 @bot.event
 async def on_voice_state_update(
     member: discord.Member,
@@ -183,6 +239,112 @@ def _format_weekly_ranking_table(rows: list[dict[str, object]]) -> str:
         alliance = _clip_text(str(row.get("alliance_name", "미분류")), 10)
         count = int(row.get("attendance_count", 0))
         lines.append(f"{index} | {nickname} | {alliance} | {count}회")
+    return "\n".join(lines)
+
+
+async def _ensure_member_cache(guild: discord.Guild) -> None:
+    try:
+        await guild.chunk(cache=True)
+    except Exception as exc:
+        print(f"멤버 캐시 갱신 실패: guild={guild.id} error={exc}")
+
+
+def _find_role_nickname_mismatches(
+    guild: discord.Guild,
+    role_alliance_by_id: dict[int, str],
+) -> list[dict[str, str]]:
+    mismatches: list[dict[str, str]] = []
+    for member in sorted(guild.members, key=lambda item: item.display_name):
+        if member.bot:
+            continue
+
+        mapped_alliances = _mapped_alliances_for_member(member, role_alliance_by_id)
+        if not mapped_alliances:
+            continue
+
+        role_alliance = mapped_alliances[0]
+        nickname_alliance = _extract_nickname_alliance(member.display_name)
+        if _normalize_alliance_label(nickname_alliance) == _normalize_alliance_label(role_alliance):
+            continue
+
+        mismatches.append(
+            {
+                "display_name": member.display_name,
+                "discord_id": str(member.id),
+                "nickname_alliance": nickname_alliance or "없음",
+                "role_alliance": role_alliance,
+                "all_role_alliances": ", ".join(dict.fromkeys(mapped_alliances)),
+            }
+        )
+    return mismatches
+
+
+def _mapped_alliances_for_member(
+    member: discord.Member,
+    role_alliance_by_id: dict[int, str],
+) -> list[str]:
+    alliances: list[str] = []
+    for role in sorted(
+        member.roles,
+        key=lambda item: (item.position, item.id),
+        reverse=True,
+    ):
+        if role.is_default():
+            continue
+        alliance = role_alliance_by_id.get(int(role.id))
+        if alliance is not None:
+            alliances.append(alliance)
+    return alliances
+
+
+def _extract_nickname_alliance(display_name: str) -> str | None:
+    match = ALLIANCE_LABEL_PATTERN.search(display_name)
+    if match is None:
+        return None
+    value = match.group(1).strip()
+    return value or None
+
+
+def _normalize_alliance_label(value: str | None) -> str:
+    if value is None:
+        return ""
+    normalized = unicodedata.normalize("NFKC", value)
+    return "".join(normalized.split()).casefold()
+
+
+def _build_role_matching_message(
+    guild: discord.Guild,
+    mismatches: list[dict[str, str]],
+) -> str:
+    lines = [
+        "**역할 매칭 점검**",
+        f"서버: {guild.name}",
+        f"불일치: {len(mismatches)}명",
+        "",
+    ]
+    if not mismatches:
+        lines.append("닉네임 혈맹 표기와 역할 매핑이 다른 유저가 없습니다.")
+        return "\n".join(lines)
+
+    lines.extend(
+        [
+            "기준: 혈맹 역할 매핑 중 가장 높은 역할",
+            "",
+            "```text",
+            "닉네임혈맹 -> 역할혈맹 | 유저",
+        ]
+    )
+    for row in mismatches:
+        role_alliance = row["role_alliance"]
+        if row["all_role_alliances"] != role_alliance:
+            role_alliance = f"{role_alliance} ({row['all_role_alliances']})"
+        lines.append(
+            (
+                f"{row['nickname_alliance']} -> {role_alliance} | "
+                f"{row['display_name']} ({row['discord_id']})"
+            )
+        )
+    lines.append("```")
     return "\n".join(lines)
 
 

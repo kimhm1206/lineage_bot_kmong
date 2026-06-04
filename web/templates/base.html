@@ -23,7 +23,7 @@
         <nav class="nav">
           <a class="nav-link {% if active_page == 'attendance' %}is-active{% endif %}" href="/attendance?guild_id={{ auth.selected_guild_id }}">출석</a>
           <a class="nav-link {% if active_page == 'status' %}is-active{% endif %}" href="/status?guild_id={{ auth.selected_guild_id }}">현황</a>
-          <a class="nav-link {% if active_page == 'loot' %}is-active{% endif %}" href="/loot?guild_id={{ auth.selected_guild_id }}">드랍</a>
+          <a class="nav-link {% if active_page == 'loot' %}is-active{% endif %}" href="/loot?guild_id={{ auth.selected_guild_id }}">드랍&amp;분배</a>
           <a class="nav-link {% if active_page == 'dashboard' %}is-active{% endif %}" href="/dashboard?guild_id={{ auth.selected_guild_id }}">통계</a>
           {% if auth.selected_server.can_manage %}
             <a class="nav-link {% if active_page == 'settings' %}is-active{% endif %}" href="/settings?guild_id={{ auth.selected_guild_id }}">설정</a>
