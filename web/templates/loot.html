@@ -59,13 +59,13 @@
       <a class="loot-tab-button" href="#create" data-loot-tab="create">드랍 등록</a>
       <a class="loot-tab-button" href="#alliance-payouts" data-loot-tab="alliance-payouts">각혈 분배</a>
     {% endif %}
-    {% if auth.selected_server.my_alliance.can_view %}
+    {% if auth.selected_server.can_manage and auth.selected_server.my_alliance.can_view %}
       <a class="loot-tab-button" href="#my-alliance-payouts" data-loot-tab="my-alliance-payouts">내 혈맹</a>
     {% endif %}
     {% if auth.selected_server.can_manage %}
       <a class="loot-tab-button" href="#item-settings" data-loot-tab="item-settings">아이템 설정</a>
     {% endif %}
-    {% if auth.selected_server.my_alliance.can_select %}
+    {% if auth.selected_server.can_manage and auth.selected_server.my_alliance.can_select %}
       <div class="loot-tab-spacer" data-loot-alliance-control hidden></div>
       <label class="loot-alliance-select" data-loot-alliance-control hidden>
         <span>혈맹</span>
@@ -538,7 +538,7 @@
     </section>
   {% endif %}
 
-  {% if auth.selected_server.my_alliance.can_view %}
+  {% if auth.selected_server.can_manage and auth.selected_server.my_alliance.can_view %}
     <section class="loot-tab-panel" data-loot-panel="my-alliance-payouts" hidden>
       {% if my_alliance_payouts.selected_alliance %}
         <section class="loot-overview-grid">
@@ -840,7 +840,7 @@
 {% block scripts %}
   <script>
     const canManageLoot = {{ auth.selected_server.can_manage | tojson }};
-    const canViewMyAlliancePayouts = {{ auth.selected_server.my_alliance.can_view | tojson }};
+    const canViewMyAlliancePayouts = {{ (auth.selected_server.can_manage and auth.selected_server.my_alliance.can_view) | tojson }};
     const attendanceOptions = {{ attendance_options | tojson }};
     const attendanceSelect = document.querySelector("[data-loot-attendance]");
     const attendancePreview = document.querySelector("[data-loot-attendance-preview]");
