@@ -492,8 +492,9 @@ def _my_alliance_access(
     guild_id: int,
     discord_user_id: str,
     server_role: str,
+    is_owner: bool = False,
 ) -> dict[str, Any]:
-    if server_role == "developer":
+    if server_role == "developer" or is_owner:
         options = _load_active_alliances()
     else:
         options = _member_alliance_options(guild_id, discord_user_id)
@@ -503,6 +504,22 @@ def _my_alliance_access(
         "can_select": len(options) > 1,
         "options": options,
     }
+
+
+def _is_selected_guild_owner(
+    guild_id: int,
+    discord_user_id: str,
+    selected_server: dict[str, Any],
+) -> bool:
+    if bool(selected_server.get("discord_owner")):
+        return True
+    if not DISCORD_BOT_TOKEN:
+        return False
+    try:
+        guild = _discord_bot_get_cached(f"/guilds/{guild_id}")
+    except Exception:
+        return False
+    return str(guild.get("owner_id")) == str(discord_user_id)
 
 
 def _attendance_guild_ids_for_user(discord_user_id: str) -> set[int]:
@@ -778,7 +795,11 @@ def _auth_context_from_session(
                 "permissions": selected_server.get("permissions"),
             },
         )
-    is_owner = bool(selected_server.get("discord_owner"))
+    is_owner = _is_selected_guild_owner(
+        int(selected_guild_id),
+        str(user["id"]),
+        selected_server,
+    )
     is_bookkeeper = database.is_guild_bookkeeper(
         int(selected_guild_id),
         int(user["id"]),
@@ -790,7 +811,7 @@ def _auth_context_from_session(
     selected_server["role"] = effective_role
     selected_server["is_owner"] = is_owner
     selected_server["is_bookkeeper"] = is_bookkeeper
-    selected_server["can_manage"] = effective_role in {"admin", "developer"}
+    selected_server["can_manage"] = effective_role in {"admin", "developer"} or is_owner
     selected_server["can_bookkeep"] = (
         effective_role == "developer" or is_owner or is_bookkeeper
     )
@@ -806,6 +827,7 @@ def _auth_context_from_session(
         int(selected_guild_id),
         str(user["id"]),
         effective_role,
+        is_owner,
     )
     selected_server["role_label"] = _role_display_label(
         effective_role,

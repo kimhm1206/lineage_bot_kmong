@@ -143,14 +143,6 @@
                 <strong>{{ event.item_name }}</strong>
               </div>
               <div>
-                <span>현금가격</span>
-                <strong>{{ event.cash_price_text }}원</strong>
-              </div>
-              <div>
-                <span>아데나 시세</span>
-                <strong>{{ event.adena_rate_text }}</strong>
-              </div>
-              <div>
                 <span data-currency-label data-adena-label="1인당 분배 아데나[수수료 차감X]" data-cash-label="1인당 분배 현금[수수료 차감X]">1인당 분배 아데나[수수료 차감X]</span>
                 {% if event.viewer_participated %}
                   <strong data-money-value data-adena-text="{{ event.viewer_gross_per_member_text }}" data-cash-text="{{ event.viewer_gross_per_member_cash_text }}">{{ event.viewer_gross_per_member_text }}</strong>
@@ -162,14 +154,6 @@
                 <span data-currency-label data-adena-label="연맹 수수료" data-cash-label="연맹 수수료 현금">연맹 수수료</span>
                 {% if event.viewer_participated %}
                   <strong data-money-value data-adena-text="{{ event.viewer_alliance_fee_amount_text }}" data-cash-text="{{ event.viewer_alliance_fee_cash_text }}">{{ event.viewer_alliance_fee_amount_text }}</strong>
-                {% else %}
-                  <strong>미참</strong>
-                {% endif %}
-              </div>
-              <div>
-                <span data-currency-label data-adena-label="혈맹 내부 수수료" data-cash-label="혈맹 내부 수수료 현금">혈맹 내부 수수료</span>
-                {% if event.viewer_participated %}
-                  <strong data-money-value data-adena-text="{{ event.viewer_internal_fee_share_amount_text }}" data-cash-text="{{ event.viewer_internal_fee_share_cash_text }}">{{ event.viewer_internal_fee_share_amount_text }}</strong>
                 {% else %}
                   <strong>미참</strong>
                 {% endif %}
