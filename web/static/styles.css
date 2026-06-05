@@ -2037,6 +2037,31 @@ button:disabled {
   font-weight: 900;
 }
 
+.inner-tab-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 14px;
+}
+
+.inner-tab-button {
+  min-height: 38px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.inner-tab-button.is-active,
+.inner-tab-button:hover {
+  border-color: rgba(20, 108, 148, 0.24);
+  background: rgba(20, 108, 148, 0.11);
+  color: var(--accent-strong);
+}
+
 .loot-alliance-select {
   display: inline-flex;
   align-items: center;
@@ -2612,6 +2637,66 @@ button:disabled {
   grid-template-columns: minmax(0, 1fr);
   gap: 14px;
   align-items: start;
+}
+
+.my-recipient-payout-panel {
+  overflow: hidden;
+}
+
+.recipient-payout-controls {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.2fr) minmax(180px, 0.8fr) minmax(210px, 0.9fr);
+  gap: 12px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.recipient-payout-controls .field {
+  margin: 0;
+}
+
+.recipient-payout-table-wrap {
+  overflow-x: auto;
+}
+
+.recipient-payout-table th,
+.recipient-payout-table td {
+  vertical-align: top;
+}
+
+.recipient-detail-row td {
+  padding-top: 0;
+}
+
+.recipient-detail-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.recipient-detail-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.66);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.recipient-detail-pill.is-unpaid {
+  border-color: rgba(180, 35, 24, 0.18);
+  background: rgba(180, 35, 24, 0.08);
+  color: var(--red);
+}
+
+.recipient-detail-pill.is-paid {
+  border-color: rgba(18, 128, 92, 0.18);
+  background: rgba(18, 128, 92, 0.08);
+  color: var(--green);
 }
 
 .my-payout-rule-panel {
@@ -3204,6 +3289,7 @@ button:disabled {
 :root[data-theme="dark"] .session-summary-card,
 :root[data-theme="dark"] .item-price-card,
 :root[data-theme="dark"] .loot-tab-button,
+:root[data-theme="dark"] .inner-tab-button,
 :root[data-theme="dark"] .loot-alliance-select,
 :root[data-theme="dark"] .loot-total-card,
 :root[data-theme="dark"] .loot-filter-card,
@@ -3217,6 +3303,8 @@ button:disabled {
 :root[data-theme="dark"] .loot-delete-form,
 :root[data-theme="dark"] .loot-fee-summary div,
 :root[data-theme="dark"] .loot-breakdown-card,
+:root[data-theme="dark"] .my-recipient-payout-panel,
+:root[data-theme="dark"] .recipient-detail-pill,
 :root[data-theme="dark"] .rank-strip,
 :root[data-theme="dark"] .mini-rank-row,
 :root[data-theme="dark"] .alliance-detail,
@@ -3541,6 +3629,10 @@ button:disabled {
   }
 
   .bookkeeper-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .recipient-payout-controls {
     grid-template-columns: 1fr;
   }
 

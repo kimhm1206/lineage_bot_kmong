@@ -2607,6 +2607,7 @@ def _my_alliance_payout_context(
             "selected_alliance": None,
             "fee_rules": [],
             "events": [],
+            "recipients": [],
             "summary": {
                 "total_text": "0",
                 "total_cash_text": "0원",
@@ -2623,6 +2624,7 @@ def _my_alliance_payout_context(
     )
     member_groups = database.get_member_payout_groups(guild_id, alliance_id)
     rows = []
+    recipient_summaries: dict[int, dict[str, Any]] = {}
     total_amount_sum = Decimal("0")
     total_cash_sum = Decimal("0")
     unsettled_amount_sum = Decimal("0")
@@ -2685,6 +2687,11 @@ def _my_alliance_payout_context(
                 {
                     "user_id": member_user_id,
                     "display_name": str(member.get("discord_nickname") or ""),
+                    "distribution_id": int(event["distribution_id"]),
+                    "loot_event_id": event["loot_event_id"],
+                    "item_name": event["item_name"],
+                    "attendance_started_at": event["attendance_started_at"] or event["event_date"],
+                    "payout_amount": per_member_amount,
                     "payout_amount_text": _money_text(per_member_amount),
                     "payout_amount_cash_text": _cash_text(
                         _cash_from_adena(per_member_amount, adena_rate)
@@ -2696,6 +2703,41 @@ def _my_alliance_payout_context(
                     "next_status_label": "미완료로 변경" if is_paid else "완료 처리",
                 }
             )
+            summary = recipient_summaries.setdefault(
+                member_user_id,
+                {
+                    "user_id": member_user_id,
+                    "display_name": str(member.get("discord_nickname") or ""),
+                    "total_amount": Decimal("0"),
+                    "paid_amount": Decimal("0"),
+                    "unpaid_amount": Decimal("0"),
+                    "total_count": 0,
+                    "paid_count": 0,
+                    "unpaid_count": 0,
+                    "unpaid_distribution_ids": [],
+                    "items": [],
+                },
+            )
+            summary["total_amount"] += per_member_amount
+            summary["total_count"] += 1
+            summary["items"].append(
+                {
+                    "distribution_id": int(event["distribution_id"]),
+                    "loot_event_id": event["loot_event_id"],
+                    "item_name": event["item_name"],
+                    "attendance_started_at": event["attendance_started_at"] or event["event_date"],
+                    "amount_text": _money_text(per_member_amount),
+                    "status": payout_status,
+                    "status_label": "지급 완료" if is_paid else "미완료",
+                }
+            )
+            if is_paid:
+                summary["paid_amount"] += per_member_amount
+                summary["paid_count"] += 1
+            else:
+                summary["unpaid_amount"] += per_member_amount
+                summary["unpaid_count"] += 1
+                summary["unpaid_distribution_ids"].append(int(event["distribution_id"]))
 
         recipient_total_count = len(recipients)
         status = (
@@ -2741,10 +2783,39 @@ def _my_alliance_payout_context(
             }
         )
 
+    recipient_rows = []
+    for summary in recipient_summaries.values():
+        unpaid_amount = Decimal(str(summary["unpaid_amount"]))
+        paid_amount = Decimal(str(summary["paid_amount"]))
+        total_amount = Decimal(str(summary["total_amount"]))
+        recipient_rows.append(
+            {
+                **summary,
+                "total_amount_text": _money_text(total_amount),
+                "paid_amount_text": _money_text(paid_amount),
+                "unpaid_amount_text": _money_text(unpaid_amount),
+                "status": "unpaid" if unpaid_amount > 0 else "paid",
+                "status_label": "미완료 있음" if unpaid_amount > 0 else "전체 완료",
+                "status_class": "is-unpaid" if unpaid_amount > 0 else "is-paid",
+                "unpaid_distribution_ids_text": ",".join(
+                    str(distribution_id)
+                    for distribution_id in summary["unpaid_distribution_ids"]
+                ),
+            }
+        )
+    recipient_rows.sort(
+        key=lambda item: (
+            -Decimal(str(item["unpaid_amount"] or "0")),
+            -int(item["unpaid_count"] or 0),
+            str(item["display_name"]),
+        )
+    )
+
     return {
         "selected_alliance": selected_alliance,
         "fee_rules": fee_rules,
         "events": rows,
+        "recipients": recipient_rows,
         "summary": {
             "total_text": _money_text(total_amount_sum),
             "total_cash_text": _cash_text(total_cash_sum),
@@ -4622,6 +4693,83 @@ async def update_member_payout_recipient_status(
         return _loot_redirect(selected_guild_id, saved="error", alliance_id=alliance_id)
     if _wants_json(request):
         return JSONResponse({"ok": True, "payout_status": payout_status})
+    return _loot_redirect(selected_guild_id, saved="member_payout", alliance_id=alliance_id)
+
+
+@app.post("/loot/member-payouts/recipient-settle-all")
+async def settle_member_payout_recipient_all(
+    request: Request,
+    guild_id: str | None = None,
+):
+    auth = _auth_context(request, guild_id)
+    if not auth:
+        if _wants_json(request):
+            return JSONResponse({"ok": False, "message": "로그인이 필요합니다."}, status_code=401)
+        return _auth_redirect(request)
+    selected_guild_id = int(auth["selected_guild_id"])
+    if not _can_manage_selected_server(auth):
+        if _wants_json(request):
+            return JSONResponse({"ok": False, "message": "관리자 권한이 필요합니다."}, status_code=403)
+        return _loot_redirect(selected_guild_id, saved="forbidden")
+
+    form_data = await _urlencoded_form_data(request)
+    try:
+        requested_alliance_id = int(form_data.get("alliance_id") or "")
+        user_id = int(form_data.get("user_id") or "")
+    except ValueError:
+        requested_alliance_id = None
+        user_id = 0
+    alliance_id = _allowed_loot_alliance_id(auth, requested_alliance_id)
+    if alliance_id is None:
+        if _wants_json(request):
+            return JSONResponse({"ok": False, "message": "혈맹 권한이 없습니다."}, status_code=403)
+        return _loot_redirect(selected_guild_id, saved="forbidden")
+
+    distribution_ids = []
+    for raw_id in str(form_data.get("distribution_ids") or "").split(","):
+        try:
+            distribution_id = int(raw_id.strip())
+        except ValueError:
+            continue
+        if distribution_id > 0:
+            distribution_ids.append(distribution_id)
+    if user_id <= 0 or not distribution_ids:
+        if _wants_json(request):
+            return JSONResponse(
+                {"ok": False, "message": "완료 처리할 미분배 항목이 없습니다."},
+                status_code=400,
+            )
+        return _loot_redirect(selected_guild_id, saved="error", alliance_id=alliance_id)
+
+    updated_ids = []
+    try:
+        for distribution_id in sorted(set(distribution_ids)):
+            database.update_member_payout_recipient_status(
+                selected_guild_id,
+                distribution_id,
+                alliance_id,
+                user_id,
+                "paid",
+                updated_by_discord_id=int(auth["user"]["id"]),
+            )
+            updated_ids.append(distribution_id)
+    except ValueError:
+        if _wants_json(request):
+            return JSONResponse(
+                {"ok": False, "message": "유저별 분배를 완료 처리하지 못했습니다."},
+                status_code=400,
+            )
+        return _loot_redirect(selected_guild_id, saved="error", alliance_id=alliance_id)
+
+    if _wants_json(request):
+        return JSONResponse(
+            {
+                "ok": True,
+                "user_id": user_id,
+                "distribution_ids": updated_ids,
+                "payout_status": "paid",
+            }
+        )
     return _loot_redirect(selected_guild_id, saved="member_payout", alliance_id=alliance_id)
 
 
