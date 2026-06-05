@@ -2118,6 +2118,10 @@ button:disabled {
   grid-template-columns: minmax(210px, 0.85fr) minmax(180px, 0.65fr) minmax(180px, 0.65fr) minmax(300px, 1.05fr);
 }
 
+.my-alliance-overview-grid {
+  grid-template-columns: minmax(180px, 0.6fr) minmax(260px, 0.85fr) minmax(320px, 1.25fr);
+}
+
 .loot-total-card,
 .loot-filter-card {
   display: grid;
@@ -2171,6 +2175,47 @@ button:disabled {
 .loot-total-card.is-muted strong {
   color: var(--text);
   font-size: 22px;
+}
+
+.my-alliance-total-card {
+  padding: 16px;
+}
+
+.my-alliance-total-card strong {
+  font-size: 26px;
+}
+
+.my-alliance-fee-total-card {
+  gap: 10px;
+  padding: 14px;
+}
+
+.my-alliance-split-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.my-alliance-split-metrics div {
+  display: grid;
+  gap: 5px;
+  min-height: 58px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.54);
+}
+
+.my-alliance-split-metrics small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.my-alliance-split-metrics strong {
+  color: var(--text);
+  font-size: 18px;
+  line-height: 1;
 }
 
 .loot-layout {
@@ -3336,6 +3381,7 @@ button:disabled {
 :root[data-theme="dark"] .loot-alliance-select,
 :root[data-theme="dark"] .loot-total-card,
 :root[data-theme="dark"] .loot-filter-card,
+:root[data-theme="dark"] .my-alliance-split-metrics div,
 :root[data-theme="dark"] .developer-server-card,
 :root[data-theme="dark"] .loot-preview-summary,
 :root[data-theme="dark"] .loot-preview-group,

@@ -538,15 +538,24 @@
   {% if auth.selected_server.can_manage and auth.selected_server.my_alliance.can_view %}
     <section class="loot-tab-panel" data-loot-panel="my-alliance-payouts" hidden>
       {% if my_alliance_payouts.selected_alliance %}
-        <section class="loot-overview-grid">
-          <article class="panel loot-total-card">
+        <section class="loot-overview-grid my-alliance-overview-grid">
+          <article class="panel loot-total-card my-alliance-total-card">
             <span data-currency-label data-adena-label="혈맹 실분배 합계" data-cash-label="혈맹 실분배 현금">혈맹 실분배 합계</span>
             <strong data-money-value data-adena-text="{{ my_alliance_payouts.summary.total_text }}" data-cash-text="{{ my_alliance_payouts.summary.total_cash_text }}">{{ my_alliance_payouts.summary.total_text }}</strong>
-            <small>{{ my_alliance_payouts.selected_alliance.alliance_name }}</small>
+            <small>수수료 차감 전 · {{ my_alliance_payouts.selected_alliance.alliance_name }}</small>
           </article>
-          <article class="panel loot-total-card is-muted">
-            <span data-currency-label data-adena-label="미정산 잔여" data-cash-label="미정산 현금">미정산 잔여</span>
-            <strong data-money-value data-adena-text="{{ my_alliance_payouts.summary.unsettled_text }}" data-cash-text="{{ my_alliance_payouts.summary.unsettled_cash_text }}">{{ my_alliance_payouts.summary.unsettled_text }}</strong>
+          <article class="panel loot-total-card is-muted my-alliance-fee-total-card">
+            <span>수수료 전체</span>
+            <div class="my-alliance-split-metrics">
+              <div>
+                <small>수수료 총액</small>
+                <strong data-money-value data-adena-text="{{ my_alliance_payouts.summary.fee_text }}" data-cash-text="{{ my_alliance_payouts.summary.fee_cash_text }}">{{ my_alliance_payouts.summary.fee_text }}</strong>
+              </div>
+              <div>
+                <small>미분배 총액</small>
+                <strong data-money-value data-adena-text="{{ my_alliance_payouts.summary.unsettled_text }}" data-cash-text="{{ my_alliance_payouts.summary.unsettled_cash_text }}">{{ my_alliance_payouts.summary.unsettled_text }}</strong>
+              </div>
+            </div>
             <small>미정산 {{ my_alliance_payouts.summary.unsettled_count }}건 · 완료 {{ my_alliance_payouts.summary.settled_count }}건</small>
           </article>
           {% if auth.selected_server.can_manage %}
