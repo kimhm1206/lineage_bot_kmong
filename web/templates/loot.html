@@ -553,7 +553,12 @@
               </div>
               <div>
                 <small>미분배 총액</small>
-                <strong data-money-value data-adena-text="{{ my_alliance_payouts.summary.unsettled_text }}" data-cash-text="{{ my_alliance_payouts.summary.unsettled_cash_text }}">{{ my_alliance_payouts.summary.unsettled_text }}</strong>
+                <strong
+                  data-money-value
+                  data-my-alliance-unsettled-total
+                  data-adena-text="{{ my_alliance_payouts.summary.unsettled_text }}"
+                  data-cash-text="{{ my_alliance_payouts.summary.unsettled_cash_text }}"
+                >{{ my_alliance_payouts.summary.unsettled_text }}</strong>
               </div>
             </div>
             <small>미정산 {{ my_alliance_payouts.summary.unsettled_count }}건 · 완료 {{ my_alliance_payouts.summary.settled_count }}건</small>
@@ -1289,6 +1294,20 @@
       return Math.round(Number(value || 0)).toLocaleString("ko-KR");
     }
 
+    function updateMyAllianceUnsettledTotal() {
+      const totalElement = document.querySelector("[data-my-alliance-unsettled-total]");
+      if (!totalElement) {
+        return;
+      }
+      const total = Array.from(document.querySelectorAll("[data-recipient-payout-row]")).reduce(
+        (sum, row) => sum + recipientNumber(row, "unpaidAmount"),
+        0,
+      );
+      const text = formatAdenaNumber(total);
+      totalElement.textContent = text;
+      totalElement.dataset.adenaText = text;
+    }
+
     function applyRecipientPayoutFilters() {
       const searchInput = document.querySelector("[data-recipient-payout-search]");
       const filterSelect = document.querySelector("[data-recipient-payout-filter]");
@@ -1343,6 +1362,7 @@
       document
         .querySelectorAll(`[data-recipient-detail-item][data-user-id="${row.dataset.userId}"]`)
         .forEach((item) => setRecipientDetailPill(row.dataset.userId, item.dataset.distributionId, "paid"));
+      updateMyAllianceUnsettledTotal();
     }
 
     function setRecipientDetailPill(userId, distributionId, status) {
@@ -1423,6 +1443,7 @@
           distributionInput.value = unpaidDistributionIds.join(",");
         }
       }
+      updateMyAllianceUnsettledTotal();
     }
 
     document.querySelectorAll("[data-member-payout-form]").forEach((form) => {
