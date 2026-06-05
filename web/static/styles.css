@@ -2791,8 +2791,8 @@ button:disabled {
 
 .recipient-payout-card-list {
   display: grid;
-  gap: 14px;
-  padding: 14px;
+  gap: 10px;
+  padding: 10px;
 }
 
 .recipient-payout-card {
@@ -2800,9 +2800,19 @@ button:disabled {
 }
 
 .loot-event-card.recipient-payout-card summary.recipient-payout-summary {
-  grid-template-columns: minmax(240px, 0.85fr) repeat(4, minmax(0, 1fr)) 58px;
-  gap: 14px;
-  min-height: 144px;
+  grid-template-columns: minmax(220px, 0.8fr) repeat(4, minmax(0, 1fr)) 46px;
+  gap: 10px;
+  min-height: 104px;
+  padding: 12px 14px;
+}
+
+.loot-event-card.recipient-payout-card .loot-event-main strong {
+  font-size: 18px;
+}
+
+.loot-event-card.recipient-payout-card .loot-event-main > span:not(.status-id) {
+  margin-top: 4px;
+  font-size: 11px;
 }
 
 .loot-event-card.recipient-payout-card summary.recipient-payout-summary::after {
@@ -2819,8 +2829,8 @@ button:disabled {
 .recipient-payout-metrics div,
 .recipient-payout-actions {
   min-width: 0;
-  min-height: 102px;
-  padding: 18px;
+  min-height: 78px;
+  padding: 12px 14px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.62);
@@ -2830,15 +2840,15 @@ button:disabled {
 .recipient-detail-card span {
   display: block;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 800;
 }
 
 .recipient-payout-metrics strong {
   display: block;
-  margin-top: 6px;
+  margin-top: 4px;
   color: var(--text);
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 900;
   line-height: 1.15;
   overflow-wrap: anywhere;
@@ -2850,14 +2860,14 @@ button:disabled {
   align-items: flex-end;
   align-self: stretch;
   justify-content: flex-end;
-  gap: 12px;
+  gap: 8px;
 }
 
 .recipient-payout-actions::before {
   margin-bottom: auto;
   align-self: flex-start;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 800;
   content: "관리";
 }
@@ -2869,7 +2879,9 @@ button:disabled {
 
 .recipient-payout-actions .tiny-button {
   width: 100%;
+  min-height: 32px;
   min-width: 0;
+  padding: 0 10px;
 }
 
 .recipient-payout-body {
