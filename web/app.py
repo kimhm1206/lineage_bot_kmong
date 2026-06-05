@@ -613,7 +613,8 @@ def _load_accessible_servers(
                 "can_manage": role in {"admin", "developer"},
                 "can_bookkeep": role == "developer"
                 or bool((discord_guild or {}).get("owner")),
-                "can_manage_bookkeepers": bool((discord_guild or {}).get("owner")),
+                "can_manage_bookkeepers": role == "developer"
+                or bool((discord_guild or {}).get("owner")),
                 "session_count": int(row["session_count"] or 0),
                 "attendance_count": int(row["attendance_count"] or 0),
                 "first_started_at": row["first_started_at"] or "",
@@ -782,7 +783,9 @@ def _auth_context_from_session(
     selected_server["can_bookkeep"] = (
         effective_role == "developer" or is_owner or is_bookkeeper
     )
-    selected_server["can_manage_bookkeepers"] = is_owner
+    selected_server["can_manage_bookkeepers"] = (
+        effective_role == "developer" or is_owner
+    )
     selected_server["member_display_name"] = _guild_member_display_name(
         int(selected_guild_id),
         str(user["id"]),
