@@ -10,11 +10,6 @@
       <p class="hero-copy">드랍별 분배 아데나와 혈맹별 분배 상태를 확인합니다.</p>
     </div>
     <div class="loot-hero-tools">
-      <div class="currency-toggle" role="group" aria-label="분배금 표시 방식">
-        <button class="currency-toggle-button is-active" type="button" data-currency-mode-button="adena">아데나로 보기</button>
-        <button class="currency-toggle-button" type="button" data-currency-mode-button="cash">현금으로 보기</button>
-      </div>
-      <p>현금과 아데나는 드랍 등록 시 입력한 시세를 기준으로 각 드랍마다 따로 환산됩니다.</p>
       <div class="server-summary">
         {{ loot_period.label }} {{ distribution_events|length }}건
       </div>
@@ -849,8 +844,6 @@
     const attendancePreview = document.querySelector("[data-loot-attendance-preview]");
     const itemSelect = document.querySelector("[data-loot-item]");
     const createForm = document.querySelector("[data-loot-form]");
-    let currencyMode = "adena";
-
     function selectedAttendance() {
       return attendanceOptions.find((session) => String(session.attendance_id) === attendanceSelect?.value);
     }
@@ -957,24 +950,12 @@
     }
 
     function setCurrencyMode(mode) {
-      currencyMode = mode === "cash" ? "cash" : "adena";
       document.querySelectorAll("[data-money-value]").forEach((element) => {
-        element.textContent = currencyMode === "cash"
-          ? element.dataset.cashText || "0원"
-          : element.dataset.adenaText || "0";
+        element.textContent = element.dataset.adenaText || "0";
       });
       document.querySelectorAll("[data-currency-label]").forEach((element) => {
-        element.textContent = currencyMode === "cash"
-          ? element.dataset.cashLabel || element.textContent
-          : element.dataset.adenaLabel || element.textContent;
+        element.textContent = element.dataset.adenaLabel || element.textContent;
       });
-      document.querySelectorAll("[data-currency-mode-button]").forEach((button) => {
-        button.classList.toggle("is-active", button.dataset.currencyModeButton === currencyMode);
-      });
-      try {
-        localStorage.setItem("lineage-loot-currency-mode", currencyMode);
-      } catch (error) {
-      }
     }
 
     function findByData(container, selector, dataKey, value) {
@@ -1260,9 +1241,6 @@
       link.addEventListener("click", () => activateLootTab(link.dataset.lootTabLink));
     });
     window.addEventListener("hashchange", () => activateLootTab(location.hash.replace("#", "")));
-    document.querySelectorAll("[data-currency-mode-button]").forEach((button) => {
-      button.addEventListener("click", () => setCurrencyMode(button.dataset.currencyModeButton));
-    });
     document.querySelector("[data-loot-alliance-select]")?.addEventListener("change", (event) => {
       const targetUrl = event.target.value;
       if (targetUrl) {
@@ -1285,10 +1263,6 @@
     syncItemPrice();
     document.querySelectorAll("[data-loot-event-form]").forEach(syncLootPrice);
     activateLootTab(location.hash.replace("#", "") || "distribution");
-    try {
-      setCurrencyMode(localStorage.getItem("lineage-loot-currency-mode") || "adena");
-    } catch (error) {
-      setCurrencyMode("adena");
-    }
+    setCurrencyMode("adena");
   </script>
 {% endblock %}
