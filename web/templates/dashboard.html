@@ -38,9 +38,9 @@
         <span>혈맹</span>
         <select name="alliance">
           <option value="">전체 혈맹</option>
-          {% for alliance_name in alliance_options %}
-            <option value="{{ alliance_name }}" {% if filters.alliance == alliance_name %}selected{% endif %}>
-              {{ alliance_name }}
+          {% for alliance in alliance_options %}
+            <option value="{{ alliance.value }}" {% if filters.alliance == alliance.value %}selected{% endif %}>
+              {{ alliance.label }}
             </option>
           {% endfor %}
         </select>

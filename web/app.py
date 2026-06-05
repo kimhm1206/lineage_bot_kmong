@@ -78,6 +78,8 @@ WORK_LOG_TABS = (
     {"value": "loot_update", "label": "드랍 수정"},
     {"value": "loot_delete", "label": "드랍 삭제"},
 )
+OTHER_ALLIANCE_VALUE = "__other__"
+OTHER_ALLIANCE_LABEL = "-그 외-"
 
 _BOT_BRIDGE_WEBSOCKET: WebSocket | None = None
 _BOT_BRIDGE_LOCK = asyncio.Lock()
@@ -399,6 +401,81 @@ def _load_active_alliances() -> list[dict[str, Any]]:
     ]
 
 
+def _guild_role_mapped_alliance_ids(guild_id: int) -> set[int]:
+    return {
+        int(mapping["alliance_id"])
+        for mapping in database.get_guild_alliance_role_mappings(guild_id)
+    }
+
+
+def _role_scoped_alliance_options(
+    guild_id: int,
+    options: list[dict[str, Any]],
+    *,
+    include_other: bool,
+) -> list[dict[str, Any]]:
+    mapped_ids = _guild_role_mapped_alliance_ids(guild_id)
+    if not mapped_ids:
+        return options
+
+    scoped_options = [
+        option
+        for option in options
+        if _parse_optional_int(option.get("alliance_id")) in mapped_ids
+    ]
+    other_ids = [
+        int(option["alliance_id"])
+        for option in options
+        if _parse_optional_int(option.get("alliance_id")) not in mapped_ids
+    ]
+    if include_other and other_ids:
+        scoped_options.append(
+            {
+                "alliance_id": OTHER_ALLIANCE_VALUE,
+                "alliance_name": OTHER_ALLIANCE_LABEL,
+                "alliance_ids": other_ids,
+                "is_other": True,
+            }
+        )
+    return scoped_options
+
+
+def _role_scoped_alliance_name_options(guild_id: int) -> list[dict[str, str]]:
+    active_options = _load_active_alliances()
+    mapped_ids = _guild_role_mapped_alliance_ids(guild_id)
+    if not mapped_ids:
+        return [
+            {
+                "value": str(option["alliance_name"]),
+                "label": str(option["alliance_name"]),
+            }
+            for option in active_options
+        ]
+
+    options = [
+        {
+            "value": str(option["alliance_name"]),
+            "label": str(option["alliance_name"]),
+        }
+        for option in active_options
+        if int(option["alliance_id"]) in mapped_ids
+    ]
+    if any(int(option["alliance_id"]) not in mapped_ids for option in active_options):
+        options.append({"value": OTHER_ALLIANCE_VALUE, "label": OTHER_ALLIANCE_LABEL})
+    return options
+
+
+def _unmapped_alliance_names(guild_id: int) -> set[str]:
+    mapped_ids = _guild_role_mapped_alliance_ids(guild_id)
+    if not mapped_ids:
+        return set()
+    return {
+        str(option["alliance_name"])
+        for option in _load_active_alliances()
+        if int(option["alliance_id"]) not in mapped_ids
+    }
+
+
 def _discord_member_role_ids(guild_id: int, discord_user_id: str) -> set[str]:
     member = _discord_guild_member(guild_id, discord_user_id)
     if member is None:
@@ -495,9 +572,17 @@ def _my_alliance_access(
     is_owner: bool = False,
 ) -> dict[str, Any]:
     if server_role == "developer" or is_owner:
-        options = _load_active_alliances()
+        options = _role_scoped_alliance_options(
+            guild_id,
+            _load_active_alliances(),
+            include_other=True,
+        )
     else:
-        options = _member_alliance_options(guild_id, discord_user_id)
+        options = _role_scoped_alliance_options(
+            guild_id,
+            _member_alliance_options(guild_id, discord_user_id),
+            include_other=False,
+        )
 
     return {
         "can_view": bool(options),
@@ -1159,6 +1244,46 @@ def _alliance_stats_from_attendance_rows(
     )
 
 
+def _user_stats_from_attendance_rows(
+    rows: list[dict[str, Any]],
+    limit: int,
+) -> list[dict[str, Any]]:
+    grouped: dict[int, dict[str, Any]] = {}
+    for row in rows:
+        discord_id = _parse_optional_int(row.get("discord_id"))
+        if discord_id is None:
+            continue
+        bucket = grouped.setdefault(
+            discord_id,
+            {
+                "discord_id": discord_id,
+                "discord_nickname": str(row.get("discord_nickname") or ""),
+                "alliance_name": str(row.get("alliance_name") or "미분류"),
+                "attendance_keys": set(),
+            },
+        )
+        started_at = str(row.get("started_at") or "")
+        if started_at:
+            bucket["attendance_keys"].add(started_at)
+    ranked = sorted(
+        grouped.values(),
+        key=lambda row: (
+            -len(row["attendance_keys"]),
+            str(row["discord_nickname"]),
+        ),
+    )[:limit]
+    return [
+        {
+            "user_id": index,
+            "discord_id": int(row["discord_id"]),
+            "discord_nickname": str(row["discord_nickname"]),
+            "alliance_name": str(row["alliance_name"]),
+            "attendance_count": len(row["attendance_keys"]),
+        }
+        for index, row in enumerate(ranked, start=1)
+    ]
+
+
 def _percent(value: int | float | Decimal, total: int | float | Decimal) -> float:
     total_decimal = Decimal(str(total or 0))
     if total_decimal <= 0:
@@ -1244,21 +1369,36 @@ def _alliance_attendance_member_rows(
 
 def _filter_alliance_rows(
     rows: list[dict[str, Any]],
-    alliance_id: int,
+    alliance_ids: int | set[int] | list[int] | tuple[int, ...],
 ) -> list[dict[str, Any]]:
-    return [row for row in rows if row.get("alliance_id") == alliance_id]
+    allowed_ids = (
+        {int(alliance_ids)}
+        if isinstance(alliance_ids, int)
+        else {int(alliance_id) for alliance_id in alliance_ids}
+    )
+    return [row for row in rows if row.get("alliance_id") in allowed_ids]
+
+
+def _selected_alliance_ids(selected_alliance: dict[str, Any]) -> set[int]:
+    if selected_alliance.get("is_other"):
+        return {
+            int(alliance_id)
+            for alliance_id in selected_alliance.get("alliance_ids", [])
+        }
+    alliance_id = _parse_optional_int(selected_alliance.get("alliance_id"))
+    return {alliance_id} if alliance_id is not None else set()
 
 
 def _alliance_overview(
     guild_id: int,
-    alliance_id: int,
+    alliance_ids: int | set[int] | list[int] | tuple[int, ...],
     start_at: str | None,
     end_at: str | None,
 ) -> dict[str, Any]:
     total_sessions = _count_period_sessions(guild_id, start_at, end_at)
     rows = _filter_alliance_rows(
         _alliance_attendance_member_rows(guild_id, start_at, end_at),
-        alliance_id,
+        alliance_ids,
     )
     alliance_sessions = len({row["attendance_id"] for row in rows})
     attendance_count = len(rows)
@@ -1276,7 +1416,7 @@ def _alliance_overview(
 
 def _alliance_user_rankings(
     guild_id: int,
-    alliance_id: int,
+    alliance_ids: int | set[int] | list[int] | tuple[int, ...],
     start_at: str | None,
     end_at: str | None,
     *,
@@ -1285,7 +1425,7 @@ def _alliance_user_rankings(
     total_sessions = _count_period_sessions(guild_id, start_at, end_at)
     rows = _filter_alliance_rows(
         _alliance_attendance_member_rows(guild_id, start_at, end_at),
-        alliance_id,
+        alliance_ids,
     )
     grouped: dict[int, dict[str, Any]] = {}
     for row in rows:
@@ -1329,13 +1469,13 @@ def _alliance_user_rankings(
 
 def _alliance_hour_stats(
     guild_id: int,
-    alliance_id: int,
+    alliance_ids: int | set[int] | list[int] | tuple[int, ...],
     start_at: str | None,
     end_at: str | None,
 ) -> list[dict[str, Any]]:
     rows = _filter_alliance_rows(
         _alliance_attendance_member_rows(guild_id, start_at, end_at),
-        alliance_id,
+        alliance_ids,
     )
     grouped: dict[str, dict[str, Any]] = {}
     for row in rows:
@@ -1373,13 +1513,13 @@ def _alliance_hour_stats(
 
 def _alliance_daily_rows(
     guild_id: int,
-    alliance_id: int,
+    alliance_ids: int | set[int] | list[int] | tuple[int, ...],
     start_at: str | None,
     end_at: str | None,
 ) -> list[dict[str, Any]]:
     rows = _filter_alliance_rows(
         _alliance_attendance_member_rows(guild_id, start_at, end_at),
-        alliance_id,
+        alliance_ids,
     )
     grouped: dict[str, dict[str, Any]] = {}
     for row in rows:
@@ -1455,7 +1595,7 @@ def _current_month_bounds() -> tuple[str, str]:
 def _my_alliance_url(
     guild_id: int,
     *,
-    alliance_id: int | None = None,
+    alliance_id: int | str | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
 ) -> str:
@@ -2601,19 +2741,19 @@ def _loot_distribution_summary(events: list[dict[str, Any]]) -> dict[str, str]:
 
 def _loot_alliance_selection(
     auth: dict[str, Any],
-    alliance_id: int | None,
+    alliance_id: int | str | None,
 ) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
     access = auth["selected_server"].get("my_alliance") or {}
     options = access.get("options") or []
     if not options:
         return None, []
-    allowed_by_id = {int(option["alliance_id"]): option for option in options}
-    selected_id = (
-        int(alliance_id)
-        if alliance_id is not None and int(alliance_id) in allowed_by_id
-        else int(options[0]["alliance_id"])
+    allowed_by_value = {str(option["alliance_id"]): option for option in options}
+    selected_value = (
+        str(alliance_id)
+        if alliance_id is not None and str(alliance_id) in allowed_by_value
+        else str(options[0]["alliance_id"])
     )
-    return allowed_by_id[selected_id], options
+    return allowed_by_value[selected_value], options
 
 
 def _decorate_alliance_fee_rules(
@@ -2688,11 +2828,31 @@ def _my_alliance_payout_context(
             },
         }
 
-    alliance_id = int(selected_alliance["alliance_id"])
-    fee_rules = _decorate_alliance_fee_rules(
-        database.get_alliance_payout_fee_rules(guild_id, alliance_id)
+    selected_alliance_ids = sorted(_selected_alliance_ids(selected_alliance))
+    is_other_selection = bool(selected_alliance.get("is_other"))
+    fee_rule_cache: dict[int, list[dict[str, Any]]] = {}
+    member_group_cache: dict[int, dict[int, dict[str, Any]]] = {}
+
+    def fee_rules_for(alliance_id: int) -> list[dict[str, Any]]:
+        if alliance_id not in fee_rule_cache:
+            fee_rule_cache[alliance_id] = _decorate_alliance_fee_rules(
+                database.get_alliance_payout_fee_rules(guild_id, alliance_id)
+            )
+        return fee_rule_cache[alliance_id]
+
+    def member_groups_for(alliance_id: int) -> dict[int, dict[str, Any]]:
+        if alliance_id not in member_group_cache:
+            member_group_cache[alliance_id] = database.get_member_payout_groups(
+                guild_id,
+                alliance_id,
+            )
+        return member_group_cache[alliance_id]
+
+    fee_rules = (
+        []
+        if is_other_selection or not selected_alliance_ids
+        else fee_rules_for(selected_alliance_ids[0])
     )
-    member_groups = database.get_member_payout_groups(guild_id, alliance_id)
     rows = []
     recipient_summaries: dict[int, dict[str, Any]] = {}
     total_amount_sum = Decimal("0")
@@ -2705,171 +2865,197 @@ def _my_alliance_payout_context(
     unsettled_count = 0
 
     for event in events:
-        payout = next(
-            (
-                item
-                for item in event.get("alliance_payouts", [])
-                if _parse_optional_int(item.get("alliance_id")) == alliance_id
-            ),
-            None,
-        )
-        if not payout or not event.get("distribution_id"):
-            continue
-
-        member_record = member_groups.get(int(event["distribution_id"]))
-        adena_rate = Decimal(str(event.get("adena_rate") or "0"))
-        participants = next(
-            (
-                alliance.get("members", [])
-                for alliance in event.get("alliances", [])
-                if _parse_optional_int(alliance.get("alliance_id")) == alliance_id
-            ),
-            [],
-        )
-        participant_count = len(participants) or int(payout.get("participant_count") or 0)
-        base_amount = _rounded_integer(payout.get("net_amount"))
-        total_amount = base_amount
-        selected_rules = (
-            member_record.get("fee_lines", [])
-            if member_record is not None
-            else fee_rules
-        )
-        paid_statuses = (
-            member_record.get("statuses", {})
-            if member_record is not None
-            else {}
-        )
-        fee_lines_raw = _member_payout_fee_lines_from_rules(total_amount, selected_rules)
-        fee_amount = sum(
-            (Decimal(str(line["fee_amount"])) for line in fee_lines_raw),
-            Decimal("0"),
-        )
-        distributable_amount = total_amount - fee_amount
-        member_amounts = _rounded_allocation(distributable_amount, participant_count)
-        fallback_member_amount = (
-            member_amounts[0]
-            if member_amounts
-            else _rounded_divide(distributable_amount, participant_count)
-        )
-        fee_lines = _decorate_member_fee_lines(fee_lines_raw, adena_rate)
-        recipients = []
-        paid_recipient_count = 0
-        unpaid_amount = Decimal("0")
-        for index, member in enumerate(participants):
-            member_user_id = int(member.get("user_id") or 0)
-            member_amount = (
-                member_amounts[index]
-                if index < len(member_amounts)
-                else fallback_member_amount
-            )
-            is_paid = bool(paid_statuses.get(member_user_id, False))
-            if is_paid:
-                paid_recipient_count += 1
-            payout_status = "paid" if is_paid else "unpaid"
-            recipients.append(
-                {
-                    "user_id": member_user_id,
-                    "display_name": str(member.get("discord_nickname") or ""),
-                    "distribution_id": int(event["distribution_id"]),
-                    "loot_event_id": event["loot_event_id"],
-                    "item_name": event["item_name"],
-                    "attendance_started_at": event["attendance_started_at"] or event["event_date"],
-                    "payout_amount": member_amount,
-                    "payout_amount_text": _money_text(member_amount),
-                    "payout_amount_cash_text": _cash_text(
-                        _cash_from_adena(member_amount, adena_rate)
-                    ),
-                    "payout_status": payout_status,
-                    "status_label": "지급 완료" if is_paid else "미완료",
-                    "status_class": "is-paid" if is_paid else "is-unpaid",
-                    "next_status": "unpaid" if is_paid else "paid",
-                    "next_status_label": "미완료로 변경" if is_paid else "완료 처리",
-                }
-            )
-            summary = recipient_summaries.setdefault(
-                member_user_id,
-                {
-                    "user_id": member_user_id,
-                    "display_name": str(member.get("discord_nickname") or ""),
-                    "total_amount": Decimal("0"),
-                    "paid_amount": Decimal("0"),
-                    "unpaid_amount": Decimal("0"),
-                    "total_count": 0,
-                    "paid_count": 0,
-                    "unpaid_count": 0,
-                    "unpaid_distribution_ids": [],
-                    "items": [],
-                },
-            )
-            summary["total_amount"] += member_amount
-            summary["total_count"] += 1
-            summary["items"].append(
-                {
-                    "distribution_id": int(event["distribution_id"]),
-                    "loot_event_id": event["loot_event_id"],
-                    "item_name": event["item_name"],
-                    "attendance_started_at": event["attendance_started_at"] or event["event_date"],
-                    "amount_text": _money_text(member_amount),
-                    "status": payout_status,
-                    "status_label": "지급 완료" if is_paid else "미완료",
-                    "status_class": "is-paid" if is_paid else "is-unpaid",
-                    "next_status": "unpaid" if is_paid else "paid",
-                    "next_status_label": "미완료로 변경" if is_paid else "완료 처리",
-                }
-            )
-            if is_paid:
-                summary["paid_amount"] += member_amount
-                summary["paid_count"] += 1
-            else:
-                summary["unpaid_amount"] += member_amount
-                summary["unpaid_count"] += 1
-                summary["unpaid_distribution_ids"].append(int(event["distribution_id"]))
-                unpaid_amount += member_amount
-
-        recipient_total_count = len(recipients)
-        status = (
-            "paid"
-            if recipient_total_count > 0 and paid_recipient_count == recipient_total_count
-            else "unpaid"
-        )
-        if status == "paid":
-            settled_count += 1
-        else:
-            unsettled_count += 1
-            unsettled_amount_sum += unpaid_amount
-            unsettled_cash_sum += _cash_from_adena(
-                unpaid_amount,
-                adena_rate,
-            )
-
-        total_amount_sum += total_amount
-        total_cash_sum += _cash_from_adena(total_amount, adena_rate)
-        fee_amount_sum += fee_amount
-        fee_cash_sum += _cash_from_adena(fee_amount, adena_rate)
-        rows.append(
-            {
-                "distribution_id": int(event["distribution_id"]),
-                "loot_event_id": event["loot_event_id"],
-                "item_name": event["item_name"],
-                "attendance_started_at": event["attendance_started_at"] or event["event_date"],
-                "participant_count": participant_count,
-                "total_amount_text": _money_text(total_amount),
-                "total_amount_cash_text": _cash_text(_cash_from_adena(total_amount, adena_rate)),
-                "fee_amount_text": _money_text(fee_amount),
-                "fee_amount_cash_text": _cash_text(_cash_from_adena(fee_amount, adena_rate)),
-                "distributable_amount_text": _money_text(distributable_amount),
-                "distributable_amount_cash_text": _cash_text(
-                    _cash_from_adena(distributable_amount, adena_rate)
+        for alliance_id in selected_alliance_ids:
+            payout = next(
+                (
+                    item
+                    for item in event.get("alliance_payouts", [])
+                    if _parse_optional_int(item.get("alliance_id")) == alliance_id
                 ),
-                "per_member_text": _rounded_allocation_text(member_amounts),
-                "per_member_cash_text": _rounded_allocation_cash_text(member_amounts, adena_rate),
-                "status": status,
-                "status_label": "정산완료" if status == "paid" else "미정산",
-                "status_class": "is-paid" if status == "paid" else "is-unpaid",
-                "fee_lines": fee_lines,
-                "recipients": recipients,
-            }
-        )
+                None,
+            )
+            if not payout or not event.get("distribution_id"):
+                continue
+
+            member_record = member_groups_for(alliance_id).get(
+                int(event["distribution_id"])
+            )
+            adena_rate = Decimal(str(event.get("adena_rate") or "0"))
+            participants = next(
+                (
+                    alliance.get("members", [])
+                    for alliance in event.get("alliances", [])
+                    if _parse_optional_int(alliance.get("alliance_id")) == alliance_id
+                ),
+                [],
+            )
+            participant_count = len(participants) or int(
+                payout.get("participant_count") or 0
+            )
+            total_amount = _rounded_integer(payout.get("net_amount"))
+            selected_rules = (
+                member_record.get("fee_lines", [])
+                if member_record is not None
+                else fee_rules_for(alliance_id)
+            )
+            paid_statuses = (
+                member_record.get("statuses", {})
+                if member_record is not None
+                else {}
+            )
+            fee_lines_raw = _member_payout_fee_lines_from_rules(
+                total_amount,
+                selected_rules,
+            )
+            fee_amount = sum(
+                (Decimal(str(line["fee_amount"])) for line in fee_lines_raw),
+                Decimal("0"),
+            )
+            distributable_amount = total_amount - fee_amount
+            member_amounts = _rounded_allocation(distributable_amount, participant_count)
+            fallback_member_amount = (
+                member_amounts[0]
+                if member_amounts
+                else _rounded_divide(distributable_amount, participant_count)
+            )
+            fee_lines = _decorate_member_fee_lines(fee_lines_raw, adena_rate)
+            recipients = []
+            paid_recipient_count = 0
+            unpaid_amount = Decimal("0")
+            for index, member in enumerate(participants):
+                member_user_id = int(member.get("user_id") or 0)
+                member_amount = (
+                    member_amounts[index]
+                    if index < len(member_amounts)
+                    else fallback_member_amount
+                )
+                is_paid = bool(paid_statuses.get(member_user_id, False))
+                if is_paid:
+                    paid_recipient_count += 1
+                payout_status = "paid" if is_paid else "unpaid"
+                recipients.append(
+                    {
+                        "alliance_id": alliance_id,
+                        "user_id": member_user_id,
+                        "display_name": str(member.get("discord_nickname") or ""),
+                        "distribution_id": int(event["distribution_id"]),
+                        "loot_event_id": event["loot_event_id"],
+                        "item_name": event["item_name"],
+                        "attendance_started_at": event["attendance_started_at"]
+                        or event["event_date"],
+                        "payout_amount": member_amount,
+                        "payout_amount_text": _money_text(member_amount),
+                        "payout_amount_cash_text": _cash_text(
+                            _cash_from_adena(member_amount, adena_rate)
+                        ),
+                        "payout_status": payout_status,
+                        "status_label": "지급 완료" if is_paid else "미완료",
+                        "status_class": "is-paid" if is_paid else "is-unpaid",
+                        "next_status": "unpaid" if is_paid else "paid",
+                        "next_status_label": "미완료로 변경"
+                        if is_paid
+                        else "완료 처리",
+                    }
+                )
+                summary = recipient_summaries.setdefault(
+                    member_user_id,
+                    {
+                        "user_id": member_user_id,
+                        "alliance_ids": set(),
+                        "display_name": str(member.get("discord_nickname") or ""),
+                        "total_amount": Decimal("0"),
+                        "paid_amount": Decimal("0"),
+                        "unpaid_amount": Decimal("0"),
+                        "total_count": 0,
+                        "paid_count": 0,
+                        "unpaid_count": 0,
+                        "unpaid_distribution_ids": [],
+                        "items": [],
+                    },
+                )
+                summary["alliance_ids"].add(alliance_id)
+                summary["total_amount"] += member_amount
+                summary["total_count"] += 1
+                summary["items"].append(
+                    {
+                        "distribution_id": int(event["distribution_id"]),
+                        "loot_event_id": event["loot_event_id"],
+                        "alliance_id": alliance_id,
+                        "item_name": event["item_name"],
+                        "attendance_started_at": event["attendance_started_at"]
+                        or event["event_date"],
+                        "amount_text": _money_text(member_amount),
+                        "status": payout_status,
+                        "status_label": "지급 완료" if is_paid else "미완료",
+                        "status_class": "is-paid" if is_paid else "is-unpaid",
+                        "next_status": "unpaid" if is_paid else "paid",
+                        "next_status_label": "미완료로 변경"
+                        if is_paid
+                        else "완료 처리",
+                    }
+                )
+                if is_paid:
+                    summary["paid_amount"] += member_amount
+                    summary["paid_count"] += 1
+                else:
+                    summary["unpaid_amount"] += member_amount
+                    summary["unpaid_count"] += 1
+                    summary["unpaid_distribution_ids"].append(
+                        int(event["distribution_id"])
+                    )
+                    unpaid_amount += member_amount
+
+            recipient_total_count = len(recipients)
+            status = (
+                "paid"
+                if recipient_total_count > 0
+                and paid_recipient_count == recipient_total_count
+                else "unpaid"
+            )
+            if status == "paid":
+                settled_count += 1
+            else:
+                unsettled_count += 1
+                unsettled_amount_sum += unpaid_amount
+                unsettled_cash_sum += _cash_from_adena(unpaid_amount, adena_rate)
+
+            total_amount_sum += total_amount
+            total_cash_sum += _cash_from_adena(total_amount, adena_rate)
+            fee_amount_sum += fee_amount
+            fee_cash_sum += _cash_from_adena(fee_amount, adena_rate)
+            rows.append(
+                {
+                    "alliance_id": alliance_id,
+                    "distribution_id": int(event["distribution_id"]),
+                    "loot_event_id": event["loot_event_id"],
+                    "item_name": event["item_name"],
+                    "attendance_started_at": event["attendance_started_at"]
+                    or event["event_date"],
+                    "participant_count": participant_count,
+                    "total_amount_text": _money_text(total_amount),
+                    "total_amount_cash_text": _cash_text(
+                        _cash_from_adena(total_amount, adena_rate)
+                    ),
+                    "fee_amount_text": _money_text(fee_amount),
+                    "fee_amount_cash_text": _cash_text(
+                        _cash_from_adena(fee_amount, adena_rate)
+                    ),
+                    "distributable_amount_text": _money_text(distributable_amount),
+                    "distributable_amount_cash_text": _cash_text(
+                        _cash_from_adena(distributable_amount, adena_rate)
+                    ),
+                    "per_member_text": _rounded_allocation_text(member_amounts),
+                    "per_member_cash_text": _rounded_allocation_cash_text(
+                        member_amounts,
+                        adena_rate,
+                    ),
+                    "status": status,
+                    "status_label": "정산완료" if status == "paid" else "미정산",
+                    "status_class": "is-paid" if status == "paid" else "is-unpaid",
+                    "fee_lines": fee_lines,
+                    "recipients": recipients,
+                }
+            )
 
     recipient_rows = []
     for summary in recipient_summaries.values():
@@ -2922,7 +3108,7 @@ def _loot_url(
     *,
     period: str | None = None,
     mine: bool | None = None,
-    alliance_id: int | None = None,
+    alliance_id: int | str | None = None,
     tab: str = "distribution",
 ) -> str:
     params: dict[str, Any] = {"guild_id": guild_id}
@@ -3008,7 +3194,7 @@ def _loot_redirect(
     guild_id: int,
     *,
     saved: str | None = None,
-    alliance_id: int | None = None,
+    alliance_id: str | None = None,
     tab: str = "my-alliance-payouts",
 ) -> RedirectResponse:
     params: dict[str, Any] = {"guild_id": guild_id}
@@ -3029,11 +3215,22 @@ def _allowed_loot_alliance_id(
     access = auth["selected_server"].get("my_alliance") or {}
     options = access.get("options") or []
     if alliance_id is not None:
-        allowed_ids = {int(option["alliance_id"]) for option in options}
+        allowed_ids: set[int] = set()
+        for option in options:
+            option_id = _parse_optional_int(option.get("alliance_id"))
+            if option_id is not None:
+                allowed_ids.add(option_id)
+            if option.get("is_other"):
+                allowed_ids.update(
+                    int(other_id) for other_id in option.get("alliance_ids", [])
+                )
         if int(alliance_id) not in allowed_ids:
             return None
+        return int(alliance_id)
     selected_alliance, _options = _loot_alliance_selection(auth, alliance_id)
     if selected_alliance is None:
+        return None
+    if selected_alliance.get("is_other"):
         return None
     return int(selected_alliance["alliance_id"])
 
@@ -3291,7 +3488,7 @@ def _loot_template_context(
     loot_form: dict[str, str] | None = None,
     item_price_form: dict[str, str] | None = None,
     period: str | None = None,
-    alliance_id: int | None = None,
+    alliance_id: int | str | None = None,
     mine: str | None = None,
 ) -> dict[str, Any]:
     active_period, period_start, period_label = _loot_period_bounds(period)
@@ -3809,14 +4006,26 @@ def dashboard(
     search_value = (search or "").strip()
     alliance_value = (alliance or "").strip()
     limit_value = limit if limit in {10, 25, 50, 100, 200} else 25
+    alliance_options = _role_scoped_alliance_name_options(selected_guild_id)
+    other_alliance_names = _unmapped_alliance_names(selected_guild_id)
+    is_other_alliance_filter = (
+        alliance_value == OTHER_ALLIANCE_VALUE and bool(other_alliance_names)
+    )
+    query_alliance_value = None if is_other_alliance_filter else alliance_value or None
 
     filtered_rows = database.get_attendance_export_rows(
         selected_guild_id,
         start_at,
         end_at,
         search_value or None,
-        alliance_value or None,
+        query_alliance_value,
     )
+    if is_other_alliance_filter:
+        filtered_rows = [
+            row
+            for row in filtered_rows
+            if str(row.get("alliance_name") or "미분류") in other_alliance_names
+        ]
     should_compute_filtered_totals = bool(search_value or alliance_value)
     if should_compute_filtered_totals:
         overview = _overview_from_attendance_rows(filtered_rows)
@@ -3833,18 +4042,20 @@ def dashboard(
             selected_guild_id,
             start_at,
             end_at,
-            alliance_value or None,
+            query_alliance_value,
         )
-    top_users = database.get_user_attendance_stats(
-        selected_guild_id,
-        start_at,
-        end_at,
-        search_value or None,
-        alliance_value or None,
-        limit_value,
-    )
+    if should_compute_filtered_totals:
+        top_users = _user_stats_from_attendance_rows(filtered_rows, limit_value)
+    else:
+        top_users = database.get_user_attendance_stats(
+            selected_guild_id,
+            start_at,
+            end_at,
+            search_value or None,
+            query_alliance_value,
+            limit_value,
+        )
     recent_sessions = database.get_attendance_status_sessions(selected_guild_id, 8, 0)
-    alliance_options = database.get_alliance_names()
 
     return _render(
         request,
@@ -3915,13 +4126,24 @@ def dashboard_export_csv(
     start_at, end_at, start_value, end_value = _date_bounds(start_date, end_date)
     search_value = (search or "").strip()
     alliance_value = (alliance or "").strip()
+    other_alliance_names = _unmapped_alliance_names(selected_guild_id)
+    is_other_alliance_filter = (
+        alliance_value == OTHER_ALLIANCE_VALUE and bool(other_alliance_names)
+    )
+    query_alliance_value = None if is_other_alliance_filter else alliance_value or None
     rows = database.get_attendance_export_rows(
         selected_guild_id,
         start_at,
         end_at,
         search_value or None,
-        alliance_value or None,
+        query_alliance_value,
     )
+    if is_other_alliance_filter:
+        rows = [
+            row
+            for row in rows
+            if str(row.get("alliance_name") or "미분류") in other_alliance_names
+        ]
 
     output = io.StringIO()
     writer = csv.writer(output)
@@ -3952,7 +4174,7 @@ def dashboard_export_csv(
 def my_alliance(
     request: Request,
     guild_id: str | None = None,
-    alliance_id: int | None = None,
+    alliance_id: str | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
 ):
@@ -3969,37 +4191,40 @@ def my_alliance(
             status_code=303,
         )
 
-    allowed_by_id = {int(option["alliance_id"]): option for option in alliance_options}
-    selected_alliance_id = (
-        int(alliance_id)
-        if alliance_id is not None and int(alliance_id) in allowed_by_id
-        else int(alliance_options[0]["alliance_id"])
+    allowed_by_value = {
+        str(option["alliance_id"]): option for option in alliance_options
+    }
+    selected_alliance_value = (
+        str(alliance_id)
+        if alliance_id is not None and str(alliance_id) in allowed_by_value
+        else str(alliance_options[0]["alliance_id"])
     )
-    selected_alliance = allowed_by_id[selected_alliance_id]
+    selected_alliance = allowed_by_value[selected_alliance_value]
+    selected_alliance_ids = _selected_alliance_ids(selected_alliance)
     start_at, end_at, start_value, end_value = _date_bounds(start_date, end_date)
 
     overview = _alliance_overview(
         selected_guild_id,
-        selected_alliance_id,
+        selected_alliance_ids,
         start_at,
         end_at,
     )
     user_rankings = _alliance_user_rankings(
         selected_guild_id,
-        selected_alliance_id,
+        selected_alliance_ids,
         start_at,
         end_at,
         limit=200,
     )
     hour_stats = _alliance_hour_stats(
         selected_guild_id,
-        selected_alliance_id,
+        selected_alliance_ids,
         start_at,
         end_at,
     )
     daily_rows = _alliance_daily_rows(
         selected_guild_id,
-        selected_alliance_id,
+        selected_alliance_ids,
         start_at,
         end_at,
     )
@@ -4007,14 +4232,14 @@ def my_alliance(
     month_start_at, month_end_at = _current_month_bounds()
     weekly_rankings = _alliance_user_rankings(
         selected_guild_id,
-        selected_alliance_id,
+        selected_alliance_ids,
         week_start_at,
         week_end_at,
         limit=10,
     )
     monthly_rankings = _alliance_user_rankings(
         selected_guild_id,
-        selected_alliance_id,
+        selected_alliance_ids,
         month_start_at,
         month_end_at,
         limit=10,
@@ -4026,13 +4251,13 @@ def my_alliance(
     filters = {
         "start_date": start_value,
         "end_date": end_value,
-        "alliance_id": selected_alliance_id,
+        "alliance_id": selected_alliance_value,
         "quick": [
             {
                 "label": "전체",
                 "href": _my_alliance_url(
                     selected_guild_id,
-                    alliance_id=selected_alliance_id,
+                    alliance_id=selected_alliance_value,
                 ),
                 "active": not start_value and not end_value,
             },
@@ -4040,7 +4265,7 @@ def my_alliance(
                 "label": "이번 주",
                 "href": _my_alliance_url(
                     selected_guild_id,
-                    alliance_id=selected_alliance_id,
+                    alliance_id=selected_alliance_value,
                     start_date=week_start.isoformat(),
                     end_date=today.isoformat(),
                 ),
@@ -4051,7 +4276,7 @@ def my_alliance(
                 "label": "이번 달",
                 "href": _my_alliance_url(
                     selected_guild_id,
-                    alliance_id=selected_alliance_id,
+                    alliance_id=selected_alliance_value,
                     start_date=month_start.isoformat(),
                     end_date=today.isoformat(),
                 ),
@@ -4267,7 +4492,7 @@ def loot_drops(
     guild_id: str | None = None,
     saved: str | None = None,
     period: str | None = None,
-    alliance_id: int | None = None,
+    alliance_id: str | None = None,
     mine: str | None = None,
 ):
     auth = _auth_context(request, guild_id)

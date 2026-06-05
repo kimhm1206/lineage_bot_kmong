@@ -551,7 +551,7 @@
             </div>
             <small>미정산 {{ my_alliance_payouts.summary.unsettled_count }}건 · 완료 {{ my_alliance_payouts.summary.settled_count }}건</small>
           </article>
-          {% if auth.selected_server.can_manage %}
+          {% if auth.selected_server.can_manage and not my_alliance_payouts.selected_alliance.is_other %}
             <article class="panel my-payout-rule-panel my-payout-rule-strip">
               <header class="panel-header">
                 <div>
@@ -582,7 +582,7 @@
           {% endif %}
         </section>
 
-        {% if auth.selected_server.can_manage %}
+        {% if auth.selected_server.can_manage and not my_alliance_payouts.selected_alliance.is_other %}
           <div class="modal-backdrop" data-fee-rule-modal hidden>
             <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="fee-rule-modal-title">
               <header class="panel-header">
@@ -684,7 +684,7 @@
                               data-member-payout-settle-form
                               {% if payout.status == "paid" %}hidden{% endif %}
                             >
-                              <input type="hidden" name="alliance_id" value="{{ my_alliance_payouts.selected_alliance.alliance_id }}">
+                              <input type="hidden" name="alliance_id" value="{{ payout.alliance_id }}">
                               <input type="hidden" name="distribution_id" value="{{ payout.distribution_id }}">
                               <button class="tiny-button" type="submit" data-member-payout-button>전체완료</button>
                             </form>
@@ -721,7 +721,7 @@
                               {% if auth.selected_server.can_manage %}
                                 <td>
                                   <form class="inline-actions" method="post" action="/loot/member-payouts/recipient-status?guild_id={{ auth.selected_guild_id }}" data-member-payout-form>
-                                    <input type="hidden" name="alliance_id" value="{{ my_alliance_payouts.selected_alliance.alliance_id }}">
+                                    <input type="hidden" name="alliance_id" value="{{ recipient.alliance_id }}">
                                     <input type="hidden" name="distribution_id" value="{{ payout.distribution_id }}">
                                     <input type="hidden" name="user_id" value="{{ recipient.user_id }}">
                                     <input type="hidden" name="payout_status" value="{{ recipient.next_status }}" data-member-payout-status-input>
@@ -813,7 +813,7 @@
                     </div>
                   </div>
                   <div class="recipient-payout-actions" data-recipient-payout-actions>
-                    {% if auth.selected_server.can_manage %}
+                    {% if auth.selected_server.can_manage and not my_alliance_payouts.selected_alliance.is_other %}
                       <form
                         class="inline-actions"
                         method="post"
@@ -859,7 +859,7 @@
                             action="/loot/member-payouts/recipient-status?guild_id={{ auth.selected_guild_id }}"
                             data-recipient-detail-form
                           >
-                            <input type="hidden" name="alliance_id" value="{{ my_alliance_payouts.selected_alliance.alliance_id }}">
+                            <input type="hidden" name="alliance_id" value="{{ item.alliance_id }}">
                             <input type="hidden" name="distribution_id" value="{{ item.distribution_id }}">
                             <input type="hidden" name="user_id" value="{{ recipient.user_id }}">
                             <input type="hidden" name="payout_status" value="{{ item.next_status }}" data-recipient-detail-status-input>
