@@ -8,7 +8,7 @@ import os
 import secrets
 import ipaddress
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from decimal import Decimal, InvalidOperation, ROUND_FLOOR
 from pathlib import Path
 from time import monotonic
 from typing import Any
@@ -2056,7 +2056,7 @@ def _decimal_input(value: Any) -> str:
 
 
 def _rounded_integer(value: Any) -> Decimal:
-    return Decimal(str(value or "0")).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+    return Decimal(str(value or "0")).quantize(Decimal("1"), rounding=ROUND_FLOOR)
 
 
 def _rounded_divide(value: Any, divisor: int | Decimal) -> Decimal:
@@ -2071,15 +2071,7 @@ def _rounded_allocation(value: Any, count: int) -> list[Decimal]:
     if count <= 0:
         return []
     base = _rounded_divide(total, count)
-    amounts = [base for _ in range(count)]
-    diff = int(total - (base * count))
-    if diff > 0:
-        for index in range(diff):
-            amounts[index % count] += Decimal("1")
-    elif diff < 0:
-        for index in range(abs(diff)):
-            amounts[-(index % count) - 1] -= Decimal("1")
-    return amounts
+    return [base for _ in range(count)]
 
 
 def _rounded_allocation_text(amounts: list[Decimal]) -> str:
@@ -2114,7 +2106,7 @@ def _cash_from_adena(adena_amount: Any, adena_rate: Any) -> Decimal:
 def _money_text(value: Any, places: int = 0) -> str:
     decimal_value = Decimal(str(value or "0"))
     quantizer = Decimal("1") if places == 0 else Decimal(f"0.{'0' * (places - 1)}1")
-    rounded = decimal_value.quantize(quantizer, rounding=ROUND_HALF_UP)
+    rounded = decimal_value.quantize(quantizer, rounding=ROUND_FLOOR)
     if rounded == rounded.to_integral():
         return f"{int(rounded):,}"
     return f"{rounded:,.{places}f}".rstrip("0").rstrip(".")
