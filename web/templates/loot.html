@@ -815,8 +815,8 @@
                       <strong data-recipient-unpaid-text>{{ recipient.unpaid_amount_text }}</strong>
                     </div>
                     <div>
-                      <span data-recipient-count-text>미완료 {{ recipient.unpaid_count }}건</span>
-                      <strong data-recipient-progress-text>완료 {{ recipient.paid_count }}건 / 전체 {{ recipient.total_count }}건</strong>
+                      <span>정산 상태</span>
+                      <strong data-recipient-count-text>미완료 {{ recipient.unpaid_count }}건</strong>
                     </div>
                   </div>
                   <div class="recipient-payout-actions" data-recipient-payout-actions>
@@ -1397,7 +1397,6 @@
           unpaidDistributionIds.push(row.dataset.memberDistributionId);
         }
       });
-      const paidCount = Math.max(totalCount - unpaidCount, 0);
       summaryRow.dataset.status = unpaidCount > 0 ? "unpaid" : "paid";
       summaryRow.dataset.unpaidAmount = String(unpaidAmount);
       summaryRow.dataset.unpaidCount = String(unpaidCount);
@@ -1408,10 +1407,6 @@
       const countText = summaryRow.querySelector("[data-recipient-count-text]");
       if (countText) {
         countText.textContent = `미완료 ${unpaidCount}건`;
-      }
-      const progressText = summaryRow.querySelector("[data-recipient-progress-text]");
-      if (progressText) {
-        progressText.textContent = `완료 ${paidCount}건 / 전체 ${totalCount}건`;
       }
       const badge = summaryRow.querySelector("[data-recipient-status-badge]");
       if (badge) {
