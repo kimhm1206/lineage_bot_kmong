@@ -298,6 +298,40 @@ class Database:
     ) -> None:
         delete_attendance_entry(guild_id, attendance_id, user_id)
 
+    def add_work_log(
+        self,
+        guild_id: int,
+        *,
+        actor_discord_id: int | None,
+        actor_display_name: str,
+        actor_role: str,
+        action_type: str,
+        target_type: str,
+        target_id: int | None,
+        summary: str,
+        details: dict[str, Any] | None = None,
+    ) -> int:
+        return add_work_log(
+            guild_id,
+            actor_discord_id=actor_discord_id,
+            actor_display_name=actor_display_name,
+            actor_role=actor_role,
+            action_type=action_type,
+            target_type=target_type,
+            target_id=target_id,
+            summary=summary,
+            details=details,
+        )
+
+    def get_work_logs(
+        self,
+        guild_id: int,
+        *,
+        action_type: str | None = None,
+        limit: int = 120,
+    ) -> list[dict[str, Any]]:
+        return get_work_logs(guild_id, action_type=action_type, limit=limit)
+
     def get_active_scheduled_reports(self) -> list[dict[str, Any]]:
         return get_active_scheduled_reports()
 
@@ -1613,6 +1647,114 @@ def delete_attendance_entry(guild_id: int, attendance_id: int, user_id: int) -> 
             )
             _rebuild_loot_for_attendance(cursor, guild_id, attendance_id)
         connection.commit()
+
+
+def add_work_log(
+    guild_id: int,
+    *,
+    actor_discord_id: int | None,
+    actor_display_name: str,
+    actor_role: str,
+    action_type: str,
+    target_type: str,
+    target_id: int | None,
+    summary: str,
+    details: dict[str, Any] | None = None,
+) -> int:
+    ensure_guild(guild_id)
+    with _connect() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO work_logs (
+                    guild_id,
+                    actor_discord_id,
+                    actor_display_name,
+                    actor_role,
+                    action_type,
+                    target_type,
+                    target_id,
+                    summary,
+                    details_json
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING work_log_id
+                """,
+                (
+                    guild_id,
+                    actor_discord_id,
+                    actor_display_name.strip() or str(actor_discord_id or ""),
+                    actor_role,
+                    action_type,
+                    target_type,
+                    target_id,
+                    summary.strip(),
+                    Json(details or {}),
+                ),
+            )
+            work_log_id = int(cursor.fetchone()["work_log_id"])
+        connection.commit()
+    return work_log_id
+
+
+def get_work_logs(
+    guild_id: int,
+    *,
+    action_type: str | None = None,
+    limit: int = 120,
+) -> list[dict[str, Any]]:
+    safe_limit = max(1, min(int(limit), 300))
+    params: list[Any] = [guild_id]
+    where = "WHERE guild_id = %s"
+    if action_type:
+        where += " AND action_type = %s"
+        params.append(action_type)
+    params.append(safe_limit)
+    rows = _fetchall(
+        f"""
+        SELECT
+            work_log_id,
+            guild_id,
+            actor_discord_id,
+            actor_display_name,
+            actor_role,
+            action_type,
+            target_type,
+            target_id,
+            summary,
+            details_json,
+            created_at
+        FROM work_logs
+        {where}
+        ORDER BY created_at DESC, work_log_id DESC
+        LIMIT %s
+        """,
+        tuple(params),
+    )
+    return [
+        {
+            "work_log_id": int(row["work_log_id"]),
+            "guild_id": int(row["guild_id"]),
+            "actor_discord_id": (
+                int(row["actor_discord_id"])
+                if row["actor_discord_id"] is not None
+                else None
+            ),
+            "actor_display_name": str(row["actor_display_name"]),
+            "actor_role": str(row["actor_role"]),
+            "action_type": str(row["action_type"]),
+            "target_type": str(row["target_type"]),
+            "target_id": (
+                int(row["target_id"])
+                if row["target_id"] is not None
+                else None
+            ),
+            "summary": str(row["summary"]),
+            "details": row["details_json"] or {},
+            "created_at": row["created_at"],
+        }
+        for row in rows
+    ]
 
 
 def get_active_scheduled_reports() -> list[dict[str, Any]]:
@@ -3897,6 +4039,14 @@ def _ensure_postgres_columns(cursor: psycopg2.extensions.cursor) -> None:
         "CREATE INDEX IF NOT EXISTS idx_bot_command_queue_guild_status "
         "ON bot_command_queue(guild_id, status, created_at)"
     )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_work_logs_guild_created "
+        "ON work_logs(guild_id, created_at DESC)"
+    )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_work_logs_guild_action "
+        "ON work_logs(guild_id, action_type, created_at DESC)"
+    )
 
 
 def _drop_redundant_timestamp_columns(cursor: psycopg2.extensions.cursor) -> None:
@@ -4065,6 +4215,20 @@ CREATE TABLE IF NOT EXISTS bot_command_queue (
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     processed_at TIMESTAMPTZ,
     error_message TEXT
+);
+
+CREATE TABLE IF NOT EXISTS work_logs (
+    work_log_id BIGSERIAL PRIMARY KEY,
+    guild_id BIGINT NOT NULL REFERENCES guilds(guild_id) ON DELETE CASCADE,
+    actor_discord_id BIGINT,
+    actor_display_name TEXT NOT NULL,
+    actor_role TEXT NOT NULL,
+    action_type TEXT NOT NULL,
+    target_type TEXT NOT NULL,
+    target_id BIGINT,
+    summary TEXT NOT NULL,
+    details_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS scheduled_report_settings (

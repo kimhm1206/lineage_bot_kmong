@@ -67,6 +67,17 @@ LOG_TABS = (
     {"value": "settings", "label": "설정"},
     {"value": "logs", "label": "로그"},
 )
+WORK_LOG_TABS = (
+    {"value": "all", "label": "전체"},
+    {"value": "attendance_add", "label": "출석 추가"},
+    {"value": "attendance_delete", "label": "출석 삭제"},
+    {"value": "item_create", "label": "아이템 추가"},
+    {"value": "item_update", "label": "아이템 수정"},
+    {"value": "item_delete", "label": "아이템 삭제"},
+    {"value": "loot_create", "label": "드랍 등록"},
+    {"value": "loot_update", "label": "드랍 수정"},
+    {"value": "loot_delete", "label": "드랍 삭제"},
+)
 
 _BOT_BRIDGE_WEBSOCKET: WebSocket | None = None
 _BOT_BRIDGE_LOCK = asyncio.Lock()
@@ -3181,6 +3192,106 @@ def _command_category_label(category: str) -> str:
     return next((tab["label"] for tab in LOG_TABS if tab["value"] == category), "로그")
 
 
+def _work_log_action_label(action_type: str) -> str:
+    return next(
+        (tab["label"] for tab in WORK_LOG_TABS if tab["value"] == action_type),
+        action_type,
+    )
+
+
+def _work_log_actor_name(auth: dict[str, Any]) -> str:
+    return str(
+        auth["selected_server"].get("member_display_name")
+        or auth["user"].get("display_name")
+        or auth["user"].get("username")
+        or auth["user"].get("id")
+        or ""
+    )
+
+
+def _record_work_log(
+    auth: dict[str, Any],
+    guild_id: int,
+    *,
+    action_type: str,
+    target_type: str,
+    target_id: int | None,
+    summary: str,
+    details: dict[str, Any] | None = None,
+) -> None:
+    try:
+        database.add_work_log(
+            guild_id,
+            actor_discord_id=int(auth["user"]["id"]),
+            actor_display_name=_work_log_actor_name(auth),
+            actor_role=str(auth["selected_server"].get("role") or "user"),
+            action_type=action_type,
+            target_type=target_type,
+            target_id=target_id,
+            summary=summary,
+            details=details,
+        )
+    except Exception:
+        pass
+
+
+def _work_log_user_label(user_id: int) -> str:
+    row = database.fetchone(
+        """
+        SELECT
+            u.discord_nickname,
+            COALESCE(a.alliance_name, '미분류') AS alliance_name
+        FROM users u
+        LEFT JOIN alliances a ON a.alliance_id = u.alliance_id
+        WHERE u.user_id = %s
+        """,
+        (user_id,),
+    )
+    if row is None:
+        return f"User {user_id}"
+    return f"{row['discord_nickname']} ({row['alliance_name']})"
+
+
+def _work_log_loot_label(guild_id: int, loot_event_id: int) -> str:
+    row = database.fetchone(
+        """
+        SELECT
+            le.loot_event_id,
+            le.attendance_id,
+            le.event_time_label,
+            COALESCE(li.item_name_snapshot, le.title, '드랍') AS item_name
+        FROM loot_events le
+        LEFT JOIN loot_event_items li ON li.loot_event_id = le.loot_event_id
+        WHERE le.guild_id = %s
+          AND le.loot_event_id = %s
+        ORDER BY li.loot_item_id ASC
+        LIMIT 1
+        """,
+        (guild_id, loot_event_id),
+    )
+    if row is None:
+        return f"드랍 #{loot_event_id}"
+    time_label = str(row["event_time_label"] or "").strip()
+    time_part = f" · {time_label}" if time_label else ""
+    return f"{row['item_name']} · 출석 #{row['attendance_id']}{time_part}"
+
+
+def _work_log_item_label(item_id: int) -> str:
+    row = database.fetchone(
+        """
+        SELECT item_name, default_price
+        FROM items
+        WHERE item_id = %s
+        """,
+        (item_id,),
+    )
+    if row is None:
+        return f"아이템 #{item_id}"
+    price = _decimal_input(row["default_price"])
+    price_part = f" · {price}원" if price else ""
+    return f"{row['item_name']}{price_part}"
+
+
 def _latest_command_queue(guild_id: int, limit: int = 10) -> list[dict[str, Any]]:
     rows = database.fetchall(
         """
@@ -3922,6 +4033,16 @@ async def add_attendance_status_entry(
         if attendance_id <= 0 or user_id <= 0:
             raise ValueError
         database.add_attendance_entry(selected_guild_id, attendance_id, user_id)
+        user_label = _work_log_user_label(user_id)
+        _record_work_log(
+            auth,
+            selected_guild_id,
+            action_type="attendance_add",
+            target_type="attendance",
+            target_id=attendance_id,
+            summary=f"출석 #{attendance_id}에 {user_label} 추가",
+            details={"attendance_id": attendance_id, "user_id": user_id},
+        )
     except Exception:
         pass
     return RedirectResponse(
@@ -3954,7 +4075,17 @@ async def delete_attendance_status_entry(
         user_id = int(form_data.get("user_id") or "")
         if attendance_id <= 0 or user_id <= 0:
             raise ValueError
+        user_label = _work_log_user_label(user_id)
         database.delete_attendance_entry(selected_guild_id, attendance_id, user_id)
+        _record_work_log(
+            auth,
+            selected_guild_id,
+            action_type="attendance_delete",
+            target_type="attendance",
+            target_id=attendance_id,
+            summary=f"출석 #{attendance_id}에서 {user_label} 삭제",
+            details={"attendance_id": attendance_id, "user_id": user_id},
+        )
     except Exception:
         pass
     return RedirectResponse(
@@ -4056,7 +4187,7 @@ async def create_loot_drop(
         )
 
     try:
-        database.create_loot_drop(
+        loot_event_id = database.create_loot_drop(
             selected_guild_id,
             attendance_id=attendance_id,
             item_id=item_id,
@@ -4067,6 +4198,23 @@ async def create_loot_drop(
             fee_rate=fee_rate,
             memo=str(form_data.get("memo") or ""),
             created_by_discord_id=int(auth["user"]["id"]),
+        )
+        _record_work_log(
+            auth,
+            selected_guild_id,
+            action_type="loot_create",
+            target_type="loot",
+            target_id=loot_event_id,
+            summary=f"드랍 등록: {_work_log_loot_label(selected_guild_id, loot_event_id)}",
+            details={
+                "loot_event_id": loot_event_id,
+                "attendance_id": attendance_id,
+                "item_id": item_id,
+                "cash_price_krw": _decimal_input(cash_price_krw),
+                "sale_price": _decimal_input(sale_price),
+                "adena_rate": _decimal_input(adena_rate),
+                "fee_rate": _decimal_input(fee_rate),
+            },
         )
     except ValueError as exc:
         return _render(
@@ -4138,6 +4286,21 @@ async def update_loot_drop(
             adena_rate=adena_rate,
             fee_rate=fee_rate,
             memo=str(form_data.get("memo") or ""),
+        )
+        _record_work_log(
+            auth,
+            selected_guild_id,
+            action_type="loot_update",
+            target_type="loot",
+            target_id=loot_event_id,
+            summary=f"드랍 수정: {_work_log_loot_label(selected_guild_id, loot_event_id)}",
+            details={
+                "loot_event_id": loot_event_id,
+                "cash_price_krw": _decimal_input(cash_price_krw),
+                "sale_price": _decimal_input(sale_price),
+                "adena_rate": _decimal_input(adena_rate),
+                "fee_rate": _decimal_input(fee_rate),
+            },
         )
     except ValueError:
         return RedirectResponse(
@@ -4532,7 +4695,17 @@ async def delete_loot_drop(
         loot_event_id = int(form_data.get("loot_event_id") or "")
         if loot_event_id <= 0:
             raise ValueError
+        loot_label = _work_log_loot_label(selected_guild_id, loot_event_id)
         database.delete_loot_drop(selected_guild_id, loot_event_id)
+        _record_work_log(
+            auth,
+            selected_guild_id,
+            action_type="loot_delete",
+            target_type="loot",
+            target_id=loot_event_id,
+            summary=f"드랍 삭제: {loot_label}",
+            details={"loot_event_id": loot_event_id},
+        )
     except ValueError:
         if _wants_json(request):
             return JSONResponse(
@@ -4923,13 +5096,26 @@ async def create_item_price(
             status_code=400,
         )
 
-    database.upsert_item_price(
+    item_id = database.upsert_item_price(
         selected_guild_id,
         item_name=item_name,
         default_price=default_price,
         category="",
         memo="",
         is_bid_item=True,
+    )
+    _record_work_log(
+        auth,
+        selected_guild_id,
+        action_type="item_create",
+        target_type="item",
+        target_id=item_id,
+        summary=f"아이템 추가: {item_name} · {_decimal_input(default_price)}원",
+        details={
+            "item_id": item_id,
+            "item_name": item_name,
+            "default_price": _decimal_input(default_price),
+        },
     )
     return _item_price_redirect(selected_guild_id, "item_price", return_to)
 
@@ -4980,6 +5166,19 @@ async def update_item_price(
             memo="",
             is_bid_item=True,
         )
+        _record_work_log(
+            auth,
+            selected_guild_id,
+            action_type="item_update",
+            target_type="item",
+            target_id=item_id,
+            summary=f"아이템 수정: {item_name} · {_decimal_input(default_price)}원",
+            details={
+                "item_id": item_id,
+                "item_name": item_name,
+                "default_price": _decimal_input(default_price),
+            },
+        )
     except ValueError:
         return _item_price_redirect(selected_guild_id, "item_price_error", return_to)
     return _item_price_redirect(selected_guild_id, "item_price", return_to)
@@ -5010,7 +5209,17 @@ async def delete_item_price(
         item_id = 0
     if item_id <= 0:
         return _item_price_redirect(selected_guild_id, "item_price_error", return_to)
+    item_label = _work_log_item_label(item_id)
     database.deactivate_item_price(selected_guild_id, item_id)
+    _record_work_log(
+        auth,
+        selected_guild_id,
+        action_type="item_delete",
+        target_type="item",
+        target_id=item_id,
+        summary=f"아이템 삭제: {item_label}",
+        details={"item_id": item_id},
+    )
     return _item_price_redirect(selected_guild_id, "item_price_deleted", return_to)
 
 
@@ -5339,6 +5548,46 @@ def logs(
             "log_tabs": LOG_TABS,
             "selected_category": selected_category,
             "active_page": "logs",
+        },
+    )
+
+
+@app.get("/work-logs", response_class=HTMLResponse)
+def work_logs(
+    request: Request,
+    guild_id: str | None = None,
+    action: str = "all",
+):
+    auth = _auth_context(request, guild_id)
+    if not auth:
+        return _auth_redirect(request)
+
+    selected_guild_id = int(auth["selected_guild_id"])
+    if not _can_manage_selected_server(auth):
+        return RedirectResponse(
+            f"/attendance?guild_id={selected_guild_id}",
+            status_code=303,
+        )
+
+    allowed_actions = {str(tab["value"]) for tab in WORK_LOG_TABS}
+    selected_action = action if action in allowed_actions else "all"
+    logs = database.get_work_logs(
+        selected_guild_id,
+        action_type=None if selected_action == "all" else selected_action,
+        limit=160,
+    )
+    for row in logs:
+        row["action_label"] = _work_log_action_label(str(row["action_type"]))
+
+    return _render(
+        request,
+        "work_logs.html",
+        {
+            "auth": auth,
+            "work_logs": logs,
+            "work_log_tabs": WORK_LOG_TABS,
+            "selected_action": selected_action,
+            "active_page": "work_logs",
         },
     )
 
