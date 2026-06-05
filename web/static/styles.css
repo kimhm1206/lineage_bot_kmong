@@ -1256,11 +1256,19 @@ button:disabled {
 }
 
 .status-modal-card {
+  display: flex;
+  flex-direction: column;
   width: min(720px, 100%);
   max-height: min(760px, calc(100vh - 40px));
   padding: 0;
   gap: 0;
   overflow: hidden;
+}
+
+.status-modal-card > .panel-header,
+.status-modal-toolbar,
+.status-add-search {
+  flex: 0 0 auto;
 }
 
 .status-modal-toolbar {
@@ -1296,8 +1304,9 @@ button:disabled {
 
 .status-modal-list {
   display: grid;
+  flex: 1 1 auto;
   gap: 8px;
-  max-height: 520px;
+  min-height: 0;
   overflow: auto;
   padding: 16px 18px 18px;
 }
