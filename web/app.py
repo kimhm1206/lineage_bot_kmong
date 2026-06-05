@@ -2255,6 +2255,12 @@ def _decorate_loot_events(
         row["fee_rate_percent_text"] = _money_text(
             Decimal(str(event.get("fee_rate") or "0")) * Decimal("100"),
         )
+        event_datetime = _loot_event_datetime(row)
+        row["distribution_card_time_label"] = (
+            event_datetime.strftime("%m/%d %H시")
+            if event_datetime is not None
+            else str(event.get("event_time_label") or event.get("event_date") or "")
+        )
         row["converted_text"] = _money_text(
             Decimal(str(event.get("total_net_amount") or "0"))
             * Decimal(str(event.get("adena_rate") or "0")),
@@ -2435,14 +2441,17 @@ def _decorate_loot_events(
         row["viewer_unpaid_cash_text"] = _cash_text(row["viewer_unpaid_cash_amount"])
         if not viewer_participated:
             row["viewer_payout_label"] = "미참여"
+            row["viewer_payout_card_label"] = "미참여"
             row["viewer_payout_meta"] = "참여하지 않은 드랍"
             row["viewer_payout_class"] = "is-empty"
         elif viewer_unpaid_amount > 0:
             row["viewer_payout_label"] = "미수령"
+            row["viewer_payout_card_label"] = "미수령"
             row["viewer_payout_meta"] = f"받은 {_money_text(viewer_paid_amount)} · 미수령 {_money_text(viewer_unpaid_amount)}"
             row["viewer_payout_class"] = "is-unpaid"
         else:
             row["viewer_payout_label"] = "수령완료"
+            row["viewer_payout_card_label"] = "수령"
             row["viewer_payout_meta"] = f"받은 {_money_text(viewer_paid_amount)}"
             row["viewer_payout_class"] = "is-paid"
         payout_total = len(payouts)
@@ -2882,15 +2891,17 @@ def _loot_url(
     guild_id: int,
     *,
     period: str | None = None,
-    mine: bool = False,
+    mine: bool | None = None,
     alliance_id: int | None = None,
     tab: str = "distribution",
 ) -> str:
     params: dict[str, Any] = {"guild_id": guild_id}
     if period:
         params["period"] = period
-    if mine:
+    if mine is True:
         params["mine"] = "1"
+    elif mine is False:
+        params["mine"] = "0"
     if alliance_id:
         params["alliance_id"] = alliance_id
     return f"/loot?{urlencode(params)}#{tab}"
@@ -2927,14 +2938,14 @@ def _loot_participation_filters(
 ) -> list[dict[str, str | bool]]:
     return [
         {
-            "label": "전체 기록",
-            "href": _loot_url(guild_id, period=active_period, mine=False),
-            "active": not mine_only,
-        },
-        {
             "label": "내가 참여한 기록만",
             "href": _loot_url(guild_id, period=active_period, mine=True),
             "active": mine_only,
+        },
+        {
+            "label": "전체 기록",
+            "href": _loot_url(guild_id, period=active_period, mine=False),
+            "active": not mine_only,
         },
     ]
 
@@ -3254,7 +3265,11 @@ def _loot_template_context(
     mine: str | None = None,
 ) -> dict[str, Any]:
     active_period, period_start, period_label = _loot_period_bounds(period)
-    mine_only = str(mine or "").lower() in {"1", "true", "yes", "on", "mine"}
+    mine_only = (
+        True
+        if mine is None
+        else str(mine or "").lower() in {"1", "true", "yes", "on", "mine"}
+    )
     try:
         viewer_discord_id = int(auth["user"]["id"])
     except (KeyError, TypeError, ValueError):

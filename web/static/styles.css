@@ -2293,6 +2293,11 @@ button:disabled {
   gap: 12px;
 }
 
+.loot-tab-panel[data-loot-panel="distribution"] .loot-event-list {
+  grid-auto-flow: dense;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
 .loot-event-card summary {
   display: grid;
   grid-template-columns: minmax(220px, 0.9fr) minmax(260px, 0.8fr) minmax(112px, 0.36fr) minmax(0, 1fr) auto;
@@ -2329,6 +2334,96 @@ button:disabled {
 .loot-event-card.distribution-card summary {
   grid-template-columns: minmax(220px, 0.8fr) minmax(360px, 1.1fr) minmax(128px, 0.36fr) auto;
   padding-left: 24px;
+}
+
+.loot-event-card.distribution-compact-card {
+  display: contents;
+}
+
+.loot-event-card.distribution-compact-card summary.distribution-compact-summary {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  align-content: space-between;
+  min-height: 158px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-left-width: 6px;
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.loot-event-card.distribution-compact-card.is-viewer summary.distribution-compact-summary {
+  border-left-color: var(--green);
+}
+
+.loot-event-card.distribution-compact-card.is-not-viewer summary.distribution-compact-summary {
+  border-left-color: rgba(101, 117, 138, 0.34);
+}
+
+.loot-event-card.distribution-compact-card[open] summary.distribution-compact-summary {
+  border-bottom: 1px solid var(--line);
+}
+
+.loot-event-card.distribution-compact-card .loot-event-body {
+  grid-column: 1 / -1;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.loot-event-card.distribution-compact-card summary.distribution-compact-summary::after {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  padding-left: 8px;
+  background: var(--panel);
+}
+
+.distribution-compact-main {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding-right: 48px;
+}
+
+.distribution-compact-main strong,
+.distribution-compact-amount {
+  color: var(--text);
+  font-weight: 1000;
+}
+
+.distribution-compact-main strong {
+  overflow: hidden;
+  font-size: 16px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.distribution-compact-main span,
+.distribution-compact-time {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.distribution-compact-amount {
+  overflow-wrap: anywhere;
+  font-size: 20px;
+  line-height: 1.08;
+}
+
+.distribution-compact-status {
+  display: flex;
+  justify-content: flex-start;
 }
 
 .loot-event-card.payout-card summary {
@@ -2668,6 +2763,11 @@ button:disabled {
 
 .payout-status-badge.is-unpaid {
   background: rgba(101, 117, 138, 0.12);
+  color: var(--muted);
+}
+
+.payout-status-badge.is-empty {
+  background: rgba(101, 117, 138, 0.1);
   color: var(--muted);
 }
 
@@ -3604,6 +3704,10 @@ button:disabled {
 }
 
 @media (max-width: 1040px) {
+  .loot-tab-panel[data-loot-panel="distribution"] .loot-event-list {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .filter-grid {
     grid-template-columns: repeat(6, minmax(0, 1fr));
   }
@@ -3843,6 +3947,7 @@ button:disabled {
   .item-price-create-grid,
   .item-price-card,
   .item-price-edit-form,
+  .loot-tab-panel[data-loot-panel="distribution"] .loot-event-list,
   .loot-overview-grid,
   .loot-item-settings-layout,
   .loot-layout,

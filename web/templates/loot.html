@@ -83,14 +83,14 @@
   <section class="loot-tab-panel" data-loot-panel="distribution">
     <section class="loot-overview-grid loot-distribution-overview-grid">
       <article class="panel loot-total-card">
-        <span data-currency-label data-adena-label="받아야 할 분배 아데나" data-cash-label="받아야 할 분배 현금">받아야 할 분배 아데나</span>
+        <span>기간 내 총 아데나</span>
         <strong data-money-value data-adena-text="{{ loot_summary.total_amount_text }}" data-cash-text="{{ loot_summary.total_cash_text }}">{{ loot_summary.total_amount_text }}</strong>
         <small>{{ loot_period.label }} · 참여 {{ loot_summary.participated_count }}건</small>
       </article>
       <article class="panel loot-total-card is-muted">
-        <span data-currency-label data-adena-label="받은 분배 아데나" data-cash-label="받은 분배 현금">받은 분배 아데나</span>
-        <strong data-money-value data-adena-text="{{ loot_summary.paid_amount_text }}" data-cash-text="{{ loot_summary.paid_cash_text }}">{{ loot_summary.paid_amount_text }}</strong>
-        <small>수령완료 {{ loot_summary.paid_count }}건</small>
+        <span>닉네임</span>
+        <strong>{{ auth.selected_server.member_display_name }}</strong>
+        <small>선택 서버 기준</small>
       </article>
       <article class="panel loot-total-card is-muted">
         <span data-currency-label data-adena-label="미수령 잔여 아데나" data-cash-label="미수령 잔여 현금">미수령 잔여 아데나</span>
@@ -119,30 +119,20 @@
 
     <section class="loot-event-list" aria-label="분배금 현황">
       {% for event in distribution_events %}
-        <details class="panel loot-event-card distribution-card {% if event.viewer_participated %}is-viewer{% else %}is-not-viewer{% endif %}">
-          <summary>
-            <div class="loot-event-main">
-              <span class="status-id">{{ event.viewer_participation_label }}</span>
+        <details class="panel loot-event-card distribution-card distribution-compact-card {% if event.viewer_participated %}is-viewer{% else %}is-not-viewer{% endif %}">
+          <summary class="distribution-compact-summary">
+            <div class="distribution-compact-main">
               <strong>{{ event.item_name }}</strong>
-              <span>{{ event.attendance_started_at or event.event_date }}</span>
+              <span>{{ auth.selected_server.member_display_name }}</span>
             </div>
-            <div class="loot-event-metrics">
-              <div>
-                <span>드랍 시간</span>
-                <strong>{{ event.attendance_started_at or event.event_time_label }}</strong>
-              </div>
-              <div>
-                <span>참여 인원</span>
-                <strong>{{ event.total_participant_count }}명</strong>
-              </div>
-              <div>
-                <span data-currency-label data-adena-label="실 지급 분배금" data-cash-label="실 지급 분배 현금">실 지급 분배금</span>
-                <strong data-money-value data-adena-text="{{ event.viewer_event_amount_text }}" data-cash-text="{{ event.viewer_event_cash_text }}">{{ event.viewer_event_amount_text }}</strong>
-              </div>
+            <div class="distribution-compact-time">
+              {{ event.distribution_card_time_label }}
             </div>
-            <div class="loot-summary-status {{ event.viewer_payout_class }}">
-              <strong>{{ event.viewer_payout_label }}</strong>
-              <span>{{ event.viewer_payout_meta }}</span>
+            <div class="distribution-compact-amount" data-money-value data-adena-text="{{ event.viewer_event_amount_text }}" data-cash-text="{{ event.viewer_event_cash_text }}">
+              {{ event.viewer_event_amount_text }}
+            </div>
+            <div class="distribution-compact-status">
+              <span class="payout-status-badge {{ event.viewer_payout_class }}">{{ event.viewer_payout_card_label }}</span>
             </div>
           </summary>
 
