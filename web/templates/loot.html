@@ -806,7 +806,7 @@
                   >
                     <td>
                       <strong>{{ recipient.display_name }}</strong>
-                      <div class="panel-caption">{{ recipient.items|length }}건 참여</div>
+                      <div class="panel-caption">{{ recipient["items"]|length }}건 참여</div>
                     </td>
                     <td>{{ recipient.total_amount_text }}</td>
                     <td data-recipient-unpaid-text>{{ recipient.unpaid_amount_text }}</td>
@@ -843,7 +843,7 @@
                   >
                     <td colspan="{% if auth.selected_server.can_manage %}6{% else %}5{% endif %}">
                       <div class="recipient-detail-list">
-                        {% for item in recipient.items %}
+                        {% for item in recipient["items"] %}
                           <span
                             class="recipient-detail-pill {{ 'is-paid' if item.status == 'paid' else 'is-unpaid' }}"
                             data-recipient-detail-item
