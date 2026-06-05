@@ -2711,18 +2711,26 @@ button:disabled {
 }
 
 .recipient-payout-summary {
-  grid-template-columns: minmax(260px, 0.8fr) minmax(520px, 1.8fr) minmax(170px, 0.45fr);
+  grid-template-columns: minmax(240px, 0.75fr) minmax(0, 1.8fr) minmax(132px, max-content) 56px;
   gap: 18px;
+}
+
+.recipient-payout-summary::after {
+  grid-column: 4;
+  align-self: center;
 }
 
 .recipient-payout-metrics {
   display: grid;
-  grid-template-columns: repeat(3, minmax(150px, 1fr));
+  grid-column: 2;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
   align-items: stretch;
+  min-width: 0;
 }
 
 .recipient-payout-metrics div {
+  min-width: 0;
   min-height: 78px;
   padding: 14px 16px;
   border: 1px solid var(--line);
@@ -2741,18 +2749,23 @@ button:disabled {
 .recipient-payout-metrics strong {
   display: block;
   margin-top: 6px;
+  overflow: hidden;
   color: var(--text);
   font-size: 23px;
   font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .recipient-payout-actions {
   display: flex;
+  grid-column: 3;
   flex-direction: column;
   align-items: flex-end;
   align-self: stretch;
   justify-content: flex-end;
   gap: 8px;
+  min-width: 132px;
 }
 
 .recipient-payout-actions .inline-actions {
@@ -3757,10 +3770,12 @@ button:disabled {
   }
 
   .recipient-payout-metrics {
+    grid-column: auto;
     grid-template-columns: 1fr;
   }
 
   .recipient-payout-actions {
+    grid-column: auto;
     align-items: flex-start;
     justify-content: flex-start;
   }
