@@ -340,68 +340,70 @@
             </summary>
 
             <div class="loot-event-body">
-              <div class="loot-edit-row">
-                <form class="loot-update-form" method="post" action="/loot/update?guild_id={{ auth.selected_guild_id }}" data-loot-event-form>
-                  <input type="hidden" name="loot_event_id" value="{{ event.loot_event_id }}">
-                  <label class="field">
-                    <span>원화 시세</span>
-                    <input
-                      name="cash_price_krw"
-                      type="number"
-                      min="0"
-                      step="1"
-                      value="{{ event.cash_price_input }}"
-                      data-loot-cash-price
-                    >
-                  </label>
-                  <label class="field">
-                    <span>아데나 시세</span>
-                    <input
-                      name="adena_rate"
-                      type="number"
-                      min="0"
-                      step="0.000001"
-                      value="{{ event.adena_rate_input }}"
-                      data-loot-adena-rate
-                    >
-                  </label>
-                  <label class="field">
-                    <span>분배 아데나</span>
-                    <input
-                      name="sale_price"
-                      type="number"
-                      min="0"
-                      step="1"
-                      value="{{ event.sale_price_input }}"
-                      data-loot-sale-price
-                      readonly
-                    >
-                  </label>
-                  <label class="field">
-                    <span>수수료(%)</span>
-                    <input
-                      name="fee_percent"
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value="{{ event.fee_percent_input }}"
-                    >
-                  </label>
-                  <label class="field loot-update-memo">
-                    <span>메모</span>
-                    <input name="memo" value="{{ event.memo }}">
-                  </label>
-                  <button class="tiny-button" type="submit">
-                    수정
-                  </button>
-                </form>
-                <form class="loot-delete-form" method="post" action="/loot/delete?guild_id={{ auth.selected_guild_id }}" data-loot-delete-form>
-                  <input type="hidden" name="loot_event_id" value="{{ event.loot_event_id }}">
-                  <button class="tiny-button danger-text-button" type="submit">
-                    삭제
-                  </button>
-                </form>
-              </div>
+              {% if auth.selected_server.role == "developer" or auth.selected_server.is_owner %}
+                <div class="loot-edit-row">
+                  <form class="loot-update-form" method="post" action="/loot/update?guild_id={{ auth.selected_guild_id }}" data-loot-event-form>
+                    <input type="hidden" name="loot_event_id" value="{{ event.loot_event_id }}">
+                    <label class="field">
+                      <span>원화 시세</span>
+                      <input
+                        name="cash_price_krw"
+                        type="number"
+                        min="0"
+                        step="1"
+                        value="{{ event.cash_price_input }}"
+                        data-loot-cash-price
+                      >
+                    </label>
+                    <label class="field">
+                      <span>아데나 시세</span>
+                      <input
+                        name="adena_rate"
+                        type="number"
+                        min="0"
+                        step="0.000001"
+                        value="{{ event.adena_rate_input }}"
+                        data-loot-adena-rate
+                      >
+                    </label>
+                    <label class="field">
+                      <span>분배 아데나</span>
+                      <input
+                        name="sale_price"
+                        type="number"
+                        min="0"
+                        step="1"
+                        value="{{ event.sale_price_input }}"
+                        data-loot-sale-price
+                        readonly
+                      >
+                    </label>
+                    <label class="field">
+                      <span>수수료(%)</span>
+                      <input
+                        name="fee_percent"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value="{{ event.fee_percent_input }}"
+                      >
+                    </label>
+                    <label class="field loot-update-memo">
+                      <span>메모</span>
+                      <input name="memo" value="{{ event.memo }}">
+                    </label>
+                    <button class="tiny-button" type="submit">
+                      수정
+                    </button>
+                  </form>
+                  <form class="loot-delete-form" method="post" action="/loot/delete?guild_id={{ auth.selected_guild_id }}" data-loot-delete-form>
+                    <input type="hidden" name="loot_event_id" value="{{ event.loot_event_id }}">
+                    <button class="tiny-button danger-text-button" type="submit">
+                      삭제
+                    </button>
+                  </form>
+                </div>
+              {% endif %}
 
               <div class="loot-fee-summary payout-detail-summary">
                 <div>

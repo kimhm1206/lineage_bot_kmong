@@ -876,6 +876,14 @@ def _can_bookkeep_selected_server(auth: dict[str, Any]) -> bool:
     return bool(auth["selected_server"].get("can_bookkeep"))
 
 
+def _can_owner_manage_selected_server(auth: dict[str, Any]) -> bool:
+    selected_server = auth["selected_server"]
+    return (
+        str(selected_server.get("role")) == "developer"
+        or bool(selected_server.get("is_owner"))
+    )
+
+
 def _can_manage_bookkeepers(auth: dict[str, Any]) -> bool:
     return bool(auth["selected_server"].get("can_manage_bookkeepers"))
 
@@ -4405,7 +4413,7 @@ async def update_loot_drop(
         return _auth_redirect(request)
 
     selected_guild_id = int(auth["selected_guild_id"])
-    if not _can_manage_selected_server(auth):
+    if not _can_owner_manage_selected_server(auth):
         return RedirectResponse(
             f"/loot?guild_id={selected_guild_id}&saved=forbidden",
             status_code=303,
@@ -4911,10 +4919,10 @@ async def delete_loot_drop(
         return _auth_redirect(request)
 
     selected_guild_id = int(auth["selected_guild_id"])
-    if not _can_manage_selected_server(auth):
+    if not _can_owner_manage_selected_server(auth):
         if _wants_json(request):
             return JSONResponse(
-                {"ok": False, "message": "관리자 권한이 필요합니다."},
+                {"ok": False, "message": "서버 오너 권한이 필요합니다."},
                 status_code=403,
             )
         return RedirectResponse(
@@ -5799,7 +5807,7 @@ def work_logs(
         return _auth_redirect(request)
 
     selected_guild_id = int(auth["selected_guild_id"])
-    if not _can_manage_selected_server(auth):
+    if not _can_owner_manage_selected_server(auth):
         return RedirectResponse(
             f"/attendance?guild_id={selected_guild_id}",
             status_code=303,

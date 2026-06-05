@@ -14,9 +14,9 @@
         }
       })();
     </script>
-    <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}?v=20260606-owner-alliance-detail">
+    <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}?v=20260606-role-marker">
   </head>
-  <body class="{% block body_class %}{% endblock %}">
+  <body class="{% block body_class %}{% endblock %}{% if auth %} site-role-{% if auth.selected_server.role == 'developer' %}developer{% elif auth.selected_server.is_owner %}owner{% elif auth.selected_server.can_manage %}admin{% else %}user{% endif %}{% endif %}">
     <header class="topbar {% if not auth %}topbar-public{% endif %}">
       <a class="brand" href="/attendance">Lineage Ops</a>
       {% if auth %}
@@ -27,6 +27,8 @@
           <a class="nav-link {% if active_page == 'dashboard' %}is-active{% endif %}" href="/dashboard?guild_id={{ auth.selected_guild_id }}">통계</a>
           {% if auth.selected_server.can_manage %}
             <a class="nav-link {% if active_page == 'settings' %}is-active{% endif %}" href="/settings?guild_id={{ auth.selected_guild_id }}">설정</a>
+          {% endif %}
+          {% if auth.selected_server.role == "developer" or auth.selected_server.is_owner %}
             <a class="nav-link {% if active_page == 'work_logs' %}is-active{% endif %}" href="/work-logs?guild_id={{ auth.selected_guild_id }}">작업로그</a>
           {% endif %}
           {% if auth.selected_server.role == "developer" %}
