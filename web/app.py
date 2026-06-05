@@ -2066,6 +2066,43 @@ def _rounded_divide(value: Any, divisor: int | Decimal) -> Decimal:
     return _rounded_integer(_rounded_integer(value) / divisor_decimal)
 
 
+def _rounded_allocation(value: Any, count: int) -> list[Decimal]:
+    total = _rounded_integer(value)
+    if count <= 0:
+        return []
+    base = _rounded_divide(total, count)
+    amounts = [base for _ in range(count)]
+    diff = int(total - (base * count))
+    if diff > 0:
+        for index in range(diff):
+            amounts[index % count] += Decimal("1")
+    elif diff < 0:
+        for index in range(abs(diff)):
+            amounts[-(index % count) - 1] -= Decimal("1")
+    return amounts
+
+
+def _rounded_allocation_text(amounts: list[Decimal]) -> str:
+    if not amounts:
+        return "0"
+    minimum = min(amounts)
+    maximum = max(amounts)
+    if minimum == maximum:
+        return _money_text(minimum)
+    return f"{_money_text(minimum)}~{_money_text(maximum)}"
+
+
+def _rounded_allocation_cash_text(amounts: list[Decimal], adena_rate: Any) -> str:
+    if not amounts:
+        return "0원"
+    cash_amounts = [_cash_from_adena(amount, adena_rate) for amount in amounts]
+    minimum = min(cash_amounts)
+    maximum = max(cash_amounts)
+    if minimum == maximum:
+        return _cash_text(minimum)
+    return f"{_cash_text(minimum)}~{_cash_text(maximum)}"
+
+
 def _cash_from_adena(adena_amount: Any, adena_rate: Any) -> Decimal:
     amount = _rounded_integer(adena_amount)
     rate = _rounded_integer(adena_rate)
@@ -2677,12 +2714,23 @@ def _my_alliance_payout_context(
             Decimal("0"),
         )
         distributable_amount = total_amount - fee_amount
-        per_member_amount = _rounded_divide(distributable_amount, participant_count)
+        member_amounts = _rounded_allocation(distributable_amount, participant_count)
+        fallback_member_amount = (
+            member_amounts[0]
+            if member_amounts
+            else _rounded_divide(distributable_amount, participant_count)
+        )
         fee_lines = _decorate_member_fee_lines(fee_lines_raw, adena_rate)
         recipients = []
         paid_recipient_count = 0
-        for member in participants:
+        unpaid_amount = Decimal("0")
+        for index, member in enumerate(participants):
             member_user_id = int(member.get("user_id") or 0)
+            member_amount = (
+                member_amounts[index]
+                if index < len(member_amounts)
+                else fallback_member_amount
+            )
             is_paid = bool(paid_statuses.get(member_user_id, False))
             if is_paid:
                 paid_recipient_count += 1
@@ -2695,10 +2743,10 @@ def _my_alliance_payout_context(
                     "loot_event_id": event["loot_event_id"],
                     "item_name": event["item_name"],
                     "attendance_started_at": event["attendance_started_at"] or event["event_date"],
-                    "payout_amount": per_member_amount,
-                    "payout_amount_text": _money_text(per_member_amount),
+                    "payout_amount": member_amount,
+                    "payout_amount_text": _money_text(member_amount),
                     "payout_amount_cash_text": _cash_text(
-                        _cash_from_adena(per_member_amount, adena_rate)
+                        _cash_from_adena(member_amount, adena_rate)
                     ),
                     "payout_status": payout_status,
                     "status_label": "지급 완료" if is_paid else "미완료",
@@ -2722,7 +2770,7 @@ def _my_alliance_payout_context(
                     "items": [],
                 },
             )
-            summary["total_amount"] += per_member_amount
+            summary["total_amount"] += member_amount
             summary["total_count"] += 1
             summary["items"].append(
                 {
@@ -2730,7 +2778,7 @@ def _my_alliance_payout_context(
                     "loot_event_id": event["loot_event_id"],
                     "item_name": event["item_name"],
                     "attendance_started_at": event["attendance_started_at"] or event["event_date"],
-                    "amount_text": _money_text(per_member_amount),
+                    "amount_text": _money_text(member_amount),
                     "status": payout_status,
                     "status_label": "지급 완료" if is_paid else "미완료",
                     "status_class": "is-paid" if is_paid else "is-unpaid",
@@ -2739,12 +2787,13 @@ def _my_alliance_payout_context(
                 }
             )
             if is_paid:
-                summary["paid_amount"] += per_member_amount
+                summary["paid_amount"] += member_amount
                 summary["paid_count"] += 1
             else:
-                summary["unpaid_amount"] += per_member_amount
+                summary["unpaid_amount"] += member_amount
                 summary["unpaid_count"] += 1
                 summary["unpaid_distribution_ids"].append(int(event["distribution_id"]))
+                unpaid_amount += member_amount
 
         recipient_total_count = len(recipients)
         status = (
@@ -2756,7 +2805,6 @@ def _my_alliance_payout_context(
             settled_count += 1
         else:
             unsettled_count += 1
-            unpaid_amount = per_member_amount * (recipient_total_count - paid_recipient_count)
             unsettled_amount_sum += unpaid_amount
             unsettled_cash_sum += _cash_from_adena(
                 unpaid_amount,
@@ -2782,8 +2830,8 @@ def _my_alliance_payout_context(
                 "distributable_amount_cash_text": _cash_text(
                     _cash_from_adena(distributable_amount, adena_rate)
                 ),
-                "per_member_text": _money_text(per_member_amount),
-                "per_member_cash_text": _cash_text(_cash_from_adena(per_member_amount, adena_rate)),
+                "per_member_text": _rounded_allocation_text(member_amounts),
+                "per_member_cash_text": _rounded_allocation_cash_text(member_amounts, adena_rate),
                 "status": status,
                 "status_label": "정산완료" if status == "paid" else "미정산",
                 "status_class": "is-paid" if status == "paid" else "is-unpaid",
