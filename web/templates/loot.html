@@ -119,7 +119,7 @@
 
     <section class="loot-event-list" aria-label="분배금 현황">
       {% for event in distribution_events %}
-        <details class="panel loot-event-card distribution-card distribution-compact-card {% if event.viewer_participated %}is-viewer{% else %}is-not-viewer{% endif %}" data-distribution-card>
+        <details class="panel loot-event-card distribution-card distribution-compact-card {{ event.viewer_payout_class }}" data-distribution-card>
           <summary class="distribution-compact-summary">
             <div class="distribution-compact-main">
               <strong>{{ event.item_name }}</strong>
@@ -129,9 +129,6 @@
             </div>
             <div class="distribution-compact-amount" data-money-value data-adena-text="{{ event.viewer_event_amount_text }}" data-cash-text="{{ event.viewer_event_cash_text }}">
               {{ event.viewer_event_amount_text }}
-            </div>
-            <div class="distribution-compact-status">
-              <span class="payout-status-badge {{ event.viewer_payout_class }}">{{ event.viewer_payout_card_label }}</span>
             </div>
           </summary>
 
@@ -155,19 +152,35 @@
               </div>
               <div>
                 <span data-currency-label data-adena-label="1인당 분배 아데나[수수료 차감X]" data-cash-label="1인당 분배 현금[수수료 차감X]">1인당 분배 아데나[수수료 차감X]</span>
-                <strong data-money-value data-adena-text="{{ event.viewer_gross_per_member_text }}" data-cash-text="{{ event.viewer_gross_per_member_cash_text }}">{{ event.viewer_gross_per_member_text }}</strong>
+                {% if event.viewer_participated %}
+                  <strong data-money-value data-adena-text="{{ event.viewer_gross_per_member_text }}" data-cash-text="{{ event.viewer_gross_per_member_cash_text }}">{{ event.viewer_gross_per_member_text }}</strong>
+                {% else %}
+                  <strong>미참</strong>
+                {% endif %}
               </div>
               <div>
                 <span data-currency-label data-adena-label="연맹 수수료" data-cash-label="연맹 수수료 현금">연맹 수수료</span>
-                <strong data-money-value data-adena-text="{{ event.viewer_alliance_fee_amount_text }}" data-cash-text="{{ event.viewer_alliance_fee_cash_text }}">{{ event.viewer_alliance_fee_amount_text }}</strong>
+                {% if event.viewer_participated %}
+                  <strong data-money-value data-adena-text="{{ event.viewer_alliance_fee_amount_text }}" data-cash-text="{{ event.viewer_alliance_fee_cash_text }}">{{ event.viewer_alliance_fee_amount_text }}</strong>
+                {% else %}
+                  <strong>미참</strong>
+                {% endif %}
               </div>
               <div>
                 <span data-currency-label data-adena-label="혈맹 내부 수수료" data-cash-label="혈맹 내부 수수료 현금">혈맹 내부 수수료</span>
-                <strong data-money-value data-adena-text="{{ event.viewer_internal_fee_share_amount_text }}" data-cash-text="{{ event.viewer_internal_fee_share_cash_text }}">{{ event.viewer_internal_fee_share_amount_text }}</strong>
+                {% if event.viewer_participated %}
+                  <strong data-money-value data-adena-text="{{ event.viewer_internal_fee_share_amount_text }}" data-cash-text="{{ event.viewer_internal_fee_share_cash_text }}">{{ event.viewer_internal_fee_share_amount_text }}</strong>
+                {% else %}
+                  <strong>미참</strong>
+                {% endif %}
               </div>
               <div>
                 <span data-currency-label data-adena-label="실 지급 분배금" data-cash-label="실 지급 분배 현금">실 지급 분배금</span>
-                <strong data-money-value data-adena-text="{{ event.viewer_event_amount_text }}" data-cash-text="{{ event.viewer_event_cash_text }}">{{ event.viewer_event_amount_text }}</strong>
+                {% if event.viewer_participated %}
+                  <strong data-money-value data-adena-text="{{ event.viewer_event_amount_text }}" data-cash-text="{{ event.viewer_event_cash_text }}">{{ event.viewer_event_amount_text }}</strong>
+                {% else %}
+                  <strong>미참</strong>
+                {% endif %}
               </div>
             </div>
             <div class="alliance-chip-row">
