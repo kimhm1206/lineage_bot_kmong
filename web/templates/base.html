@@ -14,7 +14,7 @@
         }
       })();
     </script>
-    <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}?v=20260601-theme-status">
+    <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}?v=20260605-status-server-admin">
   </head>
   <body class="{% block body_class %}{% endblock %}">
     <header class="topbar {% if not auth %}topbar-public{% endif %}">
@@ -30,6 +30,7 @@
           {% endif %}
           {% if auth.selected_server.role == "developer" %}
             <a class="nav-link {% if active_page == 'logs' %}is-active{% endif %}" href="/logs?guild_id={{ auth.selected_guild_id }}">로그</a>
+            <a class="nav-link {% if active_page == 'developer_servers' %}is-active{% endif %}" href="/developer/servers?guild_id={{ auth.selected_guild_id }}">서버 관리</a>
           {% endif %}
           {% if auth.selected_server.my_alliance.can_view %}
             <a class="nav-link {% if active_page == 'my_alliance' %}is-active{% endif %}" href="/my-alliance?guild_id={{ auth.selected_guild_id }}">내 혈맹</a>
@@ -41,7 +42,7 @@
           <select onchange="changeServer(this)">
             {% for server in auth.servers %}
               <option value="{{ server.guild_id }}" {% if server.guild_id == auth.selected_guild_id %}selected{% endif %}>
-                {{ server.name }}
+                {{ server.name }}{% if auth.selected_server.role == "developer" and server.is_enabled is defined and not server.is_enabled %} (비활성){% endif %}
               </option>
             {% endfor %}
           </select>

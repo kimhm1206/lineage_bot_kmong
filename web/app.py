@@ -527,19 +527,21 @@ def _load_accessible_servers(
     if not candidate_guild_ids and not is_global_developer and not can_verify_with_bot:
         return []
 
-    where_clause = (
-        "TRUE"
-        if is_global_developer or can_verify_with_bot
-        else "g.guild_id = ANY(%s::bigint[])"
-    )
-    params: tuple[Any, ...] = (
-        () if is_global_developer or can_verify_with_bot else (candidate_guild_ids,)
-    )
+    if is_global_developer:
+        where_clause = "TRUE"
+        params: tuple[Any, ...] = ()
+    elif can_verify_with_bot:
+        where_clause = "g.is_enabled = TRUE"
+        params = ()
+    else:
+        where_clause = "g.is_enabled = TRUE AND g.guild_id = ANY(%s::bigint[])"
+        params = (candidate_guild_ids,)
 
     rows = database.fetchall(
         f"""
         SELECT
             g.guild_id,
+            g.is_enabled,
             gs.admin_channel_id,
             gs.attendance_voice_channel_id,
             gs.log_channel_id,
@@ -556,6 +558,7 @@ def _load_accessible_servers(
         WHERE {where_clause}
         GROUP BY
             g.guild_id,
+            g.is_enabled,
             gs.admin_channel_id,
             gs.attendance_voice_channel_id,
             gs.log_channel_id
@@ -600,6 +603,7 @@ def _load_accessible_servers(
             {
                 "guild_id": guild_id,
                 "name": server_name,
+                "is_enabled": bool(row["is_enabled"]),
                 "permissions": _discord_permissions(discord_guild),
                 "discord_owner": bool((discord_guild or {}).get("owner")),
                 "role": role,
@@ -622,6 +626,7 @@ def _load_local_developer_servers() -> list[dict[str, Any]]:
         """
         SELECT
             g.guild_id,
+            g.is_enabled,
             gs.admin_channel_id,
             gs.attendance_voice_channel_id,
             gs.log_channel_id,
@@ -637,6 +642,7 @@ def _load_local_developer_servers() -> list[dict[str, Any]]:
         LEFT JOIN attendance_entries e ON e.attendance_id = s.attendance_id
         GROUP BY
             g.guild_id,
+            g.is_enabled,
             gs.admin_channel_id,
             gs.attendance_voice_channel_id,
             gs.log_channel_id
@@ -650,6 +656,7 @@ def _load_local_developer_servers() -> list[dict[str, Any]]:
         {
             "guild_id": str(row["guild_id"]),
             "name": f"Local 서버 {row['guild_id']}",
+            "is_enabled": bool(row["is_enabled"]),
             "permissions": DISCORD_ADMINISTRATOR_PERMISSION,
             "discord_owner": True,
             "role": "developer",
@@ -710,6 +717,20 @@ def _auth_context_from_session(
     servers = session.get("servers") or []
     if not user or not servers:
         return None
+
+    is_global_developer = str(user["id"]) == GLOBAL_DEVELOPER_DISCORD_ID
+    if not is_global_developer:
+        visibility = database.get_guild_visibility_map(
+            [int(server["guild_id"]) for server in servers]
+        )
+        servers = [
+            server
+            for server in servers
+            if visibility.get(int(server["guild_id"]), False)
+        ]
+        session["servers"] = servers
+        if not servers:
+            return None
 
     allowed_servers = {str(server["guild_id"]): server for server in servers}
     selected_guild_id = str(guild_id or servers[0]["guild_id"])
@@ -3771,12 +3792,26 @@ def attendance_status(
         page_size,
         offset,
     )
+    can_manage_status = _can_manage_selected_server(auth)
+    edit_candidates = (
+        {
+            int(session["attendance_id"]): database.get_attendance_edit_candidates(
+                selected_guild_id,
+                int(session["attendance_id"]),
+            )
+            for session in sessions
+        }
+        if can_manage_status
+        else {}
+    )
     return _render(
         request,
         "status.html",
         {
             "auth": auth,
             "sessions": sessions,
+            "can_manage_status": can_manage_status,
+            "edit_candidates": edit_candidates,
             "pagination": {
                 "current_page": current_page,
                 "total_pages": total_pages,
@@ -3799,6 +3834,72 @@ def attendance_status(
             },
             "active_page": "status",
         },
+    )
+
+
+@app.post("/status/add-entry")
+async def add_attendance_status_entry(
+    request: Request,
+    guild_id: str | None = None,
+    page: int = 1,
+):
+    auth = _auth_context(request, guild_id)
+    if not auth:
+        return _auth_redirect(request)
+
+    selected_guild_id = int(auth["selected_guild_id"])
+    if not _can_manage_selected_server(auth):
+        return RedirectResponse(
+            f"/status?guild_id={selected_guild_id}&page={max(1, page)}",
+            status_code=303,
+        )
+
+    form_data = await request.form()
+    attendance_id = 0
+    try:
+        attendance_id = int(form_data.get("attendance_id") or "")
+        user_id = int(form_data.get("user_id") or "")
+        if attendance_id <= 0 or user_id <= 0:
+            raise ValueError
+        database.add_attendance_entry(selected_guild_id, attendance_id, user_id)
+    except Exception:
+        pass
+    return RedirectResponse(
+        f"/status?guild_id={selected_guild_id}&page={max(1, page)}#attendance-{attendance_id}",
+        status_code=303,
+    )
+
+
+@app.post("/status/delete-entry")
+async def delete_attendance_status_entry(
+    request: Request,
+    guild_id: str | None = None,
+    page: int = 1,
+):
+    auth = _auth_context(request, guild_id)
+    if not auth:
+        return _auth_redirect(request)
+
+    selected_guild_id = int(auth["selected_guild_id"])
+    if not _can_manage_selected_server(auth):
+        return RedirectResponse(
+            f"/status?guild_id={selected_guild_id}&page={max(1, page)}",
+            status_code=303,
+        )
+
+    form_data = await request.form()
+    attendance_id = 0
+    try:
+        attendance_id = int(form_data.get("attendance_id") or "")
+        user_id = int(form_data.get("user_id") or "")
+        if attendance_id <= 0 or user_id <= 0:
+            raise ValueError
+        database.delete_attendance_entry(selected_guild_id, attendance_id, user_id)
+    except Exception:
+        pass
+    return RedirectResponse(
+        f"/status?guild_id={selected_guild_id}&page={max(1, page)}#attendance-{attendance_id}",
+        status_code=303,
     )
 
 
@@ -5113,6 +5214,89 @@ def logs(
             "selected_category": selected_category,
             "active_page": "logs",
         },
+    )
+
+
+@app.get("/developer/servers", response_class=HTMLResponse)
+def developer_servers(
+    request: Request,
+    guild_id: str | None = None,
+):
+    auth = _auth_context(request, guild_id)
+    if not auth:
+        return _auth_redirect(request)
+
+    selected_guild_id = int(auth["selected_guild_id"])
+    if not _is_developer_auth(auth):
+        return RedirectResponse(
+            f"/attendance?guild_id={selected_guild_id}",
+            status_code=303,
+        )
+
+    rows = []
+    for row in database.get_developer_guild_rows():
+        server_guild_id = int(row["guild_id"])
+        rows.append(
+            {
+                "guild_id": str(server_guild_id),
+                "name": _discord_bot_guild_name(server_guild_id)
+                or f"Discord 서버 {server_guild_id}",
+                "is_enabled": bool(row["is_enabled"]),
+                "session_count": int(row["session_count"] or 0),
+                "attendance_count": int(row["attendance_count"] or 0),
+                "last_started_at": row["last_attendance_at"]
+                or row["last_session_started_at"]
+                or "",
+                "has_settings": any(
+                    row.get(column) is not None
+                    for column in (
+                        "admin_channel_id",
+                        "attendance_voice_channel_id",
+                        "log_channel_id",
+                    )
+                ),
+            }
+        )
+
+    return _render(
+        request,
+        "developer_servers.html",
+        {
+            "auth": auth,
+            "servers": rows,
+            "active_page": "developer_servers",
+        },
+    )
+
+
+@app.post("/developer/servers/status")
+async def update_developer_server_status(
+    request: Request,
+    guild_id: str | None = None,
+):
+    auth = _auth_context(request, guild_id)
+    if not auth:
+        return _auth_redirect(request)
+
+    selected_guild_id = int(auth["selected_guild_id"])
+    if not _is_developer_auth(auth):
+        return RedirectResponse(
+            f"/attendance?guild_id={selected_guild_id}",
+            status_code=303,
+        )
+
+    form_data = await request.form()
+    try:
+        target_guild_id = int(form_data.get("target_guild_id") or "")
+        status = str(form_data.get("status") or "")
+        if target_guild_id <= 0 or status not in {"enabled", "disabled"}:
+            raise ValueError
+        database.set_guild_enabled(target_guild_id, status == "enabled")
+    except Exception:
+        pass
+    return RedirectResponse(
+        f"/developer/servers?guild_id={selected_guild_id}",
+        status_code=303,
     )
 
 

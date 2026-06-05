@@ -36,7 +36,7 @@
 
   <section class="status-list" aria-label="출석 회차별 현황">
     {% for session in sessions %}
-      <details class="panel status-session">
+      <details class="panel status-session" id="attendance-{{ session.attendance_id }}">
         <summary>
           <div class="status-session-main">
             <div>
@@ -52,6 +52,11 @@
               <span class="alliance-chip is-empty">출석 없음</span>
             {% endfor %}
           </div>
+          {% if can_manage_status %}
+            <button class="tiny-button status-edit-toggle" type="button" onclick="event.preventDefault(); event.stopPropagation(); this.closest('details').open = true;">
+              출석 수정
+            </button>
+          {% endif %}
         </summary>
 
         <div class="status-detail-grid">
@@ -61,17 +66,50 @@
                 <h2>{{ alliance.alliance_name }}</h2>
                 <span>{{ alliance.count }}명</span>
               </header>
-              <div class="member-pill-row">
+              <div class="status-member-list">
                 {% for member in alliance.members %}
-                  <span class="member-pill">
-                    {{ member.discord_nickname }}
-                  </span>
+                  <div class="status-member-row">
+                    <span>{{ member.discord_nickname }}</span>
+                    {% if can_manage_status %}
+                      <form method="post" action="/status/delete-entry?guild_id={{ auth.selected_guild_id }}&page={{ pagination.current_page }}">
+                        <input type="hidden" name="attendance_id" value="{{ session.attendance_id }}">
+                        <input type="hidden" name="user_id" value="{{ member.user_id }}">
+                        <button class="tiny-button danger-text-button" type="submit">삭제</button>
+                      </form>
+                    {% endif %}
+                  </div>
                 {% endfor %}
               </div>
             </article>
           {% else %}
             <div class="empty status-empty">이 회차에는 출석자가 없습니다.</div>
           {% endfor %}
+          {% if can_manage_status %}
+            <article class="alliance-detail status-edit-panel">
+              <header>
+                <h2>출석 인원 추가</h2>
+                <span>User 테이블 기준</span>
+              </header>
+              <form class="status-add-form" method="post" action="/status/add-entry?guild_id={{ auth.selected_guild_id }}&page={{ pagination.current_page }}">
+                <input type="hidden" name="attendance_id" value="{{ session.attendance_id }}">
+                <label class="field">
+                  <span>추가할 유저</span>
+                  <select name="user_id" required>
+                    <option value="">유저 선택</option>
+                    {% for candidate in edit_candidates.get(session.attendance_id, []) %}
+                      <option value="{{ candidate.user_id }}">
+                        [{{ candidate.alliance_name }}] {{ candidate.discord_nickname }}
+                      </option>
+                    {% endfor %}
+                  </select>
+                </label>
+                <button class="primary-button" type="submit">출석에 추가</button>
+                {% if not edit_candidates.get(session.attendance_id) %}
+                  <p class="form-help">추가 가능한 유저가 없습니다.</p>
+                {% endif %}
+              </form>
+            </article>
+          {% endif %}
         </div>
       </details>
     {% else %}
