@@ -2710,9 +2710,10 @@ button:disabled {
   overflow: hidden;
 }
 
-.recipient-payout-summary {
-  grid-template-columns: minmax(240px, 0.75fr) minmax(0, 1.8fr) minmax(132px, max-content) 56px;
-  gap: 18px;
+.loot-event-card.recipient-payout-card summary.recipient-payout-summary {
+  grid-template-columns: minmax(260px, 0.85fr) minmax(0, 3fr) minmax(170px, 1fr) 58px;
+  gap: 14px;
+  min-height: 144px;
 }
 
 .recipient-payout-summary::after {
@@ -2731,8 +2732,8 @@ button:disabled {
 
 .recipient-payout-metrics div {
   min-width: 0;
-  min-height: 78px;
-  padding: 14px 16px;
+  min-height: 102px;
+  padding: 18px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.62);
@@ -2749,12 +2750,11 @@ button:disabled {
 .recipient-payout-metrics strong {
   display: block;
   margin-top: 6px;
-  overflow: hidden;
   color: var(--text);
-  font-size: 23px;
+  font-size: 20px;
   font-weight: 900;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
 }
 
 .recipient-payout-actions {
@@ -2763,9 +2763,22 @@ button:disabled {
   flex-direction: column;
   align-items: flex-end;
   align-self: stretch;
-  justify-content: flex-end;
-  gap: 8px;
-  min-width: 132px;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  min-height: 102px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.62);
+}
+
+.recipient-payout-actions::before {
+  align-self: flex-start;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  content: "관리";
 }
 
 .recipient-payout-actions .inline-actions {
@@ -3418,6 +3431,7 @@ button:disabled {
 :root[data-theme="dark"] .loot-breakdown-card,
 :root[data-theme="dark"] .my-recipient-payout-panel,
 :root[data-theme="dark"] .recipient-payout-metrics div,
+:root[data-theme="dark"] .recipient-payout-actions,
 :root[data-theme="dark"] .recipient-detail-card,
 :root[data-theme="dark"] .rank-strip,
 :root[data-theme="dark"] .mini-rank-row,
@@ -3764,7 +3778,7 @@ button:disabled {
     padding: 10px;
   }
 
-  .recipient-payout-summary,
+  .loot-event-card.recipient-payout-card summary.recipient-payout-summary,
   .recipient-detail-card {
     grid-template-columns: 1fr;
   }
