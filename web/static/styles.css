@@ -2294,8 +2294,8 @@ button:disabled {
 }
 
 .loot-tab-panel[data-loot-panel="distribution"] .loot-event-list {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
 }
 
 .loot-event-card summary {
@@ -2345,10 +2345,10 @@ button:disabled {
   position: relative;
   display: grid;
   grid-template-columns: 1fr;
-  gap: 12px;
+  gap: 9px;
   align-content: space-between;
-  min-height: 172px;
-  padding: 18px;
+  min-height: 136px;
+  padding: 14px;
   overflow: hidden;
 }
 
@@ -2362,17 +2362,18 @@ button:disabled {
 
 .loot-event-card.distribution-compact-card summary.distribution-compact-summary::after {
   position: absolute;
-  top: 14px;
-  right: 14px;
-  padding-left: 8px;
+  top: 12px;
+  right: 12px;
+  padding-left: 6px;
   background: var(--panel);
+  font-size: 11px;
 }
 
 .distribution-compact-main {
   display: grid;
-  gap: 5px;
+  gap: 0;
   min-width: 0;
-  padding-right: 48px;
+  padding-right: 42px;
 }
 
 .distribution-compact-main strong,
@@ -2383,7 +2384,7 @@ button:disabled {
 
 .distribution-compact-main strong {
   overflow: hidden;
-  font-size: 18px;
+  font-size: 15px;
   line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2393,7 +2394,7 @@ button:disabled {
 .distribution-compact-time {
   overflow: hidden;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 900;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2401,7 +2402,7 @@ button:disabled {
 
 .distribution-compact-amount {
   overflow-wrap: anywhere;
-  font-size: 24px;
+  font-size: 18px;
   line-height: 1.08;
 }
 
@@ -2411,8 +2412,9 @@ button:disabled {
 }
 
 .distribution-compact-status .payout-status-badge {
-  min-height: 30px;
-  padding: 0 12px;
+  min-height: 26px;
+  padding: 0 10px;
+  font-size: 11px;
 }
 
 .loot-event-card.payout-card summary {
