@@ -809,9 +809,9 @@
                       <span>미분배</span>
                       <strong data-recipient-unpaid-text>{{ recipient.unpaid_amount_text }}</strong>
                     </div>
-                    <div>
+                    <div class="{% if recipient.unpaid_count == 0 %}is-paid{% else %}is-unpaid{% endif %}" data-recipient-status-card>
                       <span>정산 상태</span>
-                      <strong data-recipient-count-text>미완료 {{ recipient.unpaid_count }}건</strong>
+                      <strong data-recipient-count-text>{% if recipient.unpaid_count == 0 %}완료{% else %}미완료 {{ recipient.unpaid_count }}건{% endif %}</strong>
                     </div>
                   </div>
                   <div class="recipient-payout-actions" data-recipient-payout-actions>
@@ -1335,7 +1335,12 @@
       row.dataset.unpaidAmount = "0";
       row.dataset.unpaidCount = "0";
       row.querySelector("[data-recipient-unpaid-text]").textContent = "0";
-      row.querySelector("[data-recipient-count-text]").textContent = "미완료 0건";
+      row.querySelector("[data-recipient-count-text]").textContent = "완료";
+      const statusCard = row.querySelector("[data-recipient-status-card]");
+      if (statusCard) {
+        statusCard.classList.add("is-paid");
+        statusCard.classList.remove("is-unpaid");
+      }
       const badge = row.querySelector("[data-recipient-status-badge]");
       if (badge) {
         badge.textContent = "전체 완료";
@@ -1413,7 +1418,13 @@
       }
       const countText = summaryRow.querySelector("[data-recipient-count-text]");
       if (countText) {
-        countText.textContent = `미완료 ${unpaidCount}건`;
+        countText.textContent = unpaidCount === 0 ? "완료" : `미완료 ${unpaidCount}건`;
+      }
+      const statusCard = summaryRow.querySelector("[data-recipient-status-card]");
+      if (statusCard) {
+        const isPaid = unpaidCount === 0;
+        statusCard.classList.toggle("is-paid", isPaid);
+        statusCard.classList.toggle("is-unpaid", !isPaid);
       }
       const badge = summaryRow.querySelector("[data-recipient-status-badge]");
       if (badge) {

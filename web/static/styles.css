@@ -2791,8 +2791,8 @@ button:disabled {
 
 .recipient-payout-card-list {
   display: grid;
-  gap: 10px;
-  padding: 10px;
+  gap: 8px;
+  padding: 8px;
 }
 
 .recipient-payout-card {
@@ -2800,14 +2800,14 @@ button:disabled {
 }
 
 .loot-event-card.recipient-payout-card summary.recipient-payout-summary {
-  grid-template-columns: minmax(220px, 0.8fr) repeat(4, minmax(0, 1fr)) 46px;
-  gap: 10px;
-  min-height: 104px;
-  padding: 12px 14px;
+  grid-template-columns: minmax(210px, 0.78fr) repeat(4, minmax(0, 1fr)) 42px;
+  gap: 8px;
+  min-height: 88px;
+  padding: 10px 12px;
 }
 
 .loot-event-card.recipient-payout-card .loot-event-main strong {
-  font-size: 18px;
+  font-size: 17px;
 }
 
 .loot-event-card.recipient-payout-card .loot-event-main > span:not(.status-id) {
@@ -2829,11 +2829,21 @@ button:disabled {
 .recipient-payout-metrics div,
 .recipient-payout-actions {
   min-width: 0;
-  min-height: 78px;
-  padding: 12px 14px;
+  min-height: 64px;
+  padding: 10px 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.62);
+}
+
+.recipient-payout-metrics div.is-paid {
+  border-color: rgba(18, 128, 92, 0.36);
+  background: rgba(18, 128, 92, 0.1);
+}
+
+.recipient-payout-metrics div.is-unpaid {
+  border-color: rgba(204, 80, 64, 0.42);
+  background: rgba(204, 80, 64, 0.1);
 }
 
 .recipient-payout-metrics span,
@@ -2846,9 +2856,9 @@ button:disabled {
 
 .recipient-payout-metrics strong {
   display: block;
-  margin-top: 4px;
+  margin-top: 3px;
   color: var(--text);
-  font-size: 18px;
+  font-size: 17px;
   font-weight: 900;
   line-height: 1.15;
   overflow-wrap: anywhere;
@@ -2860,7 +2870,7 @@ button:disabled {
   align-items: flex-end;
   align-self: stretch;
   justify-content: flex-end;
-  gap: 8px;
+  gap: 6px;
 }
 
 .recipient-payout-actions::before {
@@ -2879,9 +2889,9 @@ button:disabled {
 
 .recipient-payout-actions .tiny-button {
   width: 100%;
-  min-height: 32px;
+  min-height: 28px;
   min-width: 0;
-  padding: 0 10px;
+  padding: 0 8px;
 }
 
 .recipient-payout-body {
@@ -3546,6 +3556,16 @@ button:disabled {
 :root[data-theme="dark"] .recipient-detail-card.is-paid {
   border-color: rgba(52, 211, 153, 0.24);
   background: rgba(6, 78, 59, 0.18);
+}
+
+:root[data-theme="dark"] .recipient-payout-metrics div.is-unpaid {
+  border-color: rgba(248, 113, 113, 0.38);
+  background: rgba(127, 29, 29, 0.2);
+}
+
+:root[data-theme="dark"] .recipient-payout-metrics div.is-paid {
+  border-color: rgba(52, 211, 153, 0.3);
+  background: rgba(6, 78, 59, 0.2);
 }
 
 :root[data-theme="dark"] .filter-panel input,
