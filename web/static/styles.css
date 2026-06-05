@@ -2805,9 +2805,11 @@ button:disabled {
   min-height: 144px;
 }
 
-.recipient-payout-summary::after {
-  grid-column: 4;
+.loot-event-card.recipient-payout-card summary.recipient-payout-summary::after {
+  grid-column: 6;
+  grid-row: 1;
   align-self: center;
+  justify-self: end;
 }
 
 .recipient-payout-metrics {
@@ -3866,6 +3868,11 @@ button:disabled {
   .loot-event-card.recipient-payout-card summary.recipient-payout-summary,
   .recipient-detail-card {
     grid-template-columns: 1fr;
+  }
+
+  .loot-event-card.recipient-payout-card summary.recipient-payout-summary::after {
+    grid-column: auto;
+    grid-row: auto;
   }
 
   .recipient-payout-metrics {
