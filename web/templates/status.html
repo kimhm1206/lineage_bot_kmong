@@ -166,12 +166,18 @@
 {% block scripts %}
   <script>
     (() => {
+      const syncModalScrollLock = () => {
+        const hasOpenModal = Boolean(document.querySelector("[data-status-modal]:not([hidden])"));
+        document.body.classList.toggle("has-status-modal-open", hasOpenModal);
+      };
+
       const openModal = (id) => {
         const modal = document.getElementById(id);
         if (!modal) {
           return;
         }
         modal.hidden = false;
+        syncModalScrollLock();
         const search = modal.querySelector("[data-status-search]");
         if (search) {
           search.focus();
@@ -182,6 +188,7 @@
         if (modal) {
           modal.hidden = true;
         }
+        syncModalScrollLock();
       };
 
       document.querySelectorAll("[data-status-edit-open]").forEach((button) => {
@@ -205,6 +212,7 @@
           return;
         }
         document.querySelectorAll("[data-status-modal]:not([hidden])").forEach(closeModal);
+        syncModalScrollLock();
       });
 
       document.querySelectorAll("[data-status-search]").forEach((input) => {
