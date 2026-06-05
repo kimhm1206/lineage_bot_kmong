@@ -152,6 +152,31 @@ class Database:
     ) -> None:
         delete_guild_alliance_role_mapping(guild_id, mapping_id)
 
+    def get_guild_bookkeepers(self, guild_id: int) -> list[dict[str, Any]]:
+        return get_guild_bookkeepers(guild_id)
+
+    def get_guild_bookkeeper_candidates(self, guild_id: int) -> list[dict[str, Any]]:
+        return get_guild_bookkeeper_candidates(guild_id)
+
+    def add_guild_bookkeeper(
+        self,
+        guild_id: int,
+        user_id: int,
+        *,
+        added_by_discord_id: int | None,
+    ) -> None:
+        add_guild_bookkeeper(
+            guild_id,
+            user_id,
+            added_by_discord_id=added_by_discord_id,
+        )
+
+    def delete_guild_bookkeeper(self, guild_id: int, user_id: int) -> None:
+        delete_guild_bookkeeper(guild_id, user_id)
+
+    def is_guild_bookkeeper(self, guild_id: int, discord_id: int) -> bool:
+        return is_guild_bookkeeper(guild_id, discord_id)
+
     def resolve_alliance_by_role_ids(
         self,
         guild_id: int,
@@ -1005,6 +1030,152 @@ def delete_guild_alliance_role_mapping(guild_id: int, mapping_id: int) -> None:
                 (guild_id, mapping_id),
             )
         connection.commit()
+
+
+def _guild_member_user_rows_sql(exclude_bookkeepers: bool) -> str:
+    exclusion = ""
+    if exclude_bookkeepers:
+        exclusion = """
+          AND NOT EXISTS (
+              SELECT 1
+              FROM guild_bookkeepers gb
+              WHERE gb.guild_id = %s
+                AND gb.user_id = u.user_id
+          )
+        """
+    return f"""
+        SELECT
+            u.user_id,
+            u.discord_id,
+            u.discord_nickname,
+            COALESCE(a.alliance_name, '미분류') AS alliance_name
+        FROM users u
+        LEFT JOIN alliances a ON a.alliance_id = u.alliance_id
+        WHERE EXISTS (
+            SELECT 1
+            FROM attendance_entries e
+            INNER JOIN attendance_sessions s
+                ON s.attendance_id = e.attendance_id
+            WHERE e.user_id = u.user_id
+              AND s.guild_id = %s
+        )
+        {exclusion}
+        ORDER BY alliance_name ASC, u.discord_nickname ASC
+    """
+
+
+def get_guild_bookkeepers(guild_id: int) -> list[dict[str, Any]]:
+    rows = _fetchall(
+        """
+        SELECT
+            gb.guild_id,
+            gb.user_id,
+            gb.discord_id,
+            gb.added_by_discord_id,
+            gb.updated_at,
+            u.discord_nickname,
+            COALESCE(a.alliance_name, '미분류') AS alliance_name
+        FROM guild_bookkeepers gb
+        INNER JOIN users u ON u.user_id = gb.user_id
+        LEFT JOIN alliances a ON a.alliance_id = u.alliance_id
+        WHERE gb.guild_id = %s
+        ORDER BY alliance_name ASC, u.discord_nickname ASC
+        """,
+        (guild_id,),
+    )
+    return [
+        {
+            "guild_id": int(row["guild_id"]),
+            "user_id": int(row["user_id"]),
+            "discord_id": int(row["discord_id"]),
+            "discord_nickname": str(row["discord_nickname"]),
+            "alliance_name": str(row["alliance_name"]),
+            "added_by_discord_id": (
+                int(row["added_by_discord_id"])
+                if row["added_by_discord_id"] is not None
+                else None
+            ),
+            "updated_at": row["updated_at"],
+        }
+        for row in rows
+    ]
+
+
+def get_guild_bookkeeper_candidates(guild_id: int) -> list[dict[str, Any]]:
+    rows = _fetchall(
+        _guild_member_user_rows_sql(exclude_bookkeepers=True),
+        (guild_id, guild_id),
+    )
+    return [
+        {
+            "user_id": int(row["user_id"]),
+            "discord_id": int(row["discord_id"]),
+            "discord_nickname": str(row["discord_nickname"]),
+            "alliance_name": str(row["alliance_name"]),
+        }
+        for row in rows
+    ]
+
+
+def add_guild_bookkeeper(
+    guild_id: int,
+    user_id: int,
+    *,
+    added_by_discord_id: int | None,
+) -> None:
+    with _connect() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                _guild_member_user_rows_sql(exclude_bookkeepers=False),
+                (guild_id,),
+            )
+            candidates = {int(row["user_id"]): int(row["discord_id"]) for row in cursor.fetchall()}
+            discord_id = candidates.get(int(user_id))
+            if discord_id is None:
+                raise ValueError("User was not found.")
+            cursor.execute(
+                """
+                INSERT INTO guild_bookkeepers (
+                    guild_id,
+                    user_id,
+                    discord_id,
+                    added_by_discord_id
+                )
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (guild_id, user_id) DO UPDATE SET
+                    discord_id = EXCLUDED.discord_id,
+                    added_by_discord_id = EXCLUDED.added_by_discord_id,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                (guild_id, user_id, discord_id, added_by_discord_id),
+            )
+        connection.commit()
+
+
+def delete_guild_bookkeeper(guild_id: int, user_id: int) -> None:
+    with _connect() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                DELETE FROM guild_bookkeepers
+                WHERE guild_id = %s AND user_id = %s
+                """,
+                (guild_id, user_id),
+            )
+        connection.commit()
+
+
+def is_guild_bookkeeper(guild_id: int, discord_id: int) -> bool:
+    row = _fetchone(
+        """
+        SELECT 1
+        FROM guild_bookkeepers
+        WHERE guild_id = %s AND discord_id = %s
+        LIMIT 1
+        """,
+        (guild_id, discord_id),
+    )
+    return row is not None
 
 
 def resolve_alliance_by_role_ids(guild_id: int, role_ids: list[int]) -> Alliance | None:
@@ -3675,14 +3846,18 @@ def _ensure_postgres_columns(cursor: psycopg2.extensions.cursor) -> None:
         """,
         (DEFAULT_DISTRIBUTION_FEE_RATE,),
     )
-    cursor.execute(
-        "CREATE INDEX IF NOT EXISTS idx_items_guild_active "
-        "ON items(guild_id, is_active)"
-    )
-    cursor.execute(
-        "CREATE INDEX IF NOT EXISTS idx_loot_events_guild_attendance "
-        "ON loot_events(guild_id, attendance_id)"
-    )
+	    cursor.execute(
+	        "CREATE INDEX IF NOT EXISTS idx_items_guild_active "
+	        "ON items(guild_id, is_active)"
+	    )
+	    cursor.execute(
+	        "CREATE INDEX IF NOT EXISTS idx_guild_bookkeepers_discord "
+	        "ON guild_bookkeepers(guild_id, discord_id)"
+	    )
+	    cursor.execute(
+	        "CREATE INDEX IF NOT EXISTS idx_loot_events_guild_attendance "
+	        "ON loot_events(guild_id, attendance_id)"
+	    )
     cursor.execute(
         "CREATE INDEX IF NOT EXISTS idx_loot_events_guild_updated "
         "ON loot_events(guild_id, updated_at)"
@@ -3821,10 +3996,10 @@ CREATE TABLE IF NOT EXISTS alliances (
 );
 
 CREATE TABLE IF NOT EXISTS users (
-    user_id BIGSERIAL PRIMARY KEY,
-    alliance_id BIGINT REFERENCES alliances(alliance_id),
-    discord_id BIGINT NOT NULL UNIQUE,
-    discord_nickname TEXT NOT NULL,
+	    user_id BIGSERIAL PRIMARY KEY,
+	    alliance_id BIGINT REFERENCES alliances(alliance_id),
+	    discord_id BIGINT NOT NULL UNIQUE,
+	    discord_nickname TEXT NOT NULL,
     game_nickname TEXT,
     class_name TEXT,
     attribute_name TEXT,
@@ -3832,12 +4007,22 @@ CREATE TABLE IF NOT EXISTS users (
     phone TEXT,
     memo TEXT,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
+	    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+	);
 
-CREATE TABLE IF NOT EXISTS guild_alliance_role_mappings (
-    mapping_id BIGSERIAL PRIMARY KEY,
-    guild_id BIGINT NOT NULL REFERENCES guilds(guild_id) ON DELETE CASCADE,
+	CREATE TABLE IF NOT EXISTS guild_bookkeepers (
+	    guild_id BIGINT NOT NULL REFERENCES guilds(guild_id) ON DELETE CASCADE,
+	    user_id BIGINT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+	    discord_id BIGINT NOT NULL,
+	    added_by_discord_id BIGINT,
+	    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	    PRIMARY KEY (guild_id, user_id),
+	    UNIQUE (guild_id, discord_id)
+	);
+	
+	CREATE TABLE IF NOT EXISTS guild_alliance_role_mappings (
+	    mapping_id BIGSERIAL PRIMARY KEY,
+	    guild_id BIGINT NOT NULL REFERENCES guilds(guild_id) ON DELETE CASCADE,
     role_id BIGINT NOT NULL,
     role_name TEXT NOT NULL,
     alliance_id BIGINT NOT NULL REFERENCES alliances(alliance_id) ON DELETE CASCADE,

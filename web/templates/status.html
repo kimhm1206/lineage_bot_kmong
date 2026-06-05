@@ -36,7 +36,7 @@
 
   <section class="status-list" aria-label="출석 회차별 현황">
     {% for session in sessions %}
-      <details class="panel status-session" id="attendance-{{ session.attendance_id }}">
+      <details class="panel status-session {% if can_manage_status %}can-edit{% endif %}" id="attendance-{{ session.attendance_id }}">
         <summary>
           <div class="status-session-main">
             <div>
@@ -53,7 +53,7 @@
             {% endfor %}
           </div>
           {% if can_manage_status %}
-            <button class="tiny-button status-edit-toggle" type="button" onclick="event.preventDefault(); event.stopPropagation(); this.closest('details').open = true;">
+            <button class="tiny-button status-edit-toggle" type="button" data-status-edit-open="status-edit-{{ session.attendance_id }}" onclick="event.preventDefault(); event.stopPropagation();">
               출석 수정
             </button>
           {% endif %}
@@ -66,52 +66,93 @@
                 <h2>{{ alliance.alliance_name }}</h2>
                 <span>{{ alliance.count }}명</span>
               </header>
-              <div class="status-member-list">
+              <div class="member-pill-row">
                 {% for member in alliance.members %}
-                  <div class="status-member-row">
-                    <span>{{ member.discord_nickname }}</span>
-                    {% if can_manage_status %}
-                      <form method="post" action="/status/delete-entry?guild_id={{ auth.selected_guild_id }}&page={{ pagination.current_page }}">
-                        <input type="hidden" name="attendance_id" value="{{ session.attendance_id }}">
-                        <input type="hidden" name="user_id" value="{{ member.user_id }}">
-                        <button class="tiny-button danger-text-button" type="submit">삭제</button>
-                      </form>
-                    {% endif %}
-                  </div>
+                  <span class="member-pill">
+                    {{ member.discord_nickname }}
+                  </span>
                 {% endfor %}
               </div>
             </article>
           {% else %}
             <div class="empty status-empty">이 회차에는 출석자가 없습니다.</div>
           {% endfor %}
-          {% if can_manage_status %}
-            <article class="alliance-detail status-edit-panel">
-              <header>
-                <h2>출석 인원 추가</h2>
-                <span>User 테이블 기준</span>
-              </header>
-              <form class="status-add-form" method="post" action="/status/add-entry?guild_id={{ auth.selected_guild_id }}&page={{ pagination.current_page }}">
-                <input type="hidden" name="attendance_id" value="{{ session.attendance_id }}">
-                <label class="field">
-                  <span>추가할 유저</span>
-                  <select name="user_id" required>
-                    <option value="">유저 선택</option>
-                    {% for candidate in edit_candidates.get(session.attendance_id, []) %}
-                      <option value="{{ candidate.user_id }}">
-                        [{{ candidate.alliance_name }}] {{ candidate.discord_nickname }}
-                      </option>
-                    {% endfor %}
-                  </select>
-                </label>
-                <button class="primary-button" type="submit">출석에 추가</button>
-                {% if not edit_candidates.get(session.attendance_id) %}
-                  <p class="form-help">추가 가능한 유저가 없습니다.</p>
-                {% endif %}
-              </form>
-            </article>
-          {% endif %}
         </div>
       </details>
+      {% if can_manage_status %}
+        <div class="modal-backdrop status-modal-backdrop" id="status-edit-{{ session.attendance_id }}" data-status-modal hidden>
+          <div class="modal-card status-modal-card" role="dialog" aria-modal="true" aria-labelledby="status-edit-title-{{ session.attendance_id }}">
+            <header class="panel-header">
+              <div>
+                <h2 id="status-edit-title-{{ session.attendance_id }}">출석 수정</h2>
+                <span class="panel-caption">#{{ session.attendance_id }} · {{ session.started_at }}</span>
+              </div>
+              <button class="icon-button" type="button" aria-label="닫기" data-status-modal-close>&times;</button>
+            </header>
+            <div class="status-modal-toolbar">
+              <button class="primary-button" type="button" data-status-edit-open="status-add-{{ session.attendance_id }}">
+                누락 유저 추가
+              </button>
+              <label class="status-search-field">
+                <span>출석 유저 검색</span>
+                <input type="search" placeholder="닉네임 또는 혈맹 검색" data-status-search="current-{{ session.attendance_id }}">
+              </label>
+            </div>
+            <div class="status-modal-list" data-status-list="current-{{ session.attendance_id }}">
+              {% for alliance in session.alliances %}
+                {% for member in alliance.members %}
+                  <div class="status-member-row" data-status-row data-search-text="{{ (alliance.alliance_name ~ ' ' ~ member.discord_nickname)|lower }}">
+                    <div>
+                      <strong>{{ member.discord_nickname }}</strong>
+                      <span>{{ alliance.alliance_name }}</span>
+                    </div>
+                    <form method="post" action="/status/delete-entry?guild_id={{ auth.selected_guild_id }}&page={{ pagination.current_page }}">
+                      <input type="hidden" name="attendance_id" value="{{ session.attendance_id }}">
+                      <input type="hidden" name="user_id" value="{{ member.user_id }}">
+                      <button class="tiny-button danger-text-button" type="submit">삭제</button>
+                    </form>
+                  </div>
+                {% endfor %}
+              {% else %}
+                <div class="empty status-empty">현재 출석 인원이 없습니다.</div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-backdrop status-modal-backdrop" id="status-add-{{ session.attendance_id }}" data-status-modal hidden>
+          <div class="modal-card status-modal-card" role="dialog" aria-modal="true" aria-labelledby="status-add-title-{{ session.attendance_id }}">
+            <header class="panel-header">
+              <div>
+                <h2 id="status-add-title-{{ session.attendance_id }}">누락 유저 추가</h2>
+                <span class="panel-caption">User 테이블에서 현재 회차에 없는 유저를 추가합니다</span>
+              </div>
+              <button class="icon-button" type="button" aria-label="닫기" data-status-modal-close>&times;</button>
+            </header>
+            <label class="status-search-field status-add-search">
+              <span>추가할 유저 검색</span>
+              <input type="search" placeholder="닉네임 또는 혈맹 검색" data-status-search="candidate-{{ session.attendance_id }}">
+            </label>
+            <div class="status-modal-list" data-status-list="candidate-{{ session.attendance_id }}">
+              {% for candidate in edit_candidates.get(session.attendance_id, []) %}
+                <div class="status-member-row" data-status-row data-search-text="{{ (candidate.alliance_name ~ ' ' ~ candidate.discord_nickname)|lower }}">
+                  <div>
+                    <strong>{{ candidate.discord_nickname }}</strong>
+                    <span>{{ candidate.alliance_name }}</span>
+                  </div>
+                  <form method="post" action="/status/add-entry?guild_id={{ auth.selected_guild_id }}&page={{ pagination.current_page }}">
+                    <input type="hidden" name="attendance_id" value="{{ session.attendance_id }}">
+                    <input type="hidden" name="user_id" value="{{ candidate.user_id }}">
+                    <button class="tiny-button" type="submit">추가</button>
+                  </form>
+                </div>
+              {% else %}
+                <div class="empty status-empty">추가 가능한 유저가 없습니다.</div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+      {% endif %}
     {% else %}
       <article class="panel">
         <div class="empty status-empty">출석 회차가 없습니다.</div>
@@ -120,4 +161,64 @@
   </section>
 
   {{ pagination_controls(pagination) }}
+{% endblock %}
+
+{% block scripts %}
+  <script>
+    (() => {
+      const openModal = (id) => {
+        const modal = document.getElementById(id);
+        if (!modal) {
+          return;
+        }
+        modal.hidden = false;
+        const search = modal.querySelector("[data-status-search]");
+        if (search) {
+          search.focus();
+        }
+      };
+
+      const closeModal = (modal) => {
+        if (modal) {
+          modal.hidden = true;
+        }
+      };
+
+      document.querySelectorAll("[data-status-edit-open]").forEach((button) => {
+        button.addEventListener("click", () => openModal(button.dataset.statusEditOpen));
+      });
+
+      document.querySelectorAll("[data-status-modal-close]").forEach((button) => {
+        button.addEventListener("click", () => closeModal(button.closest("[data-status-modal]")));
+      });
+
+      document.querySelectorAll("[data-status-modal]").forEach((modal) => {
+        modal.addEventListener("click", (event) => {
+          if (event.target === modal) {
+            closeModal(modal);
+          }
+        });
+      });
+
+      document.addEventListener("keydown", (event) => {
+        if (event.key !== "Escape") {
+          return;
+        }
+        document.querySelectorAll("[data-status-modal]:not([hidden])").forEach(closeModal);
+      });
+
+      document.querySelectorAll("[data-status-search]").forEach((input) => {
+        input.addEventListener("input", () => {
+          const list = document.querySelector(`[data-status-list="${input.dataset.statusSearch}"]`);
+          if (!list) {
+            return;
+          }
+          const query = input.value.trim().toLowerCase();
+          list.querySelectorAll("[data-status-row]").forEach((row) => {
+            row.hidden = query && !row.dataset.searchText.includes(query);
+          });
+        });
+      });
+    })();
+  </script>
 {% endblock %}

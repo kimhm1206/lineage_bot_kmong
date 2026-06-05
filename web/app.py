@@ -606,8 +606,15 @@ def _load_accessible_servers(
                 "is_enabled": bool(row["is_enabled"]),
                 "permissions": _discord_permissions(discord_guild),
                 "discord_owner": bool((discord_guild or {}).get("owner")),
+                "is_owner": bool((discord_guild or {}).get("owner")),
+                "is_bookkeeper": False,
                 "role": role,
+                "base_role": role,
                 "can_manage": role in {"admin", "developer"},
+                "can_bookkeep": role in {"admin", "developer"}
+                or bool((discord_guild or {}).get("owner")),
+                "can_manage_bookkeepers": role == "developer"
+                or bool((discord_guild or {}).get("owner")),
                 "session_count": int(row["session_count"] or 0),
                 "attendance_count": int(row["attendance_count"] or 0),
                 "first_started_at": row["first_started_at"] or "",
@@ -659,8 +666,13 @@ def _load_local_developer_servers() -> list[dict[str, Any]]:
             "is_enabled": bool(row["is_enabled"]),
             "permissions": DISCORD_ADMINISTRATOR_PERMISSION,
             "discord_owner": True,
+            "is_owner": True,
+            "is_bookkeeper": True,
             "role": "developer",
+            "base_role": "developer",
             "can_manage": True,
+            "can_bookkeep": True,
+            "can_manage_bookkeepers": True,
             "session_count": int(row["session_count"] or 0),
             "attendance_count": int(row["attendance_count"] or 0),
             "first_started_at": row["first_started_at"] or "",
@@ -688,7 +700,12 @@ def _local_developer_auth_context(
 
     selected_server = dict(allowed_servers[selected_guild_id])
     selected_server["role"] = "developer"
+    selected_server["base_role"] = "developer"
     selected_server["can_manage"] = True
+    selected_server["is_owner"] = True
+    selected_server["is_bookkeeper"] = True
+    selected_server["can_bookkeep"] = True
+    selected_server["can_manage_bookkeepers"] = True
     selected_server["member_display_name"] = "Local Developer"
     selected_server["my_alliance"] = {
         "can_view": True,
@@ -750,8 +767,25 @@ def _auth_context_from_session(
                 "permissions": selected_server.get("permissions"),
             },
         )
-    selected_server["role"] = verified_role
-    selected_server["can_manage"] = verified_role in {"admin", "developer"}
+    is_owner = bool(selected_server.get("discord_owner"))
+    is_bookkeeper = database.is_guild_bookkeeper(
+        int(selected_guild_id),
+        int(user["id"]),
+    )
+    effective_role = verified_role
+    if is_bookkeeper and effective_role == "user":
+        effective_role = "admin"
+    selected_server["base_role"] = verified_role
+    selected_server["role"] = effective_role
+    selected_server["is_owner"] = is_owner
+    selected_server["is_bookkeeper"] = is_bookkeeper
+    selected_server["can_manage"] = effective_role in {"admin", "developer"}
+    selected_server["can_bookkeep"] = (
+        selected_server["can_manage"] or is_owner or is_bookkeeper
+    )
+    selected_server["can_manage_bookkeepers"] = (
+        effective_role == "developer" or is_owner
+    )
     selected_server["member_display_name"] = _guild_member_display_name(
         int(selected_guild_id),
         str(user["id"]),
@@ -760,10 +794,10 @@ def _auth_context_from_session(
     selected_server["my_alliance"] = _my_alliance_access(
         int(selected_guild_id),
         str(user["id"]),
-        verified_role,
+        effective_role,
     )
     selected_server["role_label"] = _role_display_label(
-        verified_role,
+        effective_role,
         selected_server["my_alliance"]["options"],
     )
     returned_servers = [
@@ -795,8 +829,22 @@ def _wants_json(request: Request) -> bool:
     )
 
 
+async def _urlencoded_form_data(request: Request) -> dict[str, str]:
+    body = (await request.body()).decode("utf-8")
+    parsed = parse_qs(body, keep_blank_values=True)
+    return {key: values[-1] if values else "" for key, values in parsed.items()}
+
+
 def _can_manage_selected_server(auth: dict[str, Any]) -> bool:
     return bool(auth["selected_server"].get("can_manage"))
+
+
+def _can_bookkeep_selected_server(auth: dict[str, Any]) -> bool:
+    return bool(auth["selected_server"].get("can_bookkeep"))
+
+
+def _can_manage_bookkeepers(auth: dict[str, Any]) -> bool:
+    return bool(auth["selected_server"].get("can_manage_bookkeepers"))
 
 
 def _is_developer_auth(auth: dict[str, Any]) -> bool:
@@ -1565,20 +1613,32 @@ def _settings_template_context(
         "report_options": REPORT_OPTIONS,
         "report_form": report_form,
         "report_settings": _load_report_settings(guild_id),
-        "alliance_role_form": alliance_role_form or {"alliance_name": "", "role_id": ""},
-        "alliance_role_mappings": database.get_guild_alliance_role_mappings(guild_id),
-        "settings_active_tab": settings_active_tab or _settings_active_tab(saved),
-        "active_page": "settings",
-    }
+	        "alliance_role_form": alliance_role_form or {"alliance_name": "", "role_id": ""},
+	        "alliance_role_mappings": database.get_guild_alliance_role_mappings(guild_id),
+	        "bookkeepers": (
+	            database.get_guild_bookkeepers(guild_id)
+	            if auth["selected_server"].get("can_manage_bookkeepers")
+	            else []
+	        ),
+	        "bookkeeper_candidates": (
+	            database.get_guild_bookkeeper_candidates(guild_id)
+	            if auth["selected_server"].get("can_manage_bookkeepers")
+	            else []
+	        ),
+	        "settings_active_tab": settings_active_tab or _settings_active_tab(saved),
+	        "active_page": "settings",
+	    }
 
 
 def _settings_active_tab(saved: str | None) -> str:
     if saved in {"report", "report_status", "report_deleted", "report_error"}:
         return "reports"
-    if saved in {"alliance_role", "alliance_role_deleted", "alliance_role_error"}:
-        return "alliance"
-    if saved == "1":
-        return "channels"
+	    if saved in {"alliance_role", "alliance_role_deleted", "alliance_role_error"}:
+	        return "alliance"
+	    if saved in {"bookkeeper", "bookkeeper_deleted", "bookkeeper_error"}:
+	        return "bookkeepers"
+	    if saved == "1":
+	        return "channels"
     return "alliance"
 
 
@@ -3854,7 +3914,7 @@ async def add_attendance_status_entry(
             status_code=303,
         )
 
-    form_data = await request.form()
+    form_data = await _urlencoded_form_data(request)
     attendance_id = 0
     try:
         attendance_id = int(form_data.get("attendance_id") or "")
@@ -3887,7 +3947,7 @@ async def delete_attendance_status_entry(
             status_code=303,
         )
 
-    form_data = await request.form()
+    form_data = await _urlencoded_form_data(request)
     attendance_id = 0
     try:
         attendance_id = int(form_data.get("attendance_id") or "")
@@ -4503,7 +4563,7 @@ def settings(
         return _auth_redirect(request)
 
     selected_guild_id = int(auth["selected_guild_id"])
-    if not _can_manage_selected_server(auth):
+    if not _can_bookkeep_selected_server(auth):
         return _settings_forbidden_redirect(selected_guild_id)
 
     guild_settings = database.get_settings(selected_guild_id)
@@ -4730,6 +4790,72 @@ async def delete_alliance_role_mapping(
     )
 
 
+@app.post("/settings/bookkeepers", response_class=HTMLResponse)
+async def add_bookkeeper(
+    request: Request,
+    guild_id: str | None = None,
+):
+    auth = _auth_context(request, guild_id)
+    if not auth:
+        return _auth_redirect(request)
+
+    selected_guild_id = int(auth["selected_guild_id"])
+    if not _can_manage_bookkeepers(auth):
+        return _settings_forbidden_redirect(selected_guild_id)
+
+    form_data = await _urlencoded_form_data(request)
+    try:
+        user_id = int(form_data.get("user_id") or "")
+        if user_id <= 0:
+            raise ValueError
+        database.add_guild_bookkeeper(
+            selected_guild_id,
+            user_id,
+            added_by_discord_id=int(auth["user"]["id"]),
+        )
+    except ValueError:
+        return RedirectResponse(
+            f"/settings?guild_id={selected_guild_id}&saved=bookkeeper_error#bookkeepers",
+            status_code=303,
+        )
+
+    return RedirectResponse(
+        f"/settings?guild_id={selected_guild_id}&saved=bookkeeper#bookkeepers",
+        status_code=303,
+    )
+
+
+@app.post("/settings/bookkeepers/delete")
+async def delete_bookkeeper(
+    request: Request,
+    guild_id: str | None = None,
+):
+    auth = _auth_context(request, guild_id)
+    if not auth:
+        return _auth_redirect(request)
+
+    selected_guild_id = int(auth["selected_guild_id"])
+    if not _can_manage_bookkeepers(auth):
+        return _settings_forbidden_redirect(selected_guild_id)
+
+    form_data = await _urlencoded_form_data(request)
+    try:
+        user_id = int(form_data.get("user_id") or "")
+        if user_id <= 0:
+            raise ValueError
+    except ValueError:
+        return RedirectResponse(
+            f"/settings?guild_id={selected_guild_id}&saved=bookkeeper_error#bookkeepers",
+            status_code=303,
+        )
+
+    database.delete_guild_bookkeeper(selected_guild_id, user_id)
+    return RedirectResponse(
+        f"/settings?guild_id={selected_guild_id}&saved=bookkeeper_deleted#bookkeepers",
+        status_code=303,
+    )
+
+
 @app.post("/settings/items", response_class=HTMLResponse)
 async def create_item_price(
     request: Request,
@@ -4741,7 +4867,7 @@ async def create_item_price(
         return _auth_redirect(request)
 
     selected_guild_id = int(auth["selected_guild_id"])
-    if not _can_manage_selected_server(auth):
+    if not _can_bookkeep_selected_server(auth):
         return _settings_forbidden_redirect(selected_guild_id)
 
     body = (await request.body()).decode("utf-8")
@@ -4819,7 +4945,7 @@ async def update_item_price(
         return _auth_redirect(request)
 
     selected_guild_id = int(auth["selected_guild_id"])
-    if not _can_manage_selected_server(auth):
+    if not _can_bookkeep_selected_server(auth):
         return _settings_forbidden_redirect(selected_guild_id)
 
     body = (await request.body()).decode("utf-8")
@@ -4870,7 +4996,7 @@ async def delete_item_price(
         return _auth_redirect(request)
 
     selected_guild_id = int(auth["selected_guild_id"])
-    if not _can_manage_selected_server(auth):
+    if not _can_bookkeep_selected_server(auth):
         return _settings_forbidden_redirect(selected_guild_id)
 
     body = (await request.body()).decode("utf-8")
@@ -5285,7 +5411,7 @@ async def update_developer_server_status(
             status_code=303,
         )
 
-    form_data = await request.form()
+    form_data = await _urlencoded_form_data(request)
     try:
         target_guild_id = int(form_data.get("target_guild_id") or "")
         status = str(form_data.get("status") or "")
