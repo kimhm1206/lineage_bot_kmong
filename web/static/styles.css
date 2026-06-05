@@ -2373,7 +2373,7 @@ button:disabled {
   display: grid;
   gap: 0;
   min-width: 0;
-  padding-right: 42px;
+  padding-right: 46px;
 }
 
 .distribution-compact-main strong,
@@ -2384,7 +2384,7 @@ button:disabled {
 
 .distribution-compact-main strong {
   overflow: hidden;
-  font-size: 15px;
+  font-size: 17px;
   line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2766,8 +2766,9 @@ button:disabled {
 }
 
 .payout-status-badge.is-unpaid {
-  background: rgba(101, 117, 138, 0.12);
-  color: var(--muted);
+  border-color: rgba(204, 80, 64, 0.32);
+  background: rgba(204, 80, 64, 0.13);
+  color: var(--red);
 }
 
 .payout-status-badge.is-empty {
@@ -3634,7 +3635,7 @@ button:disabled {
 }
 
 :root[data-theme="dark"] .alliance-chip.is-empty,
-:root[data-theme="dark"] .payout-status-badge.is-unpaid {
+:root[data-theme="dark"] .payout-status-badge.is-empty {
   background: rgba(163, 176, 191, 0.14);
   color: var(--muted);
 }
@@ -3676,6 +3677,7 @@ button:disabled {
 :root[data-theme="dark"] .alert.error,
 :root[data-theme="dark"] .error-row td,
 :root[data-theme="dark"] .loot-summary-status.is-unpaid,
+:root[data-theme="dark"] .payout-status-badge.is-unpaid,
 :root[data-theme="dark"] .danger-text-button:hover {
   background: rgba(255, 123, 115, 0.14);
   color: var(--red);
