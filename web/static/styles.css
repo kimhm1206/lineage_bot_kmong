@@ -2417,6 +2417,19 @@ button:disabled {
   font-size: 11px;
 }
 
+.distribution-compact-card > [data-distribution-detail-source] {
+  display: none;
+}
+
+.distribution-row-detail-panel {
+  grid-column: 1 / -1;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
 .loot-event-card.payout-card summary {
   grid-template-columns: minmax(240px, 0.78fr) minmax(320px, 1.25fr) minmax(144px, 0.36fr) auto;
   min-height: 118px;
