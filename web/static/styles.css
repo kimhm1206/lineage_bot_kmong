@@ -2331,6 +2331,18 @@ button:disabled {
   background: rgba(101, 117, 138, 0.34);
 }
 
+.loot-event-card.distribution-card.is-paid::before {
+  background: var(--green);
+}
+
+.loot-event-card.distribution-card.is-unpaid::before {
+  background: var(--red);
+}
+
+.loot-event-card.distribution-card.is-empty::before {
+  background: rgba(101, 117, 138, 0.42);
+}
+
 .loot-event-card.distribution-card summary {
   grid-template-columns: minmax(220px, 0.8fr) minmax(360px, 1.1fr) minmax(128px, 0.36fr) auto;
   padding-left: 24px;

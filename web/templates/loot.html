@@ -1185,7 +1185,12 @@
             closeDistributionCards(card);
             renderDistributionRowDetail(card);
           } else {
-            removeDistributionDetailPanels(list);
+            const openCard = list.querySelector("[data-distribution-card][open]");
+            if (openCard) {
+              renderDistributionRowDetail(openCard);
+            } else {
+              removeDistributionDetailPanels(list);
+            }
           }
         });
       });
