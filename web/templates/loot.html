@@ -55,14 +55,16 @@
 
   <nav class="loot-tabs" aria-label="드랍&분배 탭">
     <a class="loot-tab-button is-active" href="#distribution" data-loot-tab="distribution">분배금 현황</a>
-    {% if auth.selected_server.can_manage %}
+    {% if auth.selected_server.can_bookkeep %}
       <a class="loot-tab-button" href="#create" data-loot-tab="create">드랍 등록</a>
+    {% endif %}
+    {% if auth.selected_server.can_manage %}
       <a class="loot-tab-button" href="#alliance-payouts" data-loot-tab="alliance-payouts">각혈 분배</a>
     {% endif %}
     {% if auth.selected_server.can_manage and auth.selected_server.my_alliance.can_view %}
       <a class="loot-tab-button" href="#my-alliance-payouts" data-loot-tab="my-alliance-payouts">내 혈맹</a>
     {% endif %}
-    {% if auth.selected_server.can_manage %}
+    {% if auth.selected_server.can_bookkeep %}
       <a class="loot-tab-button" href="#item-settings" data-loot-tab="item-settings">아이템 설정</a>
     {% endif %}
     {% if auth.selected_server.can_manage and auth.selected_server.my_alliance.can_select %}
@@ -203,7 +205,7 @@
     </section>
   </section>
 
-  {% if auth.selected_server.can_manage %}
+  {% if auth.selected_server.can_bookkeep %}
     <section class="loot-tab-panel" data-loot-panel="create" hidden>
       <section class="loot-layout">
         <form class="panel loot-create-panel" method="post" action="/loot?guild_id={{ auth.selected_guild_id }}" data-loot-form>
@@ -746,7 +748,7 @@
     </section>
   {% endif %}
 
-  {% if auth.selected_server.can_manage %}
+  {% if auth.selected_server.can_bookkeep %}
     <section class="loot-tab-panel" data-loot-panel="item-settings" hidden>
       <section class="loot-item-settings-layout">
         <article class="panel settings-form">
@@ -840,6 +842,7 @@
 {% block scripts %}
   <script>
     const canManageLoot = {{ auth.selected_server.can_manage | tojson }};
+    const canBookkeepLoot = {{ auth.selected_server.can_bookkeep | tojson }};
     const canViewMyAlliancePayouts = {{ (auth.selected_server.can_manage and auth.selected_server.my_alliance.can_view) | tojson }};
     const attendanceOptions = {{ attendance_options | tojson }};
     const attendanceSelect = document.querySelector("[data-loot-attendance]");
@@ -928,7 +931,10 @@
     }
 
     function normalizeLootTab(tabName) {
-      if (tabName === "create" || tabName === "alliance-payouts" || tabName === "item-settings") {
+      if (tabName === "create" || tabName === "item-settings") {
+        return canBookkeepLoot ? tabName : "distribution";
+      }
+      if (tabName === "alliance-payouts") {
         return canManageLoot ? tabName : "distribution";
       }
       if (tabName === "my-alliance-payouts") {

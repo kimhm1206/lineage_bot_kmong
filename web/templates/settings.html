@@ -24,6 +24,12 @@
     <div class="alert success">혈맹 역할 매핑을 삭제했습니다.</div>
   {% elif saved == "alliance_role_error" %}
     <div class="alert error">혈맹 역할 매핑을 변경하지 못했습니다.</div>
+  {% elif saved == "bookkeeper" %}
+    <div class="alert success">경리 인원을 추가했습니다.</div>
+  {% elif saved == "bookkeeper_deleted" %}
+    <div class="alert success">경리 인원을 삭제했습니다.</div>
+  {% elif saved == "bookkeeper_error" %}
+    <div class="alert error">경리 인원을 변경하지 못했습니다.</div>
   {% elif saved == "report_status" %}
     <div class="alert success">통계 알림 상태를 변경했습니다.</div>
   {% elif saved == "report_deleted" %}
@@ -56,6 +62,12 @@
         <strong>혈맹 관리</strong>
         <span>역할 매핑</span>
       </a>
+      {% if auth.selected_server.can_manage_bookkeepers %}
+        <a class="settings-menu-item {% if settings_active_tab == 'bookkeepers' %}is-active{% endif %}" href="#bookkeepers" data-settings-tab="bookkeepers">
+          <strong>경리 인원</strong>
+          <span>드랍/아이템 권한</span>
+        </a>
+      {% endif %}
       <a class="settings-menu-item {% if settings_active_tab == 'reports' %}is-active{% endif %}" href="#reports" data-settings-tab="reports">
         <strong>통계 알림</strong>
         <span>스케줄/발송</span>
@@ -136,6 +148,82 @@
         </tbody>
       </table>
     </article>
+
+    {% if auth.selected_server.can_manage_bookkeepers %}
+      <article class="panel settings-form" id="bookkeepers" data-settings-panel="bookkeepers" {% if settings_active_tab != "bookkeepers" %}hidden{% endif %}>
+        <header class="panel-header">
+          <h2>경리 인원</h2>
+          <span class="panel-caption">드랍 등록과 아이템 설정 권한을 부여합니다</span>
+        </header>
+
+        <div class="bookkeeper-layout">
+          <section class="bookkeeper-section">
+            <div class="section-title-row">
+              <h3>등록된 경리</h3>
+              <span class="muted">{{ bookkeepers|length }}명</span>
+            </div>
+            <div class="compact-table-wrap">
+              <table class="compact-table">
+                <thead>
+                  <tr>
+                    <th>닉네임</th>
+                    <th>혈맹</th>
+                    <th>관리</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for bookkeeper in bookkeepers %}
+                    <tr>
+                      <td>{{ bookkeeper.discord_nickname }}</td>
+                      <td>{{ bookkeeper.alliance_name }}</td>
+                      <td>
+                        <form class="inline-actions" method="post" action="/settings/bookkeepers/delete?guild_id={{ auth.selected_guild_id }}">
+                          <input type="hidden" name="user_id" value="{{ bookkeeper.user_id }}">
+                          <button class="tiny-button danger-text-button" type="submit">삭제</button>
+                        </form>
+                      </td>
+                    </tr>
+                  {% else %}
+                    <tr><td colspan="3" class="empty">등록된 경리 인원이 없습니다.</td></tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="bookkeeper-section">
+            <div class="section-title-row">
+              <h3>유저 추가</h3>
+              <span class="muted">출석 기록이 있는 유저 기준</span>
+            </div>
+            <label class="field compact-search-field">
+              <span>검색</span>
+              <input type="search" placeholder="닉네임 또는 혈맹 검색" data-bookkeeper-search>
+            </label>
+            <div class="bookkeeper-candidate-list" data-bookkeeper-list>
+              {% for candidate in bookkeeper_candidates %}
+                <form
+                  class="bookkeeper-candidate-card"
+                  method="post"
+                  action="/settings/bookkeepers?guild_id={{ auth.selected_guild_id }}"
+                  data-bookkeeper-row
+                  data-search-text="{{ (candidate.discord_nickname ~ ' ' ~ candidate.alliance_name)|lower }}"
+                >
+                  <input type="hidden" name="user_id" value="{{ candidate.user_id }}">
+                  <div>
+                    <strong>{{ candidate.discord_nickname }}</strong>
+                    <span>{{ candidate.alliance_name }}</span>
+                  </div>
+                  <button class="tiny-button" type="submit">추가</button>
+                </form>
+              {% else %}
+                <div class="empty">추가 가능한 유저가 없습니다.</div>
+              {% endfor %}
+            </div>
+          </section>
+        </div>
+      </article>
+    {% endif %}
 
     <article
       class="panel settings-form report-builder"
@@ -623,5 +711,16 @@
     });
     reportPreviewRefresh?.addEventListener("click", updateReportPreview);
     updateReportPreview();
+
+    document.querySelectorAll("[data-bookkeeper-search]").forEach((input) => {
+      const list = input.closest(".bookkeeper-section")?.querySelector("[data-bookkeeper-list]");
+      const rows = list ? Array.from(list.querySelectorAll("[data-bookkeeper-row]")) : [];
+      input.addEventListener("input", () => {
+        const query = input.value.trim().toLowerCase();
+        rows.forEach((row) => {
+          row.hidden = query.length > 0 && !row.dataset.searchText.includes(query);
+        });
+      });
+    });
   </script>
 {% endblock %}

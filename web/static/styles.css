@@ -1405,6 +1405,93 @@ button:disabled {
   display: none !important;
 }
 
+.bookkeeper-layout {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.85fr) minmax(320px, 1.15fr);
+  gap: 16px;
+}
+
+.bookkeeper-section {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.52);
+}
+
+.section-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.section-title-row h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.compact-search-field {
+  margin: 0;
+}
+
+.compact-table-wrap {
+  overflow-x: auto;
+}
+
+.compact-table th,
+.compact-table td {
+  padding: 10px 8px;
+  font-size: 13px;
+}
+
+.bookkeeper-candidate-list {
+  display: grid;
+  gap: 8px;
+  max-height: 430px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.bookkeeper-candidate-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.bookkeeper-candidate-card > div {
+  display: grid;
+  min-width: 0;
+}
+
+.bookkeeper-candidate-card strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bookkeeper-candidate-card span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .settings-form {
   overflow: hidden;
 }
@@ -3086,6 +3173,8 @@ button:disabled {
 :root[data-theme="dark"] .page-control,
 :root[data-theme="dark"] .settings-sidebar,
 :root[data-theme="dark"] .settings-menu-item,
+:root[data-theme="dark"] .bookkeeper-section,
+:root[data-theme="dark"] .bookkeeper-candidate-card,
 :root[data-theme="dark"] .buyer-picker-menu,
 :root[data-theme="dark"] .currency-toggle,
 :root[data-theme="dark"] .report-card,
@@ -3425,6 +3514,10 @@ button:disabled {
   }
 
   .alliance-role-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .bookkeeper-layout {
     grid-template-columns: 1fr;
   }
 

@@ -611,10 +611,9 @@ def _load_accessible_servers(
                 "role": role,
                 "base_role": role,
                 "can_manage": role in {"admin", "developer"},
-                "can_bookkeep": role in {"admin", "developer"}
+                "can_bookkeep": role == "developer"
                 or bool((discord_guild or {}).get("owner")),
-                "can_manage_bookkeepers": role == "developer"
-                or bool((discord_guild or {}).get("owner")),
+                "can_manage_bookkeepers": bool((discord_guild or {}).get("owner")),
                 "session_count": int(row["session_count"] or 0),
                 "attendance_count": int(row["attendance_count"] or 0),
                 "first_started_at": row["first_started_at"] or "",
@@ -781,11 +780,9 @@ def _auth_context_from_session(
     selected_server["is_bookkeeper"] = is_bookkeeper
     selected_server["can_manage"] = effective_role in {"admin", "developer"}
     selected_server["can_bookkeep"] = (
-        selected_server["can_manage"] or is_owner or is_bookkeeper
+        effective_role == "developer" or is_owner or is_bookkeeper
     )
-    selected_server["can_manage_bookkeepers"] = (
-        effective_role == "developer" or is_owner
-    )
+    selected_server["can_manage_bookkeepers"] = is_owner
     selected_server["member_display_name"] = _guild_member_display_name(
         int(selected_guild_id),
         str(user["id"]),
@@ -1613,32 +1610,32 @@ def _settings_template_context(
         "report_options": REPORT_OPTIONS,
         "report_form": report_form,
         "report_settings": _load_report_settings(guild_id),
-	        "alliance_role_form": alliance_role_form or {"alliance_name": "", "role_id": ""},
-	        "alliance_role_mappings": database.get_guild_alliance_role_mappings(guild_id),
-	        "bookkeepers": (
-	            database.get_guild_bookkeepers(guild_id)
-	            if auth["selected_server"].get("can_manage_bookkeepers")
-	            else []
-	        ),
-	        "bookkeeper_candidates": (
-	            database.get_guild_bookkeeper_candidates(guild_id)
-	            if auth["selected_server"].get("can_manage_bookkeepers")
-	            else []
-	        ),
-	        "settings_active_tab": settings_active_tab or _settings_active_tab(saved),
-	        "active_page": "settings",
-	    }
+        "alliance_role_form": alliance_role_form or {"alliance_name": "", "role_id": ""},
+        "alliance_role_mappings": database.get_guild_alliance_role_mappings(guild_id),
+        "bookkeepers": (
+            database.get_guild_bookkeepers(guild_id)
+            if auth["selected_server"].get("can_manage_bookkeepers")
+            else []
+        ),
+        "bookkeeper_candidates": (
+            database.get_guild_bookkeeper_candidates(guild_id)
+            if auth["selected_server"].get("can_manage_bookkeepers")
+            else []
+        ),
+        "settings_active_tab": settings_active_tab or _settings_active_tab(saved),
+        "active_page": "settings",
+    }
 
 
 def _settings_active_tab(saved: str | None) -> str:
     if saved in {"report", "report_status", "report_deleted", "report_error"}:
         return "reports"
-	    if saved in {"alliance_role", "alliance_role_deleted", "alliance_role_error"}:
-	        return "alliance"
-	    if saved in {"bookkeeper", "bookkeeper_deleted", "bookkeeper_error"}:
-	        return "bookkeepers"
-	    if saved == "1":
-	        return "channels"
+    if saved in {"alliance_role", "alliance_role_deleted", "alliance_role_error"}:
+        return "alliance"
+    if saved in {"bookkeeper", "bookkeeper_deleted", "bookkeeper_error"}:
+        return "bookkeepers"
+    if saved == "1":
+        return "channels"
     return "alliance"
 
 
@@ -4002,7 +3999,7 @@ async def create_loot_drop(
         return _auth_redirect(request)
 
     selected_guild_id = int(auth["selected_guild_id"])
-    if not _can_manage_selected_server(auth):
+    if not _can_bookkeep_selected_server(auth):
         return RedirectResponse(
             f"/loot?guild_id={selected_guild_id}&saved=forbidden",
             status_code=303,
@@ -4563,7 +4560,7 @@ def settings(
         return _auth_redirect(request)
 
     selected_guild_id = int(auth["selected_guild_id"])
-    if not _can_bookkeep_selected_server(auth):
+    if not _can_manage_selected_server(auth):
         return _settings_forbidden_redirect(selected_guild_id)
 
     guild_settings = database.get_settings(selected_guild_id)

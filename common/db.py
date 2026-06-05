@@ -3846,18 +3846,18 @@ def _ensure_postgres_columns(cursor: psycopg2.extensions.cursor) -> None:
         """,
         (DEFAULT_DISTRIBUTION_FEE_RATE,),
     )
-	    cursor.execute(
-	        "CREATE INDEX IF NOT EXISTS idx_items_guild_active "
-	        "ON items(guild_id, is_active)"
-	    )
-	    cursor.execute(
-	        "CREATE INDEX IF NOT EXISTS idx_guild_bookkeepers_discord "
-	        "ON guild_bookkeepers(guild_id, discord_id)"
-	    )
-	    cursor.execute(
-	        "CREATE INDEX IF NOT EXISTS idx_loot_events_guild_attendance "
-	        "ON loot_events(guild_id, attendance_id)"
-	    )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_items_guild_active "
+        "ON items(guild_id, is_active)"
+    )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_guild_bookkeepers_discord "
+        "ON guild_bookkeepers(guild_id, discord_id)"
+    )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_loot_events_guild_attendance "
+        "ON loot_events(guild_id, attendance_id)"
+    )
     cursor.execute(
         "CREATE INDEX IF NOT EXISTS idx_loot_events_guild_updated "
         "ON loot_events(guild_id, updated_at)"
