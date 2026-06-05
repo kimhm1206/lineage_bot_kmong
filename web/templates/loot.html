@@ -815,9 +815,6 @@
                     </div>
                   </div>
                   <div class="recipient-payout-actions" data-recipient-payout-actions>
-                    <span class="payout-status-badge {{ recipient.status_class }}" data-recipient-status-badge>
-                      {{ recipient.status_label }}
-                    </span>
                     {% if auth.selected_server.can_manage %}
                       <form
                         class="inline-actions"
