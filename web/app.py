@@ -2729,6 +2729,9 @@ def _my_alliance_payout_context(
                     "amount_text": _money_text(per_member_amount),
                     "status": payout_status,
                     "status_label": "지급 완료" if is_paid else "미완료",
+                    "status_class": "is-paid" if is_paid else "is-unpaid",
+                    "next_status": "unpaid" if is_paid else "paid",
+                    "next_status_label": "미완료로 변경" if is_paid else "완료 처리",
                 }
             )
             if is_paid:

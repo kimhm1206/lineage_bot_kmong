@@ -2655,48 +2655,91 @@ button:disabled {
   margin: 0;
 }
 
-.recipient-payout-table-wrap {
-  overflow-x: auto;
+.recipient-payout-card-list {
+  display: grid;
+  gap: 14px;
+  padding: 14px;
 }
 
-.recipient-payout-table th,
-.recipient-payout-table td {
-  vertical-align: top;
+.recipient-payout-card {
+  overflow: hidden;
 }
 
-.recipient-detail-row td {
-  padding-top: 0;
+.recipient-payout-summary {
+  grid-template-columns: minmax(220px, 1fr) minmax(360px, 1.5fr) auto;
 }
 
-.recipient-detail-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+.recipient-payout-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(120px, 1fr));
+  gap: 10px;
+  align-items: stretch;
 }
 
-.recipient-detail-pill {
-  display: inline-flex;
-  align-items: center;
-  min-height: 28px;
-  padding: 0 10px;
+.recipient-payout-metrics div {
+  min-height: 68px;
+  padding: 12px;
   border: 1px solid var(--line);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.66);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.62);
+}
+
+.recipient-payout-metrics span,
+.recipient-detail-card span {
+  display: block;
   color: var(--muted);
   font-size: 12px;
   font-weight: 800;
 }
 
-.recipient-detail-pill.is-unpaid {
-  border-color: rgba(180, 35, 24, 0.18);
-  background: rgba(180, 35, 24, 0.08);
-  color: var(--red);
+.recipient-payout-metrics strong {
+  display: block;
+  margin-top: 6px;
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 900;
 }
 
-.recipient-detail-pill.is-paid {
-  border-color: rgba(18, 128, 92, 0.18);
-  background: rgba(18, 128, 92, 0.08);
-  color: var(--green);
+.recipient-payout-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.recipient-payout-body {
+  padding: 16px 18px;
+}
+
+.recipient-detail-list {
+  display: grid;
+  gap: 10px;
+}
+
+.recipient-detail-card {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(130px, 0.45fr) auto auto;
+  gap: 12px;
+  align-items: center;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.recipient-detail-card.is-unpaid {
+  border-color: rgba(180, 35, 24, 0.22);
+  background: rgba(180, 35, 24, 0.06);
+}
+
+.recipient-detail-card.is-paid {
+  border-color: rgba(18, 128, 92, 0.2);
+  background: rgba(18, 128, 92, 0.06);
+}
+
+.recipient-detail-card strong {
+  color: var(--text);
+  font-weight: 900;
 }
 
 .my-payout-rule-panel {
@@ -3304,7 +3347,8 @@ button:disabled {
 :root[data-theme="dark"] .loot-fee-summary div,
 :root[data-theme="dark"] .loot-breakdown-card,
 :root[data-theme="dark"] .my-recipient-payout-panel,
-:root[data-theme="dark"] .recipient-detail-pill,
+:root[data-theme="dark"] .recipient-payout-metrics div,
+:root[data-theme="dark"] .recipient-detail-card,
 :root[data-theme="dark"] .rank-strip,
 :root[data-theme="dark"] .mini-rank-row,
 :root[data-theme="dark"] .alliance-detail,
@@ -3313,6 +3357,16 @@ button:disabled {
 :root[data-theme="dark"] .log-tab {
   border-color: var(--glass-border);
   background: var(--glass-bg-soft);
+}
+
+:root[data-theme="dark"] .recipient-detail-card.is-unpaid {
+  border-color: rgba(248, 113, 113, 0.28);
+  background: rgba(127, 29, 29, 0.18);
+}
+
+:root[data-theme="dark"] .recipient-detail-card.is-paid {
+  border-color: rgba(52, 211, 153, 0.24);
+  background: rgba(6, 78, 59, 0.18);
 }
 
 :root[data-theme="dark"] .filter-panel input,
@@ -3634,6 +3688,23 @@ button:disabled {
 
   .recipient-payout-controls {
     grid-template-columns: 1fr;
+  }
+
+  .recipient-payout-card-list {
+    padding: 10px;
+  }
+
+  .recipient-payout-summary,
+  .recipient-detail-card {
+    grid-template-columns: 1fr;
+  }
+
+  .recipient-payout-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .recipient-payout-actions {
+    justify-content: flex-start;
   }
 
   .inline-form-actions,

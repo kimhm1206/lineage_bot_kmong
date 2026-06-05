@@ -779,90 +779,105 @@
             </label>
           </div>
 
-          <div class="recipient-payout-table-wrap">
-            <table class="recipient-payout-table">
-              <thead>
-                <tr>
-                  <th>닉네임</th>
-                  <th>총 분배</th>
-                  <th>미분배</th>
-                  <th>건수</th>
-                  <th>상태</th>
-                  {% if auth.selected_server.can_manage %}
-                    <th>관리</th>
-                  {% endif %}
-                </tr>
-              </thead>
-              <tbody data-recipient-payout-table>
-                {% for recipient in my_alliance_payouts.recipients %}
-                  <tr
-                    data-recipient-payout-row
-                    data-user-id="{{ recipient.user_id }}"
-                    data-search-text="{{ recipient.display_name|lower }}"
-                    data-status="{{ recipient.status }}"
-                    data-unpaid-amount="{{ recipient.unpaid_amount }}"
-                    data-total-amount="{{ recipient.total_amount }}"
-                    data-unpaid-count="{{ recipient.unpaid_count }}"
-                  >
-                    <td>
-                      <strong>{{ recipient.display_name }}</strong>
-                      <div class="panel-caption">{{ recipient["items"]|length }}건 참여</div>
-                    </td>
-                    <td>{{ recipient.total_amount_text }}</td>
-                    <td data-recipient-unpaid-text>{{ recipient.unpaid_amount_text }}</td>
-                    <td>
+          <section class="recipient-payout-card-list" data-recipient-payout-list>
+            {% for recipient in my_alliance_payouts.recipients %}
+              <details
+                class="panel loot-event-card recipient-payout-card"
+                data-recipient-payout-row
+                data-user-id="{{ recipient.user_id }}"
+                data-search-text="{{ recipient.display_name|lower }}"
+                data-status="{{ recipient.status }}"
+                data-unpaid-amount="{{ recipient.unpaid_amount }}"
+                data-total-amount="{{ recipient.total_amount }}"
+                data-unpaid-count="{{ recipient.unpaid_count }}"
+              >
+                <summary class="loot-event-summary recipient-payout-summary">
+                  <div class="loot-event-main">
+                    <strong>{{ recipient.display_name }}</strong>
+                    <span class="panel-caption">{{ recipient["items"]|length }}건 참여</span>
+                  </div>
+                  <div class="recipient-payout-metrics">
+                    <div>
+                      <span>총 분배</span>
+                      <strong>{{ recipient.total_amount_text }}</strong>
+                    </div>
+                    <div>
+                      <span>미분배</span>
+                      <strong data-recipient-unpaid-text>{{ recipient.unpaid_amount_text }}</strong>
+                    </div>
+                    <div>
                       <span data-recipient-count-text>미완료 {{ recipient.unpaid_count }}건</span>
-                      <div class="panel-caption" data-recipient-progress-text>완료 {{ recipient.paid_count }}건 / 전체 {{ recipient.total_count }}건</div>
-                    </td>
-                    <td>
-                      <span class="payout-status-badge {{ recipient.status_class }}" data-recipient-status-badge>
-                        {{ recipient.status_label }}
-                      </span>
-                    </td>
+                      <strong data-recipient-progress-text>완료 {{ recipient.paid_count }}건 / 전체 {{ recipient.total_count }}건</strong>
+                    </div>
+                  </div>
+                  <div class="recipient-payout-actions" data-recipient-payout-actions>
+                    <span class="payout-status-badge {{ recipient.status_class }}" data-recipient-status-badge>
+                      {{ recipient.status_label }}
+                    </span>
                     {% if auth.selected_server.can_manage %}
-                      <td>
-                        <form
-                          class="inline-actions"
-                          method="post"
-                          action="/loot/member-payouts/recipient-settle-all?guild_id={{ auth.selected_guild_id }}"
-                          data-recipient-settle-all-form
-                          {% if recipient.unpaid_count == 0 %}hidden{% endif %}
-                        >
-                          <input type="hidden" name="alliance_id" value="{{ my_alliance_payouts.selected_alliance.alliance_id }}">
-                          <input type="hidden" name="user_id" value="{{ recipient.user_id }}">
-                          <input type="hidden" name="distribution_ids" value="{{ recipient.unpaid_distribution_ids_text }}" data-recipient-distribution-ids>
-                          <button class="tiny-button" type="submit" data-recipient-settle-button>전체완료</button>
-                        </form>
-                      </td>
+                      <form
+                        class="inline-actions"
+                        method="post"
+                        action="/loot/member-payouts/recipient-settle-all?guild_id={{ auth.selected_guild_id }}"
+                        data-recipient-settle-all-form
+                        {% if recipient.unpaid_count == 0 %}hidden{% endif %}
+                      >
+                        <input type="hidden" name="alliance_id" value="{{ my_alliance_payouts.selected_alliance.alliance_id }}">
+                        <input type="hidden" name="user_id" value="{{ recipient.user_id }}">
+                        <input type="hidden" name="distribution_ids" value="{{ recipient.unpaid_distribution_ids_text }}" data-recipient-distribution-ids>
+                        <button class="tiny-button" type="submit" data-recipient-settle-button>전체완료</button>
+                      </form>
                     {% endif %}
-                  </tr>
-                  <tr
-                    class="recipient-detail-row"
-                    data-recipient-detail-row
-                    data-recipient-owner="{{ recipient.user_id }}"
-                  >
-                    <td colspan="{% if auth.selected_server.can_manage %}6{% else %}5{% endif %}">
-                      <div class="recipient-detail-list">
-                        {% for item in recipient["items"] %}
-                          <span
-                            class="recipient-detail-pill {{ 'is-paid' if item.status == 'paid' else 'is-unpaid' }}"
-                            data-recipient-detail-item
-                            data-user-id="{{ recipient.user_id }}"
-                            data-distribution-id="{{ item.distribution_id }}"
-                            data-recipient-detail-status="{{ item.status }}"
-                          >
-                            #{{ item.loot_event_id }} {{ item.item_name }} · {{ item.amount_text }} · {{ item.status_label }}
+                  </div>
+                </summary>
+                <div class="loot-event-body recipient-payout-body">
+                  <div class="recipient-detail-list">
+                    {% for item in recipient["items"] %}
+                      <article
+                        class="recipient-detail-card {{ item.status_class }}"
+                        data-recipient-detail-item
+                        data-user-id="{{ recipient.user_id }}"
+                        data-distribution-id="{{ item.distribution_id }}"
+                        data-recipient-detail-status="{{ item.status }}"
+                      >
+                        <div>
+                          <strong>#{{ item.loot_event_id }} {{ item.item_name }}</strong>
+                          <span class="panel-caption">{{ item.attendance_started_at }}</span>
+                        </div>
+                        <div>
+                          <span>분배 아데나</span>
+                          <strong>{{ item.amount_text }}</strong>
+                        </div>
+                        <div>
+                          <span class="payout-status-badge {{ item.status_class }}" data-recipient-detail-badge>
+                            {{ item.status_label }}
                           </span>
-                        {% endfor %}
-                      </div>
-                    </td>
-                  </tr>
-                {% else %}
-                  <tr><td colspan="{% if auth.selected_server.can_manage %}6{% else %}5{% endif %}" class="empty">인원별 분배 대상자가 없습니다.</td></tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
+                        </div>
+                        {% if auth.selected_server.can_manage %}
+                          <form
+                            class="inline-actions"
+                            method="post"
+                            action="/loot/member-payouts/recipient-status?guild_id={{ auth.selected_guild_id }}"
+                            data-recipient-detail-form
+                          >
+                            <input type="hidden" name="alliance_id" value="{{ my_alliance_payouts.selected_alliance.alliance_id }}">
+                            <input type="hidden" name="distribution_id" value="{{ item.distribution_id }}">
+                            <input type="hidden" name="user_id" value="{{ recipient.user_id }}">
+                            <input type="hidden" name="payout_status" value="{{ item.next_status }}" data-recipient-detail-status-input>
+                            <button class="tiny-button" type="submit" data-recipient-detail-button>{{ item.next_status_label }}</button>
+                          </form>
+                        {% endif %}
+                      </article>
+                    {% endfor %}
+                  </div>
+                </div>
+              </details>
+            {% else %}
+              <article class="panel">
+                <div class="empty report-empty">인원별 분배 대상자가 없습니다.</div>
+              </article>
+            {% endfor %}
+          </section>
         </section>
       {% else %}
         <article class="panel">
@@ -1269,21 +1284,17 @@
       const searchInput = document.querySelector("[data-recipient-payout-search]");
       const filterSelect = document.querySelector("[data-recipient-payout-filter]");
       const sortSelect = document.querySelector("[data-recipient-payout-sort]");
-      const table = document.querySelector("[data-recipient-payout-table]");
-      if (!table) {
+      const list = document.querySelector("[data-recipient-payout-list]");
+      if (!list) {
         return;
       }
       const query = (searchInput?.value || "").trim().toLowerCase();
       const filter = filterSelect?.value || "all";
-      const rows = Array.from(table.querySelectorAll("[data-recipient-payout-row]"));
+      const rows = Array.from(list.querySelectorAll("[data-recipient-payout-row]"));
       rows.forEach((row) => {
         const matchesSearch = !query || (row.dataset.searchText || "").includes(query);
         const matchesFilter = filter === "all" || row.dataset.status === filter;
-        const detail = table.querySelector(`[data-recipient-owner="${row.dataset.userId}"]`);
         row.hidden = !(matchesSearch && matchesFilter);
-        if (detail) {
-          detail.hidden = row.hidden;
-        }
       });
 
       const sort = sortSelect?.value || "unpaid_desc";
@@ -1300,11 +1311,7 @@
         return recipientNumber(b, "unpaidAmount") - recipientNumber(a, "unpaidAmount");
       });
       rows.forEach((row) => {
-        const detail = table.querySelector(`[data-recipient-owner="${row.dataset.userId}"]`);
-        table.appendChild(row);
-        if (detail) {
-          table.appendChild(detail);
-        }
+        list.appendChild(row);
       });
     }
 
@@ -1326,11 +1333,7 @@
       }
       document
         .querySelectorAll(`[data-recipient-detail-item][data-user-id="${row.dataset.userId}"]`)
-        .forEach((pill) => {
-          pill.classList.add("is-paid");
-          pill.classList.remove("is-unpaid");
-          pill.textContent = pill.textContent.replace("미완료", "지급 완료");
-        });
+        .forEach((item) => setRecipientDetailPill(row.dataset.userId, item.dataset.distributionId, "paid"));
     }
 
     function setRecipientDetailPill(userId, distributionId, status) {
@@ -1339,14 +1342,24 @@
         .querySelectorAll(
           `[data-recipient-detail-item][data-user-id="${userId}"][data-distribution-id="${distributionId}"]`,
         )
-        .forEach((pill) => {
-          pill.dataset.recipientDetailStatus = normalized;
-          pill.classList.toggle("is-paid", normalized === "paid");
-          pill.classList.toggle("is-unpaid", normalized !== "paid");
-          pill.textContent = pill.textContent.replace(
-            normalized === "paid" ? "미완료" : "지급 완료",
-            memberStatusText(normalized),
-          );
+        .forEach((item) => {
+          item.dataset.recipientDetailStatus = normalized;
+          item.classList.toggle("is-paid", normalized === "paid");
+          item.classList.toggle("is-unpaid", normalized !== "paid");
+          const badge = item.querySelector("[data-recipient-detail-badge]");
+          const input = item.querySelector("[data-recipient-detail-status-input]");
+          const button = item.querySelector("[data-recipient-detail-button]");
+          if (badge) {
+            badge.textContent = memberStatusText(normalized);
+            badge.classList.toggle("is-paid", normalized === "paid");
+            badge.classList.toggle("is-unpaid", normalized !== "paid");
+          }
+          if (input) {
+            input.value = normalized === "paid" ? "unpaid" : "paid";
+          }
+          if (button) {
+            button.textContent = memberNextStatusText(normalized);
+          }
         });
     }
 
@@ -1513,6 +1526,49 @@
           button.disabled = false;
         }
       });
+    });
+
+    document.querySelectorAll("[data-recipient-detail-form]").forEach((form) => {
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const detailItem = form.closest("[data-recipient-detail-item]");
+        const button = form.querySelector("[data-recipient-detail-button]");
+        const statusInput = form.querySelector("[data-recipient-detail-status-input]");
+        if (!detailItem || !button || button.disabled || !statusInput) {
+          return;
+        }
+        const nextStatus = statusInput.value === "paid" ? "paid" : "unpaid";
+        const originalText = button.textContent;
+        button.disabled = true;
+        button.textContent = "처리중";
+        try {
+          await submitJsonForm(form);
+          const userId = detailItem.dataset.userId;
+          const distributionId = detailItem.dataset.distributionId;
+          setRecipientDetailPill(userId, distributionId, nextStatus);
+          const memberRow = document.querySelector(
+            `[data-member-payout-row][data-member-user-id="${userId}"][data-member-distribution-id="${distributionId}"]`,
+          );
+          if (memberRow) {
+            setMemberPayoutRow(memberRow, nextStatus);
+            const card = memberRow.closest("[data-member-payout-card]");
+            if (card) {
+              updateMemberPayoutCard(card);
+            }
+            updateRecipientSummaryFromMemberRow(memberRow);
+            applyRecipientPayoutFilters();
+          }
+        } catch (error) {
+          alert(error.message);
+          button.textContent = originalText;
+        } finally {
+          button.disabled = false;
+        }
+      });
+    });
+
+    document.querySelectorAll("[data-recipient-payout-actions]").forEach((element) => {
+      element.addEventListener("click", (event) => event.stopPropagation());
     });
 
     document.querySelectorAll("[data-member-payout-filter]").forEach((button) => {
