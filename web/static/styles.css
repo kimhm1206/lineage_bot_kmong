@@ -1264,10 +1264,12 @@ button:disabled {
 }
 
 .status-modal-card {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
   width: min(720px, 100%);
+  height: min(760px, calc(100vh - 40px));
   height: min(760px, calc(100dvh - 40px));
+  max-height: calc(100vh - 40px);
   max-height: calc(100dvh - 40px);
   padding: 0;
   gap: 0;
@@ -1313,7 +1315,6 @@ button:disabled {
 
 .status-modal-list {
   display: grid;
-  flex: 1 1 auto;
   align-content: start;
   gap: 8px;
   min-height: 0;
