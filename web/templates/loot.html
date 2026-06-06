@@ -83,13 +83,13 @@
   <section class="loot-tab-panel" data-loot-panel="distribution">
     <section class="loot-overview-grid loot-distribution-overview-grid">
       <article class="panel loot-total-card">
-        <span>기간 설정</span>
-        <strong>{{ loot_period.label }}</strong>
-        <small>
-          <a class="loot-period-change" href="#loot-period-filter">[변경]</a>
-          참여 {{ loot_summary.participated_count }}건 · 총
-          <span data-money-value data-adena-text="{{ loot_summary.total_amount_text }}" data-cash-text="{{ loot_summary.total_cash_text }}">{{ loot_summary.total_amount_text }}</span>
-        </small>
+        <span>기간 내 총 분배금</span>
+        <strong data-money-value data-adena-text="{{ loot_summary.total_amount_text }}" data-cash-text="{{ loot_summary.total_cash_text }}">{{ loot_summary.total_amount_text }}</strong>
+        <div class="loot-total-card-subline">
+          <span>{{ loot_period.label }}</span>
+          <button class="loot-period-change" type="button" data-loot-period-modal-open>변경</button>
+          <span>총 {{ loot_summary.event_count }}건</span>
+        </div>
       </article>
       <article class="panel loot-total-card is-muted">
         <span>닉네임</span>
@@ -102,14 +102,6 @@
         <small>미수령 {{ loot_summary.unpaid_count }}건</small>
       </article>
       <article class="panel loot-filter-card loot-distribution-filter-card">
-        <span class="loot-filter-label" id="loot-period-filter">기간</span>
-        <div class="quick-filter-row">
-          {% for filter in loot_period.filters %}
-            <a class="quick-filter {% if filter.active %}is-active{% endif %}" href="{{ filter.href }}">
-              {{ filter.label }}
-            </a>
-          {% endfor %}
-        </div>
         <span class="loot-filter-label">참여</span>
         <div class="quick-filter-row">
           {% for filter in loot_period.participation_filters %}
@@ -128,6 +120,25 @@
         </div>
       </article>
     </section>
+
+    <div class="modal-backdrop" data-loot-period-modal hidden>
+      <div class="modal-card loot-period-modal-card" role="dialog" aria-modal="true" aria-labelledby="loot-period-modal-title">
+        <header class="panel-header">
+          <div>
+            <h2 id="loot-period-modal-title">기간 설정</h2>
+            <span class="panel-caption">분배금 현황에 표시할 기간을 선택합니다</span>
+          </div>
+          <button class="icon-button" type="button" aria-label="닫기" data-loot-period-modal-close>&times;</button>
+        </header>
+        <div class="loot-period-modal-options">
+          {% for filter in loot_period.filters %}
+            <a class="quick-filter {% if filter.active %}is-active{% endif %}" href="{{ filter.href }}">
+              {{ filter.label }}
+            </a>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
 
     <section class="loot-event-list" aria-label="분배금 현황">
       {% for event in distribution_events %}
@@ -1756,6 +1767,18 @@
     const feeRuleModal = document.querySelector("[data-fee-rule-modal]");
     const openFeeRuleModalButton = document.querySelector("[data-fee-rule-modal-open]");
     const closeFeeRuleModalButton = document.querySelector("[data-fee-rule-modal-close]");
+    const lootPeriodModal = document.querySelector("[data-loot-period-modal]");
+    const openLootPeriodModalButton = document.querySelector("[data-loot-period-modal-open]");
+    const closeLootPeriodModalButton = document.querySelector("[data-loot-period-modal-close]");
+    function setLootPeriodModalOpen(isOpen) {
+      if (!lootPeriodModal) {
+        return;
+      }
+      lootPeriodModal.hidden = !isOpen;
+      if (isOpen) {
+        lootPeriodModal.querySelector("a")?.focus();
+      }
+    }
     function setFeeRuleModalOpen(isOpen) {
       if (!feeRuleModal) {
         return;
@@ -1765,6 +1788,13 @@
         feeRuleModal.querySelector("input[name='rule_name']")?.focus();
       }
     }
+    openLootPeriodModalButton?.addEventListener("click", () => setLootPeriodModalOpen(true));
+    closeLootPeriodModalButton?.addEventListener("click", () => setLootPeriodModalOpen(false));
+    lootPeriodModal?.addEventListener("click", (event) => {
+      if (event.target === lootPeriodModal) {
+        setLootPeriodModalOpen(false);
+      }
+    });
     openFeeRuleModalButton?.addEventListener("click", () => setFeeRuleModalOpen(true));
     closeFeeRuleModalButton?.addEventListener("click", () => setFeeRuleModalOpen(false));
     feeRuleModal?.addEventListener("click", (event) => {
@@ -1773,6 +1803,9 @@
       }
     });
     window.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && lootPeriodModal && !lootPeriodModal.hidden) {
+        setLootPeriodModalOpen(false);
+      }
       if (event.key === "Escape" && feeRuleModal && !feeRuleModal.hidden) {
         setFeeRuleModalOpen(false);
       }

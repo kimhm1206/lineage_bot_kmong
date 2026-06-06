@@ -2227,9 +2227,41 @@ button:disabled {
   font-weight: 800;
 }
 
+.loot-total-card-subline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .loot-period-change {
+  appearance: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
   color: var(--accent-strong);
+  cursor: pointer;
+  font: inherit;
   font-weight: 900;
+}
+
+.loot-period-modal-card {
+  width: min(420px, 100%);
+}
+
+.loot-period-modal-options {
+  display: grid;
+  gap: 10px;
+}
+
+.loot-period-modal-options .quick-filter {
+  justify-content: center;
+  min-height: 44px;
+  font-size: 14px;
 }
 
 .loot-total-card.is-muted strong {
