@@ -258,11 +258,33 @@
             <section class="bid-detail-panel-inner" data-bid-detail data-bid-item-id="{{ item.bid_item_id }}">
               <header class="bid-detail-header">
                 <div>
-                  <span>{{ item.cycle_no }}회차</span>
-                  <h2>{{ item.item_name }}</h2>
+                  <span data-bid-cycle-text>{{ item.cycle_no }}회차</span>
+                  <div class="bid-detail-title-row">
+                    <h2>{{ item.item_name }}</h2>
+                    <button class="secondary-button bid-history-toggle" type="button" data-bid-history-toggle aria-expanded="false">
+                      과거 기록
+                    </button>
+                  </div>
                 </div>
                 <strong data-bid-progress-text>{{ item.progress_text }}</strong>
               </header>
+              <section class="bid-cycle-history-panel" data-bid-cycle-history-panel hidden>
+                {% for cycle in item.cycle_history %}
+                  <article class="bid-cycle-history-card">
+                    <header>{{ cycle.cycle_no }}회차</header>
+                    <div>
+                      {% for record in cycle.records %}
+                        <span>
+                          <strong>{{ record.alliance_name }}</strong>
+                          <small>{{ record.selected_at }}</small>
+                        </span>
+                      {% endfor %}
+                    </div>
+                  </article>
+                {% else %}
+                  <div class="empty">이전 회차 기록이 없습니다.</div>
+                {% endfor %}
+              </section>
               <div class="bid-status-grid">
                 {% for alliance in item.alliance_statuses %}
                   <article class="bid-status-card {% if alliance.is_completed %}is-complete{% endif %}" data-bid-status-row data-bid-alliance-id="{{ alliance.alliance_id }}">
@@ -2046,6 +2068,59 @@
       openBidItemId = itemId;
     }
 
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    function renderBidStatusHistory(history, currentCycle) {
+      if (!history || !history.length) {
+        return '<span class="is-empty">과거 기록 없음</span>';
+      }
+      return history.slice(0, 5).map((record) => {
+        const isCurrent = Number(record.cycle_no || 1) === Number(currentCycle || 1);
+        return `<span data-bid-history-row${isCurrent ? ' data-current-cycle="1"' : ''}>${escapeHtml(record.cycle_no || 1)}회차 · ${escapeHtml(record.selected_at || "")}</span>`;
+      }).join("");
+    }
+
+    function renderBidCycleHistory(cycles) {
+      if (!cycles || !cycles.length) {
+        return '<div class="empty">이전 회차 기록이 없습니다.</div>';
+      }
+      return cycles.map((cycle) => {
+        const records = (cycle.records || []).map((record) => {
+          return `<span><strong>${escapeHtml(record.alliance_name || "")}</strong><small>${escapeHtml(record.selected_at || "")}</small></span>`;
+        }).join("");
+        return `<article class="bid-cycle-history-card"><header>${escapeHtml(cycle.cycle_no || 1)}회차</header><div>${records}</div></article>`;
+      }).join("");
+    }
+
+    function updateBidStatusRow(row, status, currentCycle) {
+      row.classList.toggle("is-complete", Boolean(status.is_completed));
+      const label = row.querySelector("[data-bid-status-label]");
+      if (label) {
+        label.textContent = status.status_label || "";
+        label.classList.toggle("success", Boolean(status.is_completed));
+        label.classList.toggle("muted", !status.is_completed);
+      }
+      const nextValue = row.querySelector("[data-bid-next-value]");
+      const action = row.querySelector("[data-bid-status-action]");
+      if (nextValue) {
+        nextValue.value = status.next_is_completed ? "1" : "0";
+      }
+      if (action) {
+        action.textContent = status.next_label || "";
+      }
+      const history = row.querySelector(".bid-status-history");
+      if (history) {
+        history.innerHTML = renderBidStatusHistory(status.history || [], currentCycle);
+      }
+    }
+
     function syncBidStatusResult(result) {
       const item = result.item || {};
       document.querySelectorAll(`[data-bid-item-id="${result.bid_item_id}"] [data-bid-progress-text]`).forEach((element) => {
@@ -2053,44 +2128,30 @@
       });
       const detail = bidDetailPanel.querySelector(`[data-bid-detail][data-bid-item-id="${result.bid_item_id}"]`);
       if (detail) {
+        const cycleText = detail.querySelector("[data-bid-cycle-text]");
+        if (cycleText) {
+          cycleText.textContent = `${item.cycle_no || result.cycle_no || 1}회차`;
+        }
         detail.querySelectorAll("[data-bid-progress-text]").forEach((element) => {
           element.textContent = item.progress_text || "";
         });
-        const row = detail.querySelector(`[data-bid-status-row][data-bid-alliance-id="${result.alliance_id}"]`);
-        if (row) {
-          row.classList.toggle("is-complete", Boolean(result.is_completed));
-          const label = row.querySelector("[data-bid-status-label]");
-          if (label) {
-            label.textContent = result.status_label || "";
-            label.classList.toggle("success", Boolean(result.is_completed));
-            label.classList.toggle("muted", !result.is_completed);
-          }
-          const nextValue = row.querySelector("[data-bid-next-value]");
-          const action = row.querySelector("[data-bid-status-action]");
-          if (nextValue) {
-            nextValue.value = result.next_is_completed ? "1" : "0";
-          }
-          if (action) {
-            action.textContent = result.next_label || "";
-          }
-          const history = row.querySelector(".bid-status-history");
-          if (history) {
-            history.querySelectorAll("[data-current-cycle]").forEach((element) => element.remove());
-            if (result.is_completed) {
-              history.querySelector(".is-empty")?.remove();
-              const entry = document.createElement("span");
-              entry.dataset.bidHistoryRow = "";
-              entry.dataset.currentCycle = "1";
-              entry.textContent = `${result.cycle_no || 1}회차 · ${result.selected_at || ""}`;
-              history.prepend(entry);
+        const statuses = item.alliance_statuses || [];
+        if (statuses.length) {
+          statuses.forEach((status) => {
+            const row = detail.querySelector(`[data-bid-status-row][data-bid-alliance-id="${status.alliance_id}"]`);
+            if (row) {
+              updateBidStatusRow(row, status, item.cycle_no || result.cycle_no);
             }
-            if (!history.querySelector("[data-bid-history-row]")) {
-              const empty = document.createElement("span");
-              empty.className = "is-empty";
-              empty.textContent = "과거 기록 없음";
-              history.append(empty);
-            }
+          });
+        } else {
+          const row = detail.querySelector(`[data-bid-status-row][data-bid-alliance-id="${result.alliance_id}"]`);
+          if (row) {
+            updateBidStatusRow(row, result, item.cycle_no || result.cycle_no);
           }
+        }
+        const cycleHistory = detail.querySelector("[data-bid-cycle-history-panel]");
+        if (cycleHistory) {
+          cycleHistory.innerHTML = renderBidCycleHistory(item.cycle_history || []);
         }
       }
       const source = document.querySelector(`[data-bid-item-card][data-bid-item-id="${result.bid_item_id}"] [data-bid-detail-source]`);
@@ -2103,6 +2164,16 @@
       const toggle = event.target.closest("[data-bid-card-toggle]");
       if (toggle) {
         openBidDetailPanel(toggle.closest("[data-bid-item-card]"));
+      }
+      const historyToggle = event.target.closest("[data-bid-history-toggle]");
+      if (historyToggle) {
+        const panel = bidDetailPanel.querySelector("[data-bid-cycle-history-panel]");
+        if (!panel) {
+          return;
+        }
+        const isOpen = panel.hidden;
+        panel.hidden = !isOpen;
+        historyToggle.setAttribute("aria-expanded", String(isOpen));
       }
     });
 

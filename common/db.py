@@ -2486,6 +2486,7 @@ def _bid_candidate_alliances(cursor: psycopg2.extensions.cursor, guild_id: int) 
         {
             "alliance_id": int(row["alliance_id"]),
             "alliance_name": str(row["alliance_name"]),
+            "sort_order": int(row["sort_order"] or 0),
         }
         for row in cursor.fetchall()
     ]
@@ -2564,6 +2565,11 @@ def _bid_item_state(
         and int(row["alliance_id"]) in candidate_by_id
     ]
     completed_ids = {int(row["alliance_id"]) for row in completed_rows}
+    has_completed_cycle = bool(candidate_ids) and len(completed_ids) >= len(candidate_ids)
+    if has_completed_cycle:
+        current_cycle += 1
+        completed_rows = []
+        completed_ids = set()
     remaining = [
         alliance
         for alliance in candidates
@@ -2579,6 +2585,39 @@ def _bid_item_state(
         alliance_id = int(row["alliance_id"])
         if alliance_id in history_by_alliance:
             history_by_alliance[alliance_id].append(row)
+    history_by_cycle: dict[int, list[dict[str, Any]]] = {}
+    for row in results:
+        alliance_id = int(row["alliance_id"])
+        if alliance_id not in candidate_by_id:
+            continue
+        history_by_cycle.setdefault(int(row["cycle_no"] or 1), []).append(row)
+    cycle_history = []
+    for cycle_no in sorted(history_by_cycle, reverse=True):
+        rows = sorted(
+            history_by_cycle[cycle_no],
+            key=lambda row: (
+                int(candidate_by_id[int(row["alliance_id"])].get("sort_order", 0))
+                if "sort_order" in candidate_by_id[int(row["alliance_id"])]
+                else 0,
+                str(row["alliance_name"]),
+            ),
+        )
+        cycle_history.append(
+            {
+                "cycle_no": cycle_no,
+                "records": [
+                    {
+                        "result_id": int(row["result_id"]),
+                        "alliance_id": int(row["alliance_id"]),
+                        "alliance_name": str(row["alliance_name"]),
+                        "selected_at": str(row["selected_at"] or ""),
+                        "selected_by_discord_id": _optional_int(row["selected_by_discord_id"]),
+                        "memo": row.get("memo") or "",
+                    }
+                    for row in rows
+                ],
+            }
+        )
     alliance_statuses = []
     for alliance in candidates:
         alliance_id = int(alliance["alliance_id"])
@@ -2592,13 +2631,13 @@ def _bid_item_state(
                 "status_label": "완료" if is_completed else "대기",
                 "next_is_completed": not is_completed,
                 "next_label": "해제" if is_completed else "완료 처리",
-                "selected_at": (current_row or {}).get("selected_at") or "",
+                "selected_at": str((current_row or {}).get("selected_at") or ""),
                 "cycle_no": current_cycle,
                 "history": [
                     {
                         "result_id": int(history["result_id"]),
                         "cycle_no": int(history["cycle_no"] or 1),
-                        "selected_at": history["selected_at"] or "",
+                        "selected_at": str(history["selected_at"] or ""),
                         "selected_by_discord_id": _optional_int(history["selected_by_discord_id"]),
                         "memo": history.get("memo") or "",
                     }
@@ -2609,6 +2648,7 @@ def _bid_item_state(
     return {
         **item,
         "cycle_no": current_cycle,
+        "has_completed_cycle": has_completed_cycle,
         "candidate_count": len(candidate_ids),
         "completed_count": len(completed_ids),
         "remaining_count": len(remaining),
@@ -2617,7 +2657,7 @@ def _bid_item_state(
             {
                 "alliance_id": int(row["alliance_id"]),
                 "alliance_name": str(row["alliance_name"]),
-                "selected_at": row["selected_at"] or "",
+                "selected_at": str(row["selected_at"] or ""),
             }
             for row in completed_rows
         ],
@@ -2628,12 +2668,13 @@ def _bid_item_state(
                 "alliance_id": int(row["alliance_id"]),
                 "alliance_name": str(row["alliance_name"]),
                 "cycle_no": int(row["cycle_no"] or 1),
-                "selected_at": row["selected_at"] or "",
+                "selected_at": str(row["selected_at"] or ""),
                 "selected_by_discord_id": _optional_int(row["selected_by_discord_id"]),
             }
             for row in results[:8]
         ],
         "alliance_statuses": alliance_statuses,
+        "cycle_history": cycle_history,
     }
 
 
@@ -2778,16 +2819,19 @@ def set_bid_item_alliance_status(
         "alliance_name": str(candidate_by_id[alliance_id]["alliance_name"]),
         "cycle_no": int(state["cycle_no"]),
         "selected_at": selected_at,
-        "is_completed": bool(is_completed),
+        "is_completed": bool((alliance_state or {}).get("is_completed", is_completed)),
         "status_label": (alliance_state or {}).get("status_label") or ("완료" if is_completed else "대기"),
         "next_is_completed": (alliance_state or {}).get("next_is_completed", not is_completed),
         "next_label": (alliance_state or {}).get("next_label") or ("해제" if is_completed else "완료 처리"),
         "item": {
             "bid_item_id": bid_item_id,
+            "cycle_no": state["cycle_no"],
             "progress_text": state["progress_text"],
             "completed_count": state["completed_count"],
             "candidate_count": state["candidate_count"],
             "remaining_count": state["remaining_count"],
+            "alliance_statuses": state["alliance_statuses"],
+            "cycle_history": state["cycle_history"],
         },
     }
 
