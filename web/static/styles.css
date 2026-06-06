@@ -2173,6 +2173,13 @@ button:disabled {
   grid-template-columns: minmax(240px, 1fr) minmax(220px, 0.75fr) minmax(240px, 0.9fr) minmax(360px, 1.35fr);
 }
 
+.loot-distribution-overview-grid .loot-total-card,
+.loot-distribution-overview-grid .loot-filter-card {
+  gap: 6px;
+  min-height: 82px;
+  padding: 12px 14px;
+}
+
 .my-alliance-overview-grid {
   grid-template-columns: minmax(180px, 0.6fr) minmax(260px, 0.85fr) minmax(320px, 1.25fr);
 }
@@ -2195,9 +2202,8 @@ button:disabled {
 
 .loot-distribution-filter-card {
   grid-template-columns: auto minmax(0, 1fr);
-  gap: 8px 10px;
+  gap: 6px 10px;
   min-height: 0;
-  padding: 14px;
 }
 
 .loot-distribution-filter-card .loot-filter-label {
@@ -2211,14 +2217,18 @@ button:disabled {
 }
 
 .loot-distribution-filter-card .quick-filter {
-  min-height: 30px;
-  padding: 0 10px;
+  min-height: 28px;
+  padding: 0 9px;
 }
 
 .loot-total-card strong {
   color: var(--accent-strong);
   font-size: 30px;
   line-height: 1;
+}
+
+.loot-distribution-overview-grid .loot-total-card strong {
+  font-size: 26px;
 }
 
 .loot-total-card small {
