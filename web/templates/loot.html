@@ -256,6 +256,10 @@
         <button class="quick-filter is-active" type="button" data-bid-view-tab="cards">카드로 보기</button>
         <button class="quick-filter" type="button" data-bid-view-tab="table">테이블로 보기</button>
       </div>
+      <label class="bid-search-field">
+        <span>검색</span>
+        <input type="search" placeholder="아이템 이름 검색" data-bid-search>
+      </label>
       <span>정렬은 유료 아이템 다음 무료나눔 아이템 순서로 고정됩니다.</span>
       {% if auth.selected_server.can_bookkeep %}
         <button class="secondary-button bid-item-admin-open" type="button" data-bid-item-modal-open>
@@ -306,11 +310,11 @@
 
     <section class="bid-item-grid" data-bid-view-panel="cards">
       {% for item in bid_dashboard["items"] %}
-        <article class="panel bid-item-card {% if item.is_free %}is-free{% endif %}" data-bid-item-card data-bid-item-id="{{ item.bid_item_id }}">
+        <article class="panel bid-item-card {% if item.is_free %}is-free{% endif %}" data-bid-item-card data-bid-item-id="{{ item.bid_item_id }}" data-bid-item-name="{{ item.item_name|lower }}">
           <button class="bid-card-button" type="button" data-bid-card-toggle aria-expanded="false">
-            <span class="bid-card-cycle">{{ item.cycle_no }}회차</span>
             <strong class="bid-card-name">{{ item.item_name }}</strong>
             <span class="bid-card-progress" data-bid-progress-text>{{ item.progress_text }}</span>
+            <span class="bid-card-cycle">{{ item.cycle_no }}회차</span>
           </button>
           <div data-bid-detail-source hidden>
             <section class="bid-detail-panel-inner" data-bid-detail data-bid-item-id="{{ item.bid_item_id }}">
@@ -354,12 +358,10 @@
                       <span class="status-pill {% if alliance.is_completed %}success{% else %}muted{% endif %}" data-bid-status-label>{{ alliance.status_label }}</span>
                     </header>
                     <div class="bid-status-history">
-                      {% for history in alliance.history[:5] %}
-                        <span data-bid-history-row {% if history.cycle_no == alliance.cycle_no %}data-current-cycle="1"{% endif %}>
-                          {{ history.cycle_no }}회차 · {{ history.selected_at }}
-                        </span>
-                      {% else %}
-                        <span class="is-empty">과거 기록 없음</span>
+                      {% for history in alliance.history if history.cycle_no == alliance.cycle_no %}
+                        {% if loop.first %}
+                          <span data-bid-history-row data-current-cycle="1">{{ history.selected_at }}</span>
+                        {% endif %}
                       {% endfor %}
                     </div>
                     {% if auth.selected_server.can_bookkeep %}
@@ -390,7 +392,7 @@
             <tr>
               <th>혈맹</th>
               {% for item in bid_dashboard["items"] %}
-                <th class="{% if item.is_free %}is-free{% endif %}" data-bid-table-progress="{{ item.bid_item_id }}">
+                <th class="{% if item.is_free %}is-free{% endif %}" data-bid-table-header data-bid-item-id="{{ item.bid_item_id }}" data-bid-item-name="{{ item.item_name|lower }}" data-bid-table-progress="{{ item.bid_item_id }}">
                   <strong>{{ item.item_name }}</strong>
                   <small>{{ item.progress_text }}</small>
                 </th>
@@ -402,7 +404,7 @@
               <tr>
                 <th>{{ row.alliance_name }}</th>
                 {% for cell in row.cells %}
-                  <td class="{% if cell.is_free %}is-free{% endif %}">
+                  <td class="{% if cell.is_free %}is-free{% endif %}" data-bid-table-column data-bid-item-id="{{ cell.bid_item_id }}" data-bid-item-name="{{ cell.item_name|lower }}">
                     <form method="post" action="/loot/bids/status?guild_id={{ auth.selected_guild_id }}" data-bid-status-form>
                       <input type="hidden" name="bid_item_id" value="{{ cell.bid_item_id }}">
                       <input type="hidden" name="alliance_id" value="{{ row.alliance_id }}">
@@ -2118,6 +2120,7 @@
     const bidItemGrid = document.querySelector(".bid-item-grid");
     const bidViewTabs = Array.from(document.querySelectorAll("[data-bid-view-tab]"));
     const bidViewPanels = Array.from(document.querySelectorAll("[data-bid-view-panel]"));
+    const bidSearchInput = document.querySelector("[data-bid-search]");
     const bidItemModal = document.querySelector("[data-bid-item-modal]");
     const openBidItemModalButton = document.querySelector("[data-bid-item-modal-open]");
     const closeBidItemModalButton = document.querySelector("[data-bid-item-modal-close]");
@@ -2147,6 +2150,7 @@
       if (normalized === "table") {
         closeBidDetailPanel();
       }
+      applyBidSearch();
     }
 
     function bidGridColumnCount() {
@@ -2211,13 +2215,10 @@
     }
 
     function renderBidStatusHistory(history, currentCycle) {
-      if (!history || !history.length) {
-        return '<span class="is-empty">과거 기록 없음</span>';
-      }
-      return history.slice(0, 5).map((record) => {
-        const isCurrent = Number(record.cycle_no || 1) === Number(currentCycle || 1);
-        return `<span data-bid-history-row${isCurrent ? ' data-current-cycle="1"' : ''}>${escapeHtml(record.cycle_no || 1)}회차 · ${escapeHtml(record.selected_at || "")}</span>`;
-      }).join("");
+      const current = (history || []).find((record) => {
+        return Number(record.cycle_no || 1) === Number(currentCycle || 1);
+      });
+      return current ? `<span data-bid-history-row data-current-cycle="1">${escapeHtml(current.selected_at || "")}</span>` : "";
     }
 
     function renderBidCycleHistory(cycles) {
@@ -2327,6 +2328,30 @@
       }
     }
 
+    function activeBidViewName() {
+      return bidViewTabs.find((button) => button.classList.contains("is-active"))?.dataset.bidViewTab || "cards";
+    }
+
+    function applyBidSearch() {
+      const query = (bidSearchInput?.value || "").trim().toLowerCase();
+      const activeView = activeBidViewName();
+      document.querySelectorAll("[data-bid-item-card]").forEach((card) => {
+        const matches = !query || (card.dataset.bidItemName || "").includes(query);
+        card.hidden = activeView === "cards" && !matches;
+        if (!matches && card.classList.contains("is-open")) {
+          closeBidDetailPanel();
+        }
+      });
+      document.querySelectorAll("[data-bid-table-header], [data-bid-table-column]").forEach((element) => {
+        const matches = Boolean(query) && (element.dataset.bidItemName || "").includes(query);
+        element.classList.toggle("is-search-match", matches);
+      });
+      if (query && activeView === "table") {
+        const firstMatch = document.querySelector("[data-bid-table-header].is-search-match");
+        firstMatch?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+      }
+    }
+
     bidItemGrid?.addEventListener("click", (event) => {
       const toggle = event.target.closest("[data-bid-card-toggle]");
       if (toggle) {
@@ -2347,6 +2372,7 @@
     bidViewTabs.forEach((button) => {
       button.addEventListener("click", () => activateBidView(button.dataset.bidViewTab));
     });
+    bidSearchInput?.addEventListener("input", applyBidSearch);
     openBidItemModalButton?.addEventListener("click", () => setBidItemModalOpen(true));
     closeBidItemModalButton?.addEventListener("click", () => setBidItemModalOpen(false));
     bidItemModal?.addEventListener("click", (event) => {

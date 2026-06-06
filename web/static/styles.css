@@ -230,99 +230,6 @@ textarea {
   display: none;
 }
 
-.support-side-banner {
-  position: fixed;
-  top: 50%;
-  right: max(16px, calc((100vw - 1180px) / 2 - 96px));
-  z-index: 20;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  width: 78px;
-  min-height: 124px;
-  padding: 12px 10px;
-  background: rgba(255, 255, 255, 0.94);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  box-shadow: 0 12px 30px rgba(23, 32, 42, 0.14);
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 900;
-  line-height: 1.25;
-  text-align: center;
-  transform: translateY(-50%);
-  backdrop-filter: blur(16px) saturate(140%);
-}
-
-.support-side-link {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.support-side-icon {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 999px;
-  background: var(--discord);
-  box-shadow: 0 8px 18px rgba(88, 101, 242, 0.28);
-  color: #ffffff;
-  font-size: 11px;
-  font-weight: 900;
-  letter-spacing: 0;
-  transition:
-    transform 0.16s ease,
-    box-shadow 0.16s ease;
-}
-
-.support-side-icon::before {
-  position: absolute;
-  width: 19px;
-  height: 14px;
-  border: 2px solid #ffffff;
-  border-radius: 9px;
-  content: "";
-}
-
-.support-side-icon::after {
-  position: absolute;
-  right: 8px;
-  bottom: 8px;
-  width: 7px;
-  height: 7px;
-  background: var(--discord);
-  border-right: 2px solid #ffffff;
-  border-bottom: 2px solid #ffffff;
-  content: "";
-  transform: rotate(25deg);
-}
-
-.support-side-icon-eyes {
-  position: relative;
-  z-index: 1;
-  width: 3px;
-  height: 3px;
-  border-radius: 999px;
-  background: #ffffff;
-  box-shadow: 8px 0 0 #ffffff;
-}
-
-.support-side-link:hover .support-side-icon {
-  box-shadow: 0 10px 22px rgba(88, 101, 242, 0.38);
-  transform: translateY(-1px);
-}
-
-.support-side-link:focus-visible .support-side-icon {
-  outline: 3px solid rgba(88, 101, 242, 0.25);
-  outline-offset: 2px;
-}
-
 .account-name {
   max-width: 160px;
   overflow: hidden;
@@ -2327,7 +2234,7 @@ button:disabled {
 
 .bid-view-toolbar {
   display: grid;
-  grid-template-columns: auto minmax(180px, 1fr) auto;
+  grid-template-columns: auto minmax(220px, 0.8fr) minmax(180px, 1fr) auto;
   align-items: center;
   gap: 12px;
   margin-bottom: 14px;
@@ -2344,6 +2251,24 @@ button:disabled {
   color: var(--muted);
   font-size: 12px;
   font-weight: 900;
+}
+
+.bid-search-field {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.bid-search-field span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 1000;
+}
+
+.bid-search-field input {
+  width: 100%;
+  min-height: 38px;
+  padding: 0 12px;
 }
 
 .bid-item-admin-open {
@@ -2432,11 +2357,12 @@ button:disabled {
 .bid-card-button {
   appearance: none;
   display: grid;
-  grid-template-rows: 18px minmax(22px, 1fr) 28px;
-  align-items: stretch;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: minmax(28px, 1fr) 28px;
+  align-items: end;
   width: 100%;
   min-height: 98px;
-  padding: 10px 14px 12px;
+  padding: 14px;
   border: 0;
   background: transparent;
   color: inherit;
@@ -2445,8 +2371,10 @@ button:disabled {
 }
 
 .bid-card-cycle {
-  align-self: start;
-  justify-self: start;
+  grid-column: 2;
+  grid-row: 2;
+  align-self: end;
+  justify-self: end;
   max-width: 100%;
   overflow: hidden;
   color: var(--muted);
@@ -2458,7 +2386,9 @@ button:disabled {
 }
 
 .bid-card-name {
-  align-self: center;
+  grid-column: 1 / -1;
+  grid-row: 1;
+  align-self: start;
   display: block;
   width: 100%;
   min-width: 0;
@@ -2491,6 +2421,8 @@ button:disabled {
 }
 
 .bid-card-progress {
+  grid-column: 1;
+  grid-row: 2;
   align-self: end;
   justify-self: start;
   color: var(--accent-strong);
@@ -2502,6 +2434,10 @@ button:disabled {
 .bid-item-card.is-open {
   border-color: rgba(20, 108, 148, 0.44);
   box-shadow: 0 14px 34px rgba(20, 108, 148, 0.12);
+}
+
+.bid-item-card[hidden] {
+  display: none;
 }
 
 .bid-row-detail-panel {
@@ -2666,8 +2602,7 @@ button:disabled {
 .bid-status-history {
   display: grid;
   gap: 6px;
-  max-height: 94px;
-  overflow: auto;
+  min-height: 0;
 }
 
 .bid-status-history span {
@@ -2738,9 +2673,11 @@ button:disabled {
 .bid-sheet-table tbody th {
   position: sticky;
   left: 0;
-  z-index: 4;
+  z-index: 6;
   min-width: 92px;
   background: var(--panel-2);
+  background-clip: padding-box;
+  box-shadow: 8px 0 14px rgba(23, 32, 42, 0.08);
 }
 
 .bid-sheet-table thead th:first-child {
@@ -2770,6 +2707,12 @@ button:disabled {
   color: var(--text);
   font-size: 13px;
   font-weight: 1000;
+}
+
+.bid-sheet-table th.is-search-match,
+.bid-sheet-table td.is-search-match {
+  background: rgba(20, 108, 148, 0.12);
+  box-shadow: inset 0 0 0 2px rgba(20, 108, 148, 0.24);
 }
 
 .bid-sheet-table td {
@@ -4288,8 +4231,7 @@ button:disabled {
 :root[data-theme="dark"] .stat-card,
 :root[data-theme="dark"] .panel,
 :root[data-theme="dark"] .login-panel,
-:root[data-theme="dark"] .live-card,
-:root[data-theme="dark"] .support-side-banner {
+:root[data-theme="dark"] .live-card {
   border-color: var(--glass-border);
   background: var(--glass-bg);
   box-shadow: var(--shadow);
@@ -4589,20 +4531,6 @@ button:disabled {
   .server-picker,
   .account {
     width: 100%;
-  }
-
-  .support-side-banner {
-    top: auto;
-    right: 10px;
-    bottom: 10px;
-    width: auto;
-    min-height: 0;
-    padding: 8px;
-    transform: none;
-  }
-
-  .support-side-banner > span {
-    display: none;
   }
 
   select {
