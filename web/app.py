@@ -2572,6 +2572,9 @@ def _decorate_loot_events(
             payouts.append(payout_row)
         row["alliance_payouts"] = payouts
         row["has_released_payout"] = bool(released_payout_alliance_ids)
+        row["all_payouts_released"] = bool(payouts) and all(
+            payout.get("payout_status") == "paid" for payout in payouts
+        )
         row["viewer_participated"] = viewer_participated
         row["viewer_release_visible"] = viewer_release_visible
         row["viewer_participation_label"] = "참여" if viewer_participated else "미참여"
@@ -2714,7 +2717,7 @@ def _filter_loot_events_by_viewer(
         if event.get("viewer_release_visible")
         or (
             not event.get("viewer_participated")
-            and event.get("has_released_payout")
+            and event.get("all_payouts_released")
         )
     ]
     if not mine_only:
