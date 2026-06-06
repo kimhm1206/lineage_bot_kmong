@@ -831,11 +831,12 @@ def _local_developer_auth_context(
     selected_server["can_bookkeep"] = True
     selected_server["can_manage_bookkeepers"] = True
     selected_server["member_display_name"] = "Local Developer"
-    selected_server["my_alliance"] = {
-        "can_view": True,
-        "can_select": True,
-        "options": _load_active_alliances(),
-    }
+    selected_server["my_alliance"] = _my_alliance_access(
+        int(selected_guild_id),
+        str(LOCAL_DEVELOPER_USER_ID),
+        "developer",
+        True,
+    )
     selected_server["role_label"] = "developer"
     returned_servers = [
         selected_server if str(server["guild_id"]) == selected_guild_id else server
