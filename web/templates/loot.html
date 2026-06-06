@@ -1261,6 +1261,16 @@
       return payload;
     }
 
+    let lootRefreshTimer = null;
+    function scheduleLootRefresh() {
+      if (lootRefreshTimer) {
+        window.clearTimeout(lootRefreshTimer);
+      }
+      lootRefreshTimer = window.setTimeout(() => {
+        window.location.reload();
+      }, 3000);
+    }
+
     document.querySelectorAll("[data-payout-form], [data-payout-all-form]").forEach((form) => {
       form.addEventListener("submit", async (event) => {
         event.preventDefault();
@@ -1275,8 +1285,7 @@
         try {
           const payload = await submitJsonForm(form);
           updatePayoutCard(card, payload);
-          button.textContent = "갱신중";
-          window.location.reload();
+          scheduleLootRefresh();
         } catch (error) {
           alert(error.message);
         } finally {
