@@ -150,6 +150,7 @@ REPORT_OPTIONS = {
 DEVELOPER_VIEW_MODE_SESSION_KEY = "developer_view_mode"
 DEVELOPER_VIEW_MODE_OPTIONS = (
     {"value": "developer", "label": "디벨로퍼"},
+    {"value": "owner", "label": "오너"},
     {"value": "admin", "label": "어드민 유저"},
     {"value": "bookkeeper", "label": "경리 유저"},
     {"value": "user", "label": "일반 유저"},
@@ -579,6 +580,8 @@ def _member_alliance_options(
 def _role_display_label(server_role: str, alliance_options: list[dict[str, Any]]) -> str:
     if server_role == "developer":
         return "developer"
+    if server_role == "owner":
+        return "owner"
 
     alliance_name = (
         str(alliance_options[0]["alliance_name"]) if alliance_options else ""
@@ -618,25 +621,36 @@ def _apply_developer_view_mode(
     if normalized == "developer":
         return
 
-    role = "admin" if normalized in {"admin", "bookkeeper"} else "user"
+    role = (
+        "owner"
+        if normalized == "owner"
+        else "admin"
+        if normalized in {"admin", "bookkeeper"}
+        else "user"
+    )
+    is_owner_view = normalized == "owner"
     is_bookkeeper_view = normalized == "bookkeeper"
     selected_server["role"] = role
-    selected_server["is_owner"] = False
+    selected_server["is_owner"] = is_owner_view
     selected_server["is_bookkeeper"] = is_bookkeeper_view
-    selected_server["can_manage"] = role == "admin"
-    selected_server["can_bookkeep"] = is_bookkeeper_view
-    selected_server["can_manage_bookkeepers"] = False
+    selected_server["can_manage"] = role == "admin" or is_owner_view
+    selected_server["can_bookkeep"] = is_bookkeeper_view or is_owner_view
+    selected_server["can_manage_bookkeepers"] = is_owner_view
     selected_server["my_alliance"] = _my_alliance_access(
         guild_id,
         discord_user_id,
         role,
-        False,
+        is_owner_view,
     )
-    selected_server["role_label"] = (
-        "경리"
-        if is_bookkeeper_view
-        else _role_display_label(role, selected_server["my_alliance"]["options"])
-    )
+    if is_owner_view:
+        selected_server["role_label"] = "owner"
+    elif is_bookkeeper_view:
+        selected_server["role_label"] = "경리"
+    else:
+        selected_server["role_label"] = _role_display_label(
+            role,
+            selected_server["my_alliance"]["options"],
+        )
 
 
 def _my_alliance_access(

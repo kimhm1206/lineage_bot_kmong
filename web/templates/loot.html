@@ -603,7 +603,9 @@
         </article>
       </section>
     </section>
+  {% endif %}
 
+  {% if auth.selected_server.can_manage %}
     <section class="loot-tab-panel" data-loot-panel="alliance-payouts" hidden>
       <section class="loot-event-list" aria-label="각혈 분배 현황">
         {% for event in loot_events %}
