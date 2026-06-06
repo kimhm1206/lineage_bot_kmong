@@ -2729,11 +2729,13 @@ def _filter_loot_events_by_viewer(
 
 def _normalize_loot_status_filter(status: str | None) -> str:
     normalized = str(status or "").lower()
+    if normalized in {"all", "전체"}:
+        return "all"
     if normalized in {"paid", "received", "done", "수령"}:
         return "paid"
     if normalized in {"unpaid", "pending", "미수령"}:
         return "unpaid"
-    return ""
+    return "unpaid"
 
 
 def _filter_loot_events_by_status(
@@ -3252,6 +3254,11 @@ def _loot_status_filters(
     status: str,
 ) -> list[dict[str, str | bool]]:
     return [
+        {
+            "label": "전체",
+            "href": _loot_url(guild_id, period=active_period, mine=mine_only, status="all"),
+            "active": status == "all",
+        },
         {
             "label": "수령",
             "href": _loot_url(guild_id, period=active_period, mine=mine_only, status="paid"),
