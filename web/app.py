@@ -151,8 +151,8 @@ DEVELOPER_VIEW_MODE_SESSION_KEY = "developer_view_mode"
 DEVELOPER_VIEW_MODE_OPTIONS = (
     {"value": "developer", "label": "디벨로퍼"},
     {"value": "owner", "label": "오너"},
-    {"value": "admin", "label": "어드민 유저"},
     {"value": "bookkeeper", "label": "경리 유저"},
+    {"value": "admin", "label": "어드민 유저"},
     {"value": "user", "label": "일반 유저"},
 )
 DEVELOPER_VIEW_MODE_VALUES = {
@@ -591,13 +591,53 @@ def _role_display_label(server_role: str, alliance_options: list[dict[str, Any]]
     return alliance_name or "user"
 
 
-def _developer_view_mode(session: dict[str, Any] | None) -> str:
-    mode = str((session or {}).get(DEVELOPER_VIEW_MODE_SESSION_KEY) or "developer")
-    return mode if mode in DEVELOPER_VIEW_MODE_VALUES else "developer"
+def _developer_view_options(include_developer: bool) -> tuple[dict[str, str], ...]:
+    if include_developer:
+        return DEVELOPER_VIEW_MODE_OPTIONS
+    return tuple(
+        option
+        for option in DEVELOPER_VIEW_MODE_OPTIONS
+        if str(option["value"]) != "developer"
+    )
 
 
-def _developer_view_payload(mode: str) -> dict[str, Any]:
-    normalized = mode if mode in DEVELOPER_VIEW_MODE_VALUES else "developer"
+def _developer_view_values(include_developer: bool) -> set[str]:
+    return {str(option["value"]) for option in _developer_view_options(include_developer)}
+
+
+def _developer_view_mode(
+    session: dict[str, Any] | None,
+    *,
+    default: str = "developer",
+    include_developer: bool = True,
+) -> str:
+    options = _developer_view_options(include_developer)
+    values = {str(option["value"]) for option in options}
+    fallback = (
+        default
+        if default in values
+        else str(options[0]["value"])
+        if options
+        else "user"
+    )
+    mode = str((session or {}).get(DEVELOPER_VIEW_MODE_SESSION_KEY) or fallback)
+    return mode if mode in values else fallback
+
+
+def _developer_view_payload(
+    mode: str,
+    *,
+    include_developer: bool = True,
+) -> dict[str, Any]:
+    options = _developer_view_options(include_developer)
+    values = {str(option["value"]) for option in options}
+    normalized = (
+        mode
+        if mode in values
+        else str(options[0]["value"])
+        if options
+        else "user"
+    )
     return {
         "active": normalized,
         "options": [
@@ -605,7 +645,7 @@ def _developer_view_payload(mode: str) -> dict[str, Any]:
                 **option,
                 "active": str(option["value"]) == normalized,
             }
-            for option in DEVELOPER_VIEW_MODE_OPTIONS
+            for option in options
         ],
     }
 
@@ -916,7 +956,11 @@ def _local_developer_auth_context(
         True,
     )
     selected_server["role_label"] = "developer"
-    view_mode = _developer_view_mode(session)
+    view_mode = _developer_view_mode(
+        session,
+        default="developer",
+        include_developer=True,
+    )
     _apply_developer_view_mode(
         selected_server,
         guild_id=int(selected_guild_id),
@@ -933,7 +977,10 @@ def _local_developer_auth_context(
         "servers": returned_servers,
         "selected_guild_id": selected_guild_id,
         "selected_server": selected_server,
-        "developer_view": _developer_view_payload(view_mode),
+        "developer_view": _developer_view_payload(
+            view_mode,
+            include_developer=True,
+        ),
         "can_switch_developer_view": True,
     }
 
@@ -1017,8 +1064,18 @@ def _auth_context_from_session(
         effective_role,
         selected_server["my_alliance"]["options"],
     )
-    view_mode = _developer_view_mode(session) if is_global_developer else "developer"
-    if is_global_developer:
+    can_switch_view_mode = is_global_developer or is_owner
+    include_developer_view = is_global_developer
+    view_mode = (
+        _developer_view_mode(
+            session,
+            default="developer" if is_global_developer else "owner",
+            include_developer=include_developer_view,
+        )
+        if can_switch_view_mode
+        else "developer"
+    )
+    if can_switch_view_mode:
         _apply_developer_view_mode(
             selected_server,
             guild_id=int(selected_guild_id),
@@ -1035,8 +1092,11 @@ def _auth_context_from_session(
         "servers": returned_servers,
         "selected_guild_id": selected_guild_id,
         "selected_server": selected_server,
-        "developer_view": _developer_view_payload(view_mode),
-        "can_switch_developer_view": is_global_developer,
+        "developer_view": _developer_view_payload(
+            view_mode,
+            include_developer=include_developer_view,
+        ),
+        "can_switch_developer_view": can_switch_view_mode,
     }
 
 
@@ -4235,12 +4295,36 @@ async def set_developer_view_mode(request: Request):
     is_local_developer = _local_developer_auth_enabled() and _is_local_request(request)
     session_user = request.session.get("discord_user") or {}
     is_global_developer = str(session_user.get("id") or "") == GLOBAL_DEVELOPER_DISCORD_ID
-    if not (is_local_developer or is_global_developer):
+    is_owner = False
+    if session_user and request.session.get("servers"):
+        servers = request.session.get("servers") or []
+        allowed_servers = {str(server["guild_id"]): server for server in servers}
+        query = next_url.split("?", 1)[1].split("#", 1)[0] if "?" in next_url else ""
+        requested_guild_id = str((parse_qs(query).get("guild_id") or [""])[-1])
+        selected_guild_id = (
+            requested_guild_id
+            if requested_guild_id in allowed_servers
+            else str(servers[0]["guild_id"])
+            if servers
+            else ""
+        )
+        if selected_guild_id:
+            is_owner = _is_selected_guild_owner(
+                int(selected_guild_id),
+                str(session_user["id"]),
+                dict(allowed_servers[selected_guild_id]),
+            )
+    if not (is_local_developer or is_global_developer or is_owner):
         return RedirectResponse(next_url, status_code=303)
 
     mode = str(form_data.get("mode") or "developer")
+    allowed_values = _developer_view_values(is_local_developer or is_global_developer)
     request.session[DEVELOPER_VIEW_MODE_SESSION_KEY] = (
-        mode if mode in DEVELOPER_VIEW_MODE_VALUES else "developer"
+        mode
+        if mode in allowed_values
+        else "developer"
+        if is_local_developer or is_global_developer
+        else "owner"
     )
     return RedirectResponse(next_url, status_code=303)
 
