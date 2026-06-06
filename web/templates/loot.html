@@ -410,51 +410,65 @@
     </section>
 
     <section class="panel bid-table-panel" data-bid-view-panel="table" hidden>
-      <div class="bid-table-scroll">
-        <table class="bid-sheet-table">
-          <thead>
-            <tr>
-              <th>혈맹</th>
-              {% for item in bid_dashboard["items"] %}
-                <th class="{% if item.is_free %}is-free{% endif %}" data-bid-table-header data-bid-item-id="{{ item.bid_item_id }}" data-bid-item-name="{{ item.item_name|lower }}" data-bid-table-progress="{{ item.bid_item_id }}">
-                  <strong>{{ item.item_name }}</strong>
-                  <small>{{ item.progress_text }}</small>
-                </th>
-              {% endfor %}
-            </tr>
-          </thead>
-          <tbody>
-            {% for row in bid_dashboard.table_rows %}
-              <tr>
-                <th>{{ row.alliance_name }}</th>
-                {% for cell in row.cells %}
-                  <td class="{% if cell.is_free %}is-free{% endif %}" data-bid-table-column data-bid-item-id="{{ cell.bid_item_id }}" data-bid-item-name="{{ cell.item_name|lower }}">
-                    {% if auth.selected_server.can_bookkeep %}
-                      <form method="post" action="/loot/bids/status?guild_id={{ auth.selected_guild_id }}" data-bid-status-form>
-                        <input type="hidden" name="bid_item_id" value="{{ cell.bid_item_id }}">
-                        <input type="hidden" name="alliance_id" value="{{ row.alliance_id }}">
-                        <input type="hidden" name="is_completed" value="{{ 1 if cell.next_is_completed else 0 }}" data-bid-next-value>
-                        <button
-                          class="bid-table-cell {% if cell.is_completed %}is-complete{% endif %}"
-                          type="submit"
-                          data-bid-table-cell
-                          data-bid-item-id="{{ cell.bid_item_id }}"
-                          data-bid-alliance-id="{{ row.alliance_id }}"
-                        >
-                          <span data-bid-status-label>{% if cell.is_completed %}✓{% endif %}</span>
-                        </button>
-                      </form>
-                    {% else %}
-                      <span class="bid-table-cell is-static {% if cell.is_completed %}is-complete{% endif %}">
-                        <span data-bid-status-label>{% if cell.is_completed %}✓{% endif %}</span>
-                      </span>
-                    {% endif %}
-                  </td>
+      {% set bid_table_chunk_size = 8 %}
+      <div class="bid-table-stack">
+        {% for item_batch in bid_dashboard["items"]|batch(bid_table_chunk_size) %}
+          {% set batch_index = loop.index0 %}
+          {% set start = batch_index * bid_table_chunk_size %}
+          {% set end = start + bid_table_chunk_size %}
+          <article class="bid-table-block">
+            <table class="bid-sheet-table">
+              <colgroup>
+                <col class="bid-alliance-col">
+                {% for item in item_batch %}
+                  <col>
                 {% endfor %}
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
+              </colgroup>
+              <thead>
+                <tr>
+                  <th>혈맹</th>
+                  {% for item in item_batch %}
+                    <th class="{% if item.is_free %}is-free{% endif %}" data-bid-table-header data-bid-item-id="{{ item.bid_item_id }}" data-bid-item-name="{{ item.item_name|lower }}" data-bid-table-progress="{{ item.bid_item_id }}">
+                      <strong>{{ item.item_name }}</strong>
+                      <small>{{ item.progress_text }}</small>
+                    </th>
+                  {% endfor %}
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in bid_dashboard.table_rows %}
+                  <tr>
+                    <th>{{ row.alliance_name }}</th>
+                    {% for cell in row.cells[start:end] %}
+                      <td class="{% if cell.is_free %}is-free{% endif %}" data-bid-table-column data-bid-item-id="{{ cell.bid_item_id }}" data-bid-item-name="{{ cell.item_name|lower }}">
+                        {% if auth.selected_server.can_bookkeep %}
+                          <form method="post" action="/loot/bids/status?guild_id={{ auth.selected_guild_id }}" data-bid-status-form>
+                            <input type="hidden" name="bid_item_id" value="{{ cell.bid_item_id }}">
+                            <input type="hidden" name="alliance_id" value="{{ row.alliance_id }}">
+                            <input type="hidden" name="is_completed" value="{{ 1 if cell.next_is_completed else 0 }}" data-bid-next-value>
+                            <button
+                              class="bid-table-cell {% if cell.is_completed %}is-complete{% endif %}"
+                              type="submit"
+                              data-bid-table-cell
+                              data-bid-item-id="{{ cell.bid_item_id }}"
+                              data-bid-alliance-id="{{ row.alliance_id }}"
+                            >
+                              <span data-bid-status-label>{% if cell.is_completed %}✓{% endif %}</span>
+                            </button>
+                          </form>
+                        {% else %}
+                          <span class="bid-table-cell is-static {% if cell.is_completed %}is-complete{% endif %}">
+                            <span data-bid-status-label>{% if cell.is_completed %}✓{% endif %}</span>
+                          </span>
+                        {% endif %}
+                      </td>
+                    {% endfor %}
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </article>
+        {% endfor %}
       </div>
     </section>
   </section>
@@ -2393,7 +2407,7 @@
       });
       if (query && activeView === "table") {
         const firstMatch = document.querySelector("[data-bid-table-header].is-search-match");
-        firstMatch?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+        firstMatch?.closest(".bid-table-block")?.scrollIntoView({ behavior: "smooth", block: "center" });
       }
     }
 

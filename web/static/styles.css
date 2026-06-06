@@ -2698,25 +2698,34 @@ button:disabled {
 }
 
 .bid-table-panel {
-  padding: 0;
-  overflow: hidden;
+  padding: 14px;
 }
 
-.bid-table-scroll {
-  overflow: auto;
-  max-height: 72vh;
+.bid-table-stack {
+  display: grid;
+  gap: 16px;
+}
+
+.bid-table-block {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
 }
 
 .bid-sheet-table {
-  width: max-content;
-  min-width: 100%;
+  width: 100%;
   border-collapse: separate;
   border-spacing: 0;
+  table-layout: fixed;
+}
+
+.bid-sheet-table .bid-alliance-col {
+  width: 92px;
 }
 
 .bid-sheet-table th,
 .bid-sheet-table td {
-  min-width: 116px;
   border-right: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
   background: var(--panel);
@@ -2724,9 +2733,6 @@ button:disabled {
 }
 
 .bid-sheet-table thead th {
-  position: sticky;
-  top: 0;
-  z-index: 3;
   padding: 10px 8px;
   background: var(--panel-2);
   vertical-align: top;
@@ -2734,17 +2740,8 @@ button:disabled {
 
 .bid-sheet-table thead th:first-child,
 .bid-sheet-table tbody th {
-  position: sticky;
-  left: 0;
-  z-index: 6;
-  min-width: 92px;
   background: var(--panel-2);
   background-clip: padding-box;
-  box-shadow: 8px 0 14px rgba(23, 32, 42, 0.08);
-}
-
-.bid-sheet-table thead th:first-child {
-  z-index: 5;
 }
 
 .bid-sheet-table th strong,
@@ -2781,6 +2778,14 @@ button:disabled {
 .bid-sheet-table td {
   height: 46px;
   padding: 4px;
+}
+
+.bid-sheet-table tr > :last-child {
+  border-right: 0;
+}
+
+.bid-sheet-table tbody tr:last-child > * {
+  border-bottom: 0;
 }
 
 .bid-table-cell {
