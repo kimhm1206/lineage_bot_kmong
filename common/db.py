@@ -498,6 +498,9 @@ class Database:
             bid_item_id=bid_item_id,
         )
 
+    def deactivate_bid_item(self, guild_id: int, bid_item_id: int) -> dict[str, Any]:
+        return deactivate_bid_item(guild_id, bid_item_id)
+
     def set_bid_item_alliance_status(
         self,
         guild_id: int,
@@ -2820,6 +2823,33 @@ def upsert_bid_item(
         "bid_item_id": int(row["bid_item_id"]),
         "item_name": str(row["item_name"]),
         "sort_order": int(row["sort_order"] or 0),
+        "is_free": bool(row["is_free"]),
+    }
+
+
+def deactivate_bid_item(guild_id: int, bid_item_id: int) -> dict[str, Any]:
+    ensure_guild(guild_id)
+    with _connect() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE bid_items
+                SET is_active = FALSE,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE guild_id = %s
+                  AND bid_item_id = %s
+                  AND is_active = TRUE
+                RETURNING bid_item_id, item_name, is_free
+                """,
+                (guild_id, bid_item_id),
+            )
+            row = cursor.fetchone()
+            if row is None:
+                raise ValueError("입찰 아이템을 찾을 수 없습니다.")
+        connection.commit()
+    return {
+        "bid_item_id": int(row["bid_item_id"]),
+        "item_name": str(row["item_name"]),
         "is_free": bool(row["is_free"]),
     }
 

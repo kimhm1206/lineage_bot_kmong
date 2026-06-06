@@ -4932,6 +4932,52 @@ async def save_loot_bid_item(
         )
 
 
+@app.post("/loot/bids/items/delete")
+async def delete_loot_bid_item(
+    request: Request,
+    guild_id: str | None = None,
+):
+    auth = _auth_context(request, guild_id)
+    if not auth:
+        return _auth_redirect(request)
+
+    selected_guild_id = int(auth["selected_guild_id"])
+    if not _can_bookkeep_selected_server(auth):
+        return RedirectResponse(
+            f"/loot?guild_id={selected_guild_id}&saved=forbidden#item-bids",
+            status_code=303,
+        )
+
+    body = (await request.body()).decode("utf-8")
+    form_data = {
+        key: values[-1] if values else ""
+        for key, values in parse_qs(body, keep_blank_values=True).items()
+    }
+    try:
+        bid_item_id = int(form_data.get("bid_item_id") or "")
+        if bid_item_id <= 0:
+            raise ValueError
+        item = database.deactivate_bid_item(selected_guild_id, bid_item_id)
+        _record_work_log(
+            auth,
+            selected_guild_id,
+            action_type="bid_item_delete",
+            target_type="bid_item",
+            target_id=int(item["bid_item_id"]),
+            summary=f"입찰 아이템 삭제: {item['item_name']}",
+            details=item,
+        )
+        return RedirectResponse(
+            f"/loot?guild_id={selected_guild_id}&saved=bid_item#item-bids",
+            status_code=303,
+        )
+    except Exception:
+        return RedirectResponse(
+            f"/loot?guild_id={selected_guild_id}&saved=bid_item_error#item-bids",
+            status_code=303,
+        )
+
+
 @app.post("/loot/update")
 async def update_loot_drop(
     request: Request,

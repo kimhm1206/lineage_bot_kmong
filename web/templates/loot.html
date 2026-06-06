@@ -279,31 +279,55 @@
             <button class="icon-button" type="button" aria-label="닫기" data-bid-item-modal-close>&times;</button>
           </header>
           <section class="bid-item-admin-panel">
-            <form class="bid-item-create-form" method="post" action="/loot/bids/items?guild_id={{ auth.selected_guild_id }}">
-              <label>
-                <span>아이템 이름</span>
-                <input type="text" name="item_name" placeholder="아이템 이름" required>
+            <div class="bid-item-admin-tools">
+              <button class="primary-button" type="button" data-bid-item-create-modal-open>아이템 추가</button>
+              <label class="bid-admin-search-field">
+                <span>검색</span>
+                <input type="search" placeholder="아이템 이름 검색" data-bid-admin-search>
               </label>
-              <label class="toggle-row bid-free-toggle">
-                <input type="checkbox" name="is_free" value="1">
-                <span>무료나눔</span>
-              </label>
-              <button class="primary-button" type="submit">추가</button>
-            </form>
+            </div>
             <div class="bid-item-edit-list">
               {% for item in bid_dashboard["items"] %}
-                <form method="post" action="/loot/bids/items?guild_id={{ auth.selected_guild_id }}">
-                  <input type="hidden" name="bid_item_id" value="{{ item.bid_item_id }}">
-                  <input type="text" name="item_name" value="{{ item.item_name }}" aria-label="입찰 아이템 이름">
-                  <label class="toggle-row bid-free-toggle">
-                    <input type="checkbox" name="is_free" value="1" {% if item.is_free %}checked{% endif %}>
-                    <span>무료</span>
-                  </label>
-                  <button class="secondary-button" type="submit">수정</button>
-                </form>
+                <article class="bid-item-edit-row" data-bid-admin-item data-bid-admin-item-name="{{ item.item_name|lower }}">
+                  <form class="bid-item-edit-form" method="post" action="/loot/bids/items?guild_id={{ auth.selected_guild_id }}">
+                    <input type="hidden" name="bid_item_id" value="{{ item.bid_item_id }}">
+                    <textarea name="item_name" rows="1" aria-label="입찰 아이템 이름" required>{{ item.item_name }}</textarea>
+                    <label class="toggle-row bid-free-toggle">
+                      <input type="checkbox" name="is_free" value="1" {% if item.is_free %}checked{% endif %}>
+                      <span>무료나눔</span>
+                    </label>
+                    <button class="secondary-button" type="submit">수정</button>
+                  </form>
+                  <form class="bid-item-delete-form" method="post" action="/loot/bids/items/delete?guild_id={{ auth.selected_guild_id }}" onsubmit="return confirm('입찰 아이템을 삭제할까요?');">
+                    <input type="hidden" name="bid_item_id" value="{{ item.bid_item_id }}">
+                    <button class="danger-button" type="submit">삭제</button>
+                  </form>
+                </article>
               {% endfor %}
             </div>
           </section>
+        </div>
+      </div>
+      <div class="modal-backdrop" data-bid-item-create-modal hidden>
+        <div class="modal-card bid-item-create-modal-card" role="dialog" aria-modal="true" aria-labelledby="bid-item-create-modal-title">
+          <header class="panel-header">
+            <div>
+              <h2 id="bid-item-create-modal-title">입찰 아이템 추가</h2>
+              <span class="panel-caption">입찰용 아이템 목록에 새 항목을 추가합니다.</span>
+            </div>
+            <button class="icon-button" type="button" aria-label="닫기" data-bid-item-create-modal-close>&times;</button>
+          </header>
+          <form class="bid-item-create-form" method="post" action="/loot/bids/items?guild_id={{ auth.selected_guild_id }}">
+            <label>
+              <span>아이템 이름</span>
+              <input type="text" name="item_name" placeholder="아이템 이름" required>
+            </label>
+            <label class="toggle-row bid-free-toggle">
+              <input type="checkbox" name="is_free" value="1">
+              <span>무료나눔</span>
+            </label>
+            <button class="primary-button" type="submit">추가</button>
+          </form>
         </div>
       </div>
     {% endif %}
@@ -2124,6 +2148,10 @@
     const bidItemModal = document.querySelector("[data-bid-item-modal]");
     const openBidItemModalButton = document.querySelector("[data-bid-item-modal-open]");
     const closeBidItemModalButton = document.querySelector("[data-bid-item-modal-close]");
+    const bidItemCreateModal = document.querySelector("[data-bid-item-create-modal]");
+    const openBidItemCreateModalButton = document.querySelector("[data-bid-item-create-modal-open]");
+    const closeBidItemCreateModalButton = document.querySelector("[data-bid-item-create-modal-close]");
+    const bidAdminSearchInput = document.querySelector("[data-bid-admin-search]");
     const bidDetailPanel = document.createElement("article");
     bidDetailPanel.className = "panel bid-row-detail-panel";
     bidDetailPanel.hidden = true;
@@ -2135,7 +2163,17 @@
       }
       bidItemModal.hidden = !isOpen;
       if (isOpen) {
-        bidItemModal.querySelector("input[name='item_name']")?.focus();
+        bidAdminSearchInput?.focus();
+      }
+    }
+
+    function setBidItemCreateModalOpen(isOpen) {
+      if (!bidItemCreateModal) {
+        return;
+      }
+      bidItemCreateModal.hidden = !isOpen;
+      if (isOpen) {
+        bidItemCreateModal.querySelector("input[name='item_name']")?.focus();
       }
     }
 
@@ -2263,20 +2301,22 @@
         element.textContent = item.progress_text || "";
       });
       (item.alliance_statuses || []).forEach((status) => {
-        const cell = document.querySelector(`[data-bid-table-cell][data-bid-item-id="${item.bid_item_id}"][data-bid-alliance-id="${status.alliance_id}"]`);
-        if (!cell) {
-          return;
-        }
-        cell.classList.toggle("is-complete", Boolean(status.is_completed));
-        const label = cell.querySelector("[data-bid-status-label]");
-        if (label) {
+        document.querySelectorAll(`[data-bid-table-cell][data-bid-item-id="${item.bid_item_id}"][data-bid-alliance-id="${status.alliance_id}"]`).forEach((cell) => {
+          cell.classList.toggle("is-complete", Boolean(status.is_completed));
+          let label = cell.querySelector("[data-bid-status-label]");
+          if (!label) {
+            label = document.createElement("span");
+            label.dataset.bidStatusLabel = "";
+            cell.textContent = "";
+            cell.append(label);
+          }
           label.textContent = status.is_completed ? "✓" : "";
-        }
-        const form = cell.closest("[data-bid-status-form]");
-        const nextValue = form?.querySelector("[data-bid-next-value]");
-        if (nextValue) {
-          nextValue.value = status.next_is_completed ? "1" : "0";
-        }
+          const form = cell.closest("[data-bid-status-form]");
+          const nextValue = form?.querySelector("[data-bid-next-value]");
+          if (nextValue) {
+            nextValue.value = status.next_is_completed ? "1" : "0";
+          }
+        });
       });
     }
 
@@ -2352,6 +2392,13 @@
       }
     }
 
+    function applyBidAdminSearch() {
+      const query = (bidAdminSearchInput?.value || "").trim().toLowerCase();
+      document.querySelectorAll("[data-bid-admin-item]").forEach((row) => {
+        row.hidden = Boolean(query) && !(row.dataset.bidAdminItemName || "").includes(query);
+      });
+    }
+
     bidItemGrid?.addEventListener("click", (event) => {
       const toggle = event.target.closest("[data-bid-card-toggle]");
       if (toggle) {
@@ -2373,11 +2420,19 @@
       button.addEventListener("click", () => activateBidView(button.dataset.bidViewTab));
     });
     bidSearchInput?.addEventListener("input", applyBidSearch);
+    bidAdminSearchInput?.addEventListener("input", applyBidAdminSearch);
     openBidItemModalButton?.addEventListener("click", () => setBidItemModalOpen(true));
     closeBidItemModalButton?.addEventListener("click", () => setBidItemModalOpen(false));
     bidItemModal?.addEventListener("click", (event) => {
       if (event.target === bidItemModal) {
         setBidItemModalOpen(false);
+      }
+    });
+    openBidItemCreateModalButton?.addEventListener("click", () => setBidItemCreateModalOpen(true));
+    closeBidItemCreateModalButton?.addEventListener("click", () => setBidItemCreateModalOpen(false));
+    bidItemCreateModal?.addEventListener("click", (event) => {
+      if (event.target === bidItemCreateModal) {
+        setBidItemCreateModalOpen(false);
       }
     });
 
@@ -2392,8 +2447,13 @@
         return;
       }
       const originalText = button.textContent;
+      const isBidTableButton = button.matches("[data-bid-table-cell]");
       button.disabled = true;
-      button.textContent = "처리중";
+      if (isBidTableButton) {
+        button.setAttribute("aria-busy", "true");
+      } else {
+        button.textContent = "처리중";
+      }
       try {
         const payload = await submitJsonForm(form);
         syncBidStatusResult(payload.result || {});
@@ -2401,7 +2461,9 @@
         alert(error.message);
       } finally {
         button.disabled = false;
-        if (button.textContent === "처리중") {
+        if (isBidTableButton) {
+          button.removeAttribute("aria-busy");
+        } else if (button.textContent === "처리중") {
           button.textContent = originalText;
         }
       }

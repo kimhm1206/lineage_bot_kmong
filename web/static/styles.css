@@ -2282,6 +2282,10 @@ button:disabled {
   overflow: hidden;
 }
 
+.bid-item-create-modal-card {
+  width: min(520px, 100%);
+}
+
 .bid-item-admin-panel {
   display: grid;
   gap: 14px;
@@ -2290,15 +2294,48 @@ button:disabled {
   padding-right: 4px;
 }
 
+.bid-item-admin-tools {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: auto minmax(240px, 1fr);
+  align-items: end;
+  gap: 10px;
+  padding-bottom: 10px;
+  background: var(--panel);
+}
+
+.bid-admin-search-field {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.bid-admin-search-field span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 1000;
+}
+
+.bid-admin-search-field input {
+  width: 100%;
+  min-height: 40px;
+  padding: 0 12px;
+}
+
 .bid-item-create-form {
   display: grid;
   grid-template-columns: minmax(220px, 1fr) auto auto;
   align-items: end;
-  gap: 10px;
+  gap: 12px;
+  padding: 18px;
 }
 
 .bid-item-create-form label,
-.bid-item-edit-list form {
+.bid-item-edit-row,
+.bid-item-edit-form,
+.bid-item-delete-form {
   min-width: 0;
 }
 
@@ -2314,28 +2351,46 @@ button:disabled {
 
 .bid-item-edit-list {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
 }
 
-.bid-item-edit-list form {
+.bid-item-edit-row {
   display: grid;
-  grid-template-columns: minmax(90px, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 7px;
-  padding: 8px;
+  gap: 8px;
+  padding: 9px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--panel-2);
 }
 
-.bid-item-edit-list input[type="text"] {
-  min-height: 36px;
-  padding: 0 10px;
-  font-size: 13px;
+.bid-item-edit-row[hidden] {
+  display: none;
 }
 
-.bid-item-edit-list .secondary-button {
+.bid-item-edit-form {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.bid-item-delete-form {
+  display: grid;
+}
+
+.bid-item-edit-list textarea {
+  min-height: 38px;
+  max-height: 74px;
+  padding: 8px 10px;
+  font-size: 13px;
+  line-height: 1.35;
+  resize: vertical;
+}
+
+.bid-item-edit-list .secondary-button,
+.bid-item-edit-list .danger-button {
   min-height: 36px;
   padding: 0 10px;
   font-size: 12px;
@@ -2755,10 +2810,6 @@ button:disabled {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
-  .bid-item-edit-list {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .bid-status-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -2778,15 +2829,20 @@ button:disabled {
     justify-self: stretch;
   }
 
+  .bid-item-admin-tools,
+  .bid-item-edit-row,
+  .bid-item-edit-form,
+  .bid-item-create-form {
+    grid-template-columns: 1fr;
+  }
+
   .bid-overview-grid,
   .bid-item-grid,
   .bid-status-grid {
     grid-template-columns: 1fr;
   }
 
-  .bid-item-create-form,
-  .bid-item-edit-list,
-  .bid-item-edit-list form {
+  .bid-item-edit-list {
     grid-template-columns: 1fr;
   }
 }
