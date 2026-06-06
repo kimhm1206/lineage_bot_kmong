@@ -54,6 +54,32 @@
           <span class="role-pill role-{{ auth.selected_server.role }}">{{ auth.selected_server.role_label }}</span>
           <span class="account-name">{{ auth.selected_server.member_display_name }}</span>
           <a href="/logout">로그아웃</a>
+          {% if auth.can_switch_developer_view %}
+            <details class="developer-view-menu">
+              <summary aria-label="권한 보기 메뉴">
+                권한
+              </summary>
+              <div class="developer-view-popover">
+                <strong>보기 권한</strong>
+                {% for option in auth.developer_view.options %}
+                  <form method="post" action="/developer/view-mode">
+                    <input
+                      type="hidden"
+                      name="next_url"
+                      value="{{ request.url.path }}{% if request.url.query %}?{{ request.url.query }}{% endif %}"
+                    >
+                    <input type="hidden" name="mode" value="{{ option.value }}">
+                    <button
+                      class="{% if option.active %}is-active{% endif %}"
+                      type="submit"
+                    >
+                      {{ option.label }}
+                    </button>
+                  </form>
+                {% endfor %}
+              </div>
+            </details>
+          {% endif %}
           <button
             class="theme-toggle"
             type="button"

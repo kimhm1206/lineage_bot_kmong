@@ -147,6 +147,16 @@ REPORT_OPTIONS = {
     "outputs": REPORT_OUTPUT_OPTIONS,
     "statuses": REPORT_STATUS_OPTIONS,
 }
+DEVELOPER_VIEW_MODE_SESSION_KEY = "developer_view_mode"
+DEVELOPER_VIEW_MODE_OPTIONS = (
+    {"value": "developer", "label": "디벨로퍼"},
+    {"value": "admin", "label": "어드민 유저"},
+    {"value": "bookkeeper", "label": "경리 유저"},
+    {"value": "user", "label": "일반 유저"},
+)
+DEVELOPER_VIEW_MODE_VALUES = {
+    str(option["value"]) for option in DEVELOPER_VIEW_MODE_OPTIONS
+}
 
 app = FastAPI(title="Lineage Ops Web")
 app.add_middleware(
@@ -578,6 +588,57 @@ def _role_display_label(server_role: str, alliance_options: list[dict[str, Any]]
     return alliance_name or "user"
 
 
+def _developer_view_mode(session: dict[str, Any] | None) -> str:
+    mode = str((session or {}).get(DEVELOPER_VIEW_MODE_SESSION_KEY) or "developer")
+    return mode if mode in DEVELOPER_VIEW_MODE_VALUES else "developer"
+
+
+def _developer_view_payload(mode: str) -> dict[str, Any]:
+    normalized = mode if mode in DEVELOPER_VIEW_MODE_VALUES else "developer"
+    return {
+        "active": normalized,
+        "options": [
+            {
+                **option,
+                "active": str(option["value"]) == normalized,
+            }
+            for option in DEVELOPER_VIEW_MODE_OPTIONS
+        ],
+    }
+
+
+def _apply_developer_view_mode(
+    selected_server: dict[str, Any],
+    *,
+    guild_id: int,
+    discord_user_id: str,
+    mode: str,
+) -> None:
+    normalized = mode if mode in DEVELOPER_VIEW_MODE_VALUES else "developer"
+    if normalized == "developer":
+        return
+
+    role = "admin" if normalized in {"admin", "bookkeeper"} else "user"
+    is_bookkeeper_view = normalized == "bookkeeper"
+    selected_server["role"] = role
+    selected_server["is_owner"] = False
+    selected_server["is_bookkeeper"] = is_bookkeeper_view
+    selected_server["can_manage"] = role == "admin"
+    selected_server["can_bookkeep"] = is_bookkeeper_view
+    selected_server["can_manage_bookkeepers"] = False
+    selected_server["my_alliance"] = _my_alliance_access(
+        guild_id,
+        discord_user_id,
+        role,
+        False,
+    )
+    selected_server["role_label"] = (
+        "경리"
+        if is_bookkeeper_view
+        else _role_display_label(role, selected_server["my_alliance"]["options"])
+    )
+
+
 def _my_alliance_access(
     guild_id: int,
     discord_user_id: str,
@@ -814,6 +875,7 @@ def _load_local_developer_servers() -> list[dict[str, Any]]:
 
 def _local_developer_auth_context(
     guild_id: str | None = None,
+    session: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     servers = _load_local_developer_servers()
     if not servers:
@@ -840,6 +902,13 @@ def _local_developer_auth_context(
         True,
     )
     selected_server["role_label"] = "developer"
+    view_mode = _developer_view_mode(session)
+    _apply_developer_view_mode(
+        selected_server,
+        guild_id=int(selected_guild_id),
+        discord_user_id=str(LOCAL_DEVELOPER_USER_ID),
+        mode=view_mode,
+    )
     returned_servers = [
         selected_server if str(server["guild_id"]) == selected_guild_id else server
         for server in servers
@@ -850,6 +919,8 @@ def _local_developer_auth_context(
         "servers": returned_servers,
         "selected_guild_id": selected_guild_id,
         "selected_server": selected_server,
+        "developer_view": _developer_view_payload(view_mode),
+        "can_switch_developer_view": True,
     }
 
 
@@ -932,6 +1003,14 @@ def _auth_context_from_session(
         effective_role,
         selected_server["my_alliance"]["options"],
     )
+    view_mode = _developer_view_mode(session) if is_global_developer else "developer"
+    if is_global_developer:
+        _apply_developer_view_mode(
+            selected_server,
+            guild_id=int(selected_guild_id),
+            discord_user_id=str(user["id"]),
+            mode=view_mode,
+        )
     returned_servers = [
         selected_server if str(server["guild_id"]) == selected_guild_id else server
         for server in servers
@@ -942,6 +1021,8 @@ def _auth_context_from_session(
         "servers": returned_servers,
         "selected_guild_id": selected_guild_id,
         "selected_server": selected_server,
+        "developer_view": _developer_view_payload(view_mode),
+        "can_switch_developer_view": is_global_developer,
     }
 
 
@@ -950,7 +1031,7 @@ def _auth_context(
     guild_id: str | None = None,
 ) -> dict[str, Any] | None:
     if _local_developer_auth_enabled() and _is_local_request(request):
-        return _local_developer_auth_context(guild_id)
+        return _local_developer_auth_context(guild_id, request.session)
     return _auth_context_from_session(request.session, guild_id)
 
 
@@ -4131,6 +4212,23 @@ def discord_callback(
 def logout(request: Request):
     request.session.clear()
     return RedirectResponse("/login", status_code=303)
+
+
+@app.post("/developer/view-mode")
+async def set_developer_view_mode(request: Request):
+    form_data = await _urlencoded_form_data(request)
+    next_url = _safe_redirect_path(form_data.get("next_url")) or "/attendance"
+    is_local_developer = _local_developer_auth_enabled() and _is_local_request(request)
+    session_user = request.session.get("discord_user") or {}
+    is_global_developer = str(session_user.get("id") or "") == GLOBAL_DEVELOPER_DISCORD_ID
+    if not (is_local_developer or is_global_developer):
+        return RedirectResponse(next_url, status_code=303)
+
+    mode = str(form_data.get("mode") or "developer")
+    request.session[DEVELOPER_VIEW_MODE_SESSION_KEY] = (
+        mode if mode in DEVELOPER_VIEW_MODE_VALUES else "developer"
+    )
+    return RedirectResponse(next_url, status_code=303)
 
 
 @app.get("/dashboard", response_class=HTMLResponse)
