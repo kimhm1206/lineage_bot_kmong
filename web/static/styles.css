@@ -2227,6 +2227,11 @@ button:disabled {
   font-weight: 800;
 }
 
+.loot-period-change {
+  color: var(--accent-strong);
+  font-weight: 900;
+}
+
 .loot-total-card.is-muted strong {
   color: var(--text);
   font-size: 22px;

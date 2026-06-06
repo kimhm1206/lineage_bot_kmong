@@ -2725,6 +2725,36 @@ def _filter_loot_events_by_viewer(
     return [event for event in released_events if event.get("viewer_release_visible")]
 
 
+def _normalize_loot_status_filter(status: str | None) -> str:
+    normalized = str(status or "").lower()
+    if normalized in {"paid", "received", "done", "수령"}:
+        return "paid"
+    if normalized in {"unpaid", "pending", "미수령"}:
+        return "unpaid"
+    return ""
+
+
+def _filter_loot_events_by_status(
+    events: list[dict[str, Any]],
+    status: str,
+) -> list[dict[str, Any]]:
+    if status == "paid":
+        return [
+            event
+            for event in events
+            if event.get("viewer_participated")
+            and Decimal(str(event.get("viewer_unpaid_amount") or "0")) <= 0
+        ]
+    if status == "unpaid":
+        return [
+            event
+            for event in events
+            if event.get("viewer_participated")
+            and Decimal(str(event.get("viewer_unpaid_amount") or "0")) > 0
+        ]
+    return events
+
+
 def _loot_distribution_summary(events: list[dict[str, Any]]) -> dict[str, str]:
     total = sum(
         (Decimal(str(event.get("viewer_event_amount") or "0")) for event in events),
@@ -3150,6 +3180,7 @@ def _loot_url(
     *,
     period: str | None = None,
     mine: bool | None = None,
+    status: str | None = None,
     alliance_id: int | str | None = None,
     tab: str = "distribution",
 ) -> str:
@@ -3160,6 +3191,8 @@ def _loot_url(
         params["mine"] = "1"
     elif mine is False:
         params["mine"] = "0"
+    if status:
+        params["status"] = status
     if alliance_id:
         params["alliance_id"] = alliance_id
     return f"/loot?{urlencode(params)}#{tab}"
@@ -3169,21 +3202,22 @@ def _loot_period_filters(
     guild_id: int,
     active_period: str,
     mine_only: bool = False,
+    status: str = "",
 ) -> list[dict[str, str | bool]]:
     return [
         {
             "label": "전체",
-            "href": _loot_url(guild_id, period="all", mine=mine_only),
+            "href": _loot_url(guild_id, period="all", mine=mine_only, status=status),
             "active": active_period == "all",
         },
         {
             "label": "최근 한달",
-            "href": _loot_url(guild_id, period="30d", mine=mine_only),
+            "href": _loot_url(guild_id, period="30d", mine=mine_only, status=status),
             "active": active_period == "30d",
         },
         {
             "label": "최근 일주일",
-            "href": _loot_url(guild_id, period="7d", mine=mine_only),
+            "href": _loot_url(guild_id, period="7d", mine=mine_only, status=status),
             "active": active_period == "7d",
         },
     ]
@@ -3193,17 +3227,43 @@ def _loot_participation_filters(
     guild_id: int,
     active_period: str,
     mine_only: bool,
+    status: str = "",
 ) -> list[dict[str, str | bool]]:
     return [
         {
             "label": "내가 참여한 기록만",
-            "href": _loot_url(guild_id, period=active_period, mine=True),
+            "href": _loot_url(guild_id, period=active_period, mine=True, status=status),
             "active": mine_only,
         },
         {
             "label": "전체 기록",
-            "href": _loot_url(guild_id, period=active_period, mine=False),
+            "href": _loot_url(guild_id, period=active_period, mine=False, status=status),
             "active": not mine_only,
+        },
+    ]
+
+
+def _loot_status_filters(
+    guild_id: int,
+    active_period: str,
+    mine_only: bool,
+    status: str,
+) -> list[dict[str, str | bool]]:
+    return [
+        {
+            "label": "수령",
+            "href": _loot_url(guild_id, period=active_period, mine=mine_only, status="paid"),
+            "active": status == "paid",
+        },
+        {
+            "label": "미수령",
+            "href": _loot_url(
+                guild_id,
+                period=active_period,
+                mine=mine_only,
+                status="unpaid",
+            ),
+            "active": status == "unpaid",
         },
     ]
 
@@ -3532,8 +3592,10 @@ def _loot_template_context(
     period: str | None = None,
     alliance_id: int | str | None = None,
     mine: str | None = None,
+    status: str | None = None,
 ) -> dict[str, Any]:
     active_period, period_start, period_label = _loot_period_bounds(period)
+    active_status = _normalize_loot_status_filter(status)
     mine_only = (
         True
         if mine is None
@@ -3549,7 +3611,10 @@ def _loot_template_context(
         guild_id,
     )
     loot_events = _filter_loot_events_by_period(all_events, period_start)
-    distribution_events = _filter_loot_events_by_viewer(loot_events, mine_only)
+    distribution_events = _filter_loot_events_by_status(
+        _filter_loot_events_by_viewer(loot_events, mine_only),
+        active_status,
+    )
     selected_alliance, alliance_options = _loot_alliance_selection(auth, alliance_id)
     return {
         "auth": auth,
@@ -3572,11 +3637,24 @@ def _loot_template_context(
             "active": active_period,
             "label": period_label,
             "mine_only": mine_only,
-            "filters": _loot_period_filters(guild_id, active_period, mine_only),
+            "status": active_status,
+            "filters": _loot_period_filters(
+                guild_id,
+                active_period,
+                mine_only,
+                active_status,
+            ),
             "participation_filters": _loot_participation_filters(
                 guild_id,
                 active_period,
                 mine_only,
+                active_status,
+            ),
+            "status_filters": _loot_status_filters(
+                guild_id,
+                active_period,
+                mine_only,
+                active_status,
             ),
         },
         "active_page": "loot",
@@ -4536,6 +4614,7 @@ def loot_drops(
     period: str | None = None,
     alliance_id: str | None = None,
     mine: str | None = None,
+    status: str | None = None,
 ):
     auth = _auth_context(request, guild_id)
     if not auth:
@@ -4553,6 +4632,7 @@ def loot_drops(
             period=period,
             alliance_id=alliance_id,
             mine=mine,
+            status=status,
         ),
     )
 
