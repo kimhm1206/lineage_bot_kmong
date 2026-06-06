@@ -20,7 +20,7 @@ from discord_bot.utils.attendance import (
     sync_voice_entry_time,
 )
 from discord_bot.utils.guild import is_admin_member, is_supported_guild
-from discord_bot.utils.panel import VERSION_LABEL, update_admin_panel
+from discord_bot.utils.panel import build_runtime_label, update_admin_panel
 from discord_bot.views.admin_panel import AdminPanelView
 
 
@@ -49,10 +49,7 @@ bot.report_scheduler_reload_task = None
 bot.web_bridge_task = None
 bot.web_bridge_ws = None
 bot.attendance_state_publisher = None
-bot.runtime_label = (
-    f"{datetime.now(timezone(timedelta(hours=9))).strftime('%Y-%m-%d %H:%M')} "
-    f"구동 {VERSION_LABEL}"
-)
+bot.runtime_label = build_runtime_label()
 
 ALLIANCE_LABEL_PATTERN = re.compile(r"\[([^\[\]]+)\]")
 ROLE_MATCHING_FETCH_TIMEOUT_SECONDS = 120

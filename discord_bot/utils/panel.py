@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -11,10 +12,12 @@ from common.db import GuildSettings, database
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+BOT_DIR = Path(__file__).resolve().parents[1]
 DATA_DIR = PROJECT_ROOT / "data"
 UI_STATE_PATH = DATA_DIR / "ui_state.json"
 KST = timezone(timedelta(hours=9))
-VERSION_LABEL = "Ver5.2 Web."
+VERSION_PATH = BOT_DIR / "version.txt"
+VERSION_PATTERN = re.compile(r"^\d{1,2}\.\d$")
 SUPPORT_DISCORD_ID = 238978205078388747
 
 
@@ -362,7 +365,23 @@ def _build_runtime_footer(bot: discord.Bot) -> str:
     runtime_label = getattr(bot, "runtime_label", None)
     if isinstance(runtime_label, str) and runtime_label:
         return runtime_label
-    return f"{datetime.now(KST).strftime('%Y-%m-%d %H:%M')} 구동 {VERSION_LABEL}"
+    return build_runtime_label()
+
+
+def build_runtime_label() -> str:
+    started_at = datetime.now(KST).strftime("%Y-%m-%d %H:%M")
+    version = _load_version_label()
+    if version is None:
+        return f"{started_at} 구동"
+    return f"{started_at} 구동 {version}"
+
+
+def _load_version_label() -> str | None:
+    try:
+        version = VERSION_PATH.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    return version if VERSION_PATTERN.fullmatch(version) else None
 
 
 def _load_ui_state() -> dict[str, dict[str, int | None]]:
