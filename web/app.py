@@ -2455,7 +2455,9 @@ def _decorate_loot_events(
             places=2,
         )
         payouts = []
+        released_payout_alliance_ids: set[int] = set()
         viewer_participated = False
+        viewer_release_visible = False
         viewer_alliance_ids: set[int] = set()
         viewer_alliance_names: set[str] = set()
         viewer_user_ids_by_alliance: dict[int, int] = {}
@@ -2520,10 +2522,14 @@ def _decorate_loot_events(
             payout_row["next_status_label"] = (
                 "미완료로 변경" if payout.get("payout_status") == "paid" else "완료 처리"
             )
+            if payout.get("payout_status") == "paid" and payout_alliance_id is not None:
+                released_payout_alliance_ids.add(payout_alliance_id)
             if (
                 payout_alliance_id is not None
                 and payout_alliance_id in viewer_alliance_ids
+                and payout.get("payout_status") == "paid"
             ):
+                viewer_release_visible = True
                 member_record = member_groups_for(payout_alliance_id).get(
                     int(event.get("distribution_id") or 0)
                 )
@@ -2565,7 +2571,9 @@ def _decorate_loot_events(
                     viewer_unpaid_amount += viewer_share
             payouts.append(payout_row)
         row["alliance_payouts"] = payouts
+        row["has_released_payout"] = bool(released_payout_alliance_ids)
         row["viewer_participated"] = viewer_participated
+        row["viewer_release_visible"] = viewer_release_visible
         row["viewer_participation_label"] = "참여" if viewer_participated else "미참여"
         row["viewer_alliance_names"] = sorted(viewer_alliance_names)
         row["viewer_alliance_amount"] = viewer_alliance_amount
@@ -2700,9 +2708,18 @@ def _filter_loot_events_by_viewer(
     events: list[dict[str, Any]],
     mine_only: bool,
 ) -> list[dict[str, Any]]:
+    released_events = [
+        event
+        for event in events
+        if event.get("viewer_release_visible")
+        or (
+            not event.get("viewer_participated")
+            and event.get("has_released_payout")
+        )
+    ]
     if not mine_only:
-        return events
-    return [event for event in events if event.get("viewer_participated")]
+        return released_events
+    return [event for event in released_events if event.get("viewer_release_visible")]
 
 
 def _loot_distribution_summary(events: list[dict[str, Any]]) -> dict[str, str]:
@@ -2892,7 +2909,11 @@ def _my_alliance_payout_context(
                 ),
                 None,
             )
-            if not payout or not event.get("distribution_id"):
+            if (
+                not payout
+                or not event.get("distribution_id")
+                or payout.get("payout_status") != "paid"
+            ):
                 continue
 
             member_record = member_groups_for(alliance_id).get(
