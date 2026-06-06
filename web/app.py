@@ -77,6 +77,7 @@ WORK_LOG_TABS = (
     {"value": "loot_create", "label": "드랍 등록"},
     {"value": "loot_update", "label": "드랍 수정"},
     {"value": "loot_delete", "label": "드랍 삭제"},
+    {"value": "bid_item", "label": "입찰 아이템"},
     {"value": "bid_status", "label": "입찰 상태"},
 )
 OTHER_ALLIANCE_VALUE = "__other__"
@@ -4853,6 +4854,80 @@ async def update_loot_bid_item_status(
             )
         return RedirectResponse(
             f"/loot?guild_id={selected_guild_id}&saved=bid_error#item-bids",
+            status_code=303,
+        )
+
+
+@app.post("/loot/bids/items")
+async def save_loot_bid_item(
+    request: Request,
+    guild_id: str | None = None,
+):
+    auth = _auth_context(request, guild_id)
+    if not auth:
+        return _auth_redirect(request)
+
+    selected_guild_id = int(auth["selected_guild_id"])
+    wants_json = request.headers.get("x-requested-with") == "fetch"
+    if not _can_bookkeep_selected_server(auth):
+        if wants_json:
+            return JSONResponse(
+                {"ok": False, "message": "경리 이상 권한이 필요합니다."},
+                status_code=403,
+            )
+        return RedirectResponse(
+            f"/loot?guild_id={selected_guild_id}&saved=forbidden#item-bids",
+            status_code=303,
+        )
+
+    body = (await request.body()).decode("utf-8")
+    form_data = {
+        key: values[-1] if values else ""
+        for key, values in parse_qs(body, keep_blank_values=True).items()
+    }
+    try:
+        bid_item_id_raw = str(form_data.get("bid_item_id") or "").strip()
+        bid_item_id = int(bid_item_id_raw) if bid_item_id_raw else None
+        item_name = str(form_data.get("item_name") or "").strip()
+        is_free = str(form_data.get("is_free") or "").lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+            "free",
+        }
+        item = database.upsert_bid_item(
+            selected_guild_id,
+            bid_item_id=bid_item_id,
+            item_name=item_name,
+            is_free=is_free,
+        )
+        _record_work_log(
+            auth,
+            selected_guild_id,
+            action_type="bid_item",
+            target_type="bid_item",
+            target_id=int(item["bid_item_id"]),
+            summary=(
+                f"입찰 아이템 {'수정' if bid_item_id else '추가'}: "
+                f"{item['item_name']} · {'무료나눔' if item['is_free'] else '유료'}"
+            ),
+            details=item,
+        )
+        if wants_json:
+            return JSONResponse({"ok": True, "result": item})
+        return RedirectResponse(
+            f"/loot?guild_id={selected_guild_id}&saved=bid_item#item-bids",
+            status_code=303,
+        )
+    except Exception as exc:
+        if wants_json:
+            return JSONResponse(
+                {"ok": False, "message": str(exc) or "입찰 아이템 저장에 실패했습니다."},
+                status_code=400,
+            )
+        return RedirectResponse(
+            f"/loot?guild_id={selected_guild_id}&saved=bid_item_error#item-bids",
             status_code=303,
         )
 

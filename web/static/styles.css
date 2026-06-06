@@ -2325,6 +2325,88 @@ button:disabled {
   font-weight: 1000;
 }
 
+.bid-view-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding: 12px 14px;
+}
+
+.bid-view-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.bid-view-toolbar > span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.bid-item-admin-panel {
+  display: grid;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.bid-item-create-form {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto auto;
+  align-items: end;
+  gap: 10px;
+}
+
+.bid-item-create-form label,
+.bid-item-edit-list form {
+  min-width: 0;
+}
+
+.bid-free-toggle {
+  justify-content: center;
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-2);
+  font-weight: 1000;
+}
+
+.bid-item-edit-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  max-height: 270px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.bid-item-edit-list form {
+  display: grid;
+  grid-template-columns: minmax(90px, 1fr) auto auto;
+  align-items: center;
+  gap: 7px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-2);
+}
+
+.bid-item-edit-list input[type="text"] {
+  min-height: 36px;
+  padding: 0 10px;
+  font-size: 13px;
+}
+
+.bid-item-edit-list .secondary-button {
+  min-height: 36px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
 .bid-item-grid {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -2360,6 +2442,25 @@ button:disabled {
   line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.bid-item-card.is-free .bid-card-button strong,
+.bid-detail-header h2.is-free,
+.bid-sheet-table th.is-free strong {
+  color: #f5b51b;
+}
+
+.bid-free-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 9px;
+  border: 1px solid rgba(245, 181, 27, 0.38);
+  border-radius: 999px;
+  background: rgba(245, 181, 27, 0.12);
+  color: #d69400;
+  font-size: 12px;
+  font-weight: 1000;
 }
 
 .bid-card-button span {
@@ -2570,9 +2671,120 @@ button:disabled {
   font-weight: 900;
 }
 
+.bid-table-panel {
+  padding: 0;
+  overflow: hidden;
+}
+
+.bid-table-scroll {
+  overflow: auto;
+  max-height: 72vh;
+}
+
+.bid-sheet-table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.bid-sheet-table th,
+.bid-sheet-table td {
+  min-width: 116px;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+  text-align: center;
+}
+
+.bid-sheet-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  padding: 10px 8px;
+  background: var(--panel-2);
+  vertical-align: top;
+}
+
+.bid-sheet-table thead th:first-child,
+.bid-sheet-table tbody th {
+  position: sticky;
+  left: 0;
+  z-index: 4;
+  min-width: 92px;
+  background: var(--panel-2);
+}
+
+.bid-sheet-table thead th:first-child {
+  z-index: 5;
+}
+
+.bid-sheet-table th strong,
+.bid-sheet-table th small {
+  display: block;
+}
+
+.bid-sheet-table th strong {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 1000;
+}
+
+.bid-sheet-table th small {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.bid-sheet-table tbody th {
+  padding: 0 10px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 1000;
+}
+
+.bid-sheet-table td {
+  height: 46px;
+  padding: 4px;
+}
+
+.bid-table-cell {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 1000;
+}
+
+.bid-table-cell.is-complete {
+  border-color: rgba(68, 148, 113, 0.38);
+  background: rgba(68, 148, 113, 0.12);
+  color: #1f7a55;
+}
+
+.bid-table-cell:not(:disabled):hover {
+  border-color: rgba(20, 108, 148, 0.32);
+  background: rgba(20, 108, 148, 0.08);
+}
+
+.bid-table-cell:disabled {
+  cursor: default;
+}
+
 @media (max-width: 1180px) {
   .bid-item-grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .bid-item-edit-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .bid-status-grid {
@@ -2589,6 +2801,12 @@ button:disabled {
   .bid-overview-grid,
   .bid-item-grid,
   .bid-status-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .bid-item-create-form,
+  .bid-item-edit-list,
+  .bid-item-edit-list form {
     grid-template-columns: 1fr;
   }
 }

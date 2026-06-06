@@ -483,6 +483,21 @@ class Database:
     def get_bid_item_dashboard(self, guild_id: int) -> dict[str, Any]:
         return get_bid_item_dashboard(guild_id)
 
+    def upsert_bid_item(
+        self,
+        guild_id: int,
+        *,
+        item_name: str,
+        is_free: bool = False,
+        bid_item_id: int | None = None,
+    ) -> dict[str, Any]:
+        return upsert_bid_item(
+            guild_id,
+            item_name=item_name,
+            is_free=is_free,
+            bid_item_id=bid_item_id,
+        )
+
     def set_bid_item_alliance_status(
         self,
         guild_id: int,
@@ -2499,12 +2514,13 @@ def _bid_items(cursor: psycopg2.extensions.cursor, guild_id: int) -> list[dict[s
             bid_item_id,
             item_name,
             sort_order,
+            is_free,
             memo,
             updated_at
         FROM bid_items
         WHERE guild_id = %s
           AND is_active = TRUE
-        ORDER BY sort_order ASC NULLS LAST, item_name ASC, bid_item_id ASC
+        ORDER BY is_free ASC, sort_order ASC NULLS LAST, item_name ASC, bid_item_id ASC
         """,
         (guild_id,),
     )
@@ -2513,6 +2529,8 @@ def _bid_items(cursor: psycopg2.extensions.cursor, guild_id: int) -> list[dict[s
             "bid_item_id": int(row["bid_item_id"]),
             "item_name": str(row["item_name"]),
             "sort_order": int(row["sort_order"] or 0),
+            "is_free": bool(row["is_free"]),
+            "bid_type_label": "무료나눔" if bool(row["is_free"]) else "유료",
             "memo": row["memo"] or "",
             "updated_at": row["updated_at"],
         }
@@ -2696,16 +2714,113 @@ def get_bid_item_dashboard(guild_id: int) -> dict[str, Any]:
         _bid_item_state(item, candidates, results_by_item.get(int(item["bid_item_id"]), []))
         for item in items
     ]
+    table_rows = []
+    for alliance in candidates:
+        alliance_id = int(alliance["alliance_id"])
+        cells = []
+        for item in states:
+            status = next(
+                (
+                    entry
+                    for entry in item["alliance_statuses"]
+                    if int(entry["alliance_id"]) == alliance_id
+                ),
+                None,
+            )
+            cells.append(
+                {
+                    **(status or {}),
+                    "bid_item_id": int(item["bid_item_id"]),
+                    "item_name": item["item_name"],
+                    "is_free": bool(item["is_free"]),
+                    "cycle_no": int(item["cycle_no"]),
+                    "progress_text": item["progress_text"],
+                }
+            )
+        table_rows.append({**alliance, "cells": cells})
     ready_count = sum(1 for item in states if item["remaining_count"] > 0)
     return {
         "items": states,
         "alliances": candidates,
+        "table_rows": table_rows,
         "summary": {
             "item_count": len(states),
             "alliance_count": len(candidates),
             "ready_count": ready_count,
             "completed_count": len(states) - ready_count,
         },
+    }
+
+
+def upsert_bid_item(
+    guild_id: int,
+    *,
+    item_name: str,
+    is_free: bool = False,
+    bid_item_id: int | None = None,
+) -> dict[str, Any]:
+    ensure_guild(guild_id)
+    normalized_name = item_name.strip()
+    if not normalized_name:
+        raise ValueError("아이템 이름을 입력해주세요.")
+
+    with _connect() as connection:
+        with connection.cursor() as cursor:
+            if bid_item_id:
+                cursor.execute(
+                    """
+                    UPDATE bid_items
+                    SET item_name = %s,
+                        is_free = %s,
+                        is_active = TRUE,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE guild_id = %s
+                      AND bid_item_id = %s
+                    RETURNING bid_item_id, item_name, sort_order, is_free
+                    """,
+                    (normalized_name, is_free, guild_id, bid_item_id),
+                )
+                row = cursor.fetchone()
+                if row is None:
+                    raise ValueError("입찰 아이템을 찾을 수 없습니다.")
+            else:
+                cursor.execute(
+                    """
+                    SELECT COALESCE(MAX(sort_order), 0) + 1 AS next_sort_order
+                    FROM bid_items
+                    WHERE guild_id = %s
+                    """,
+                    (guild_id,),
+                )
+                next_sort_order = int(cursor.fetchone()["next_sort_order"] or 1)
+                cursor.execute(
+                    """
+                    INSERT INTO bid_items (
+                        guild_id,
+                        item_name,
+                        sort_order,
+                        is_free,
+                        is_active,
+                        updated_at
+                    )
+                    VALUES (%s, %s, %s, %s, TRUE, CURRENT_TIMESTAMP)
+                    ON CONFLICT (guild_id, (lower(item_name)))
+                    DO UPDATE SET
+                        item_name = EXCLUDED.item_name,
+                        is_free = EXCLUDED.is_free,
+                        is_active = TRUE,
+                        updated_at = CURRENT_TIMESTAMP
+                    RETURNING bid_item_id, item_name, sort_order, is_free
+                    """,
+                    (guild_id, normalized_name, next_sort_order, is_free),
+                )
+                row = cursor.fetchone()
+        connection.commit()
+    return {
+        "bid_item_id": int(row["bid_item_id"]),
+        "item_name": str(row["item_name"]),
+        "sort_order": int(row["sort_order"] or 0),
+        "is_free": bool(row["is_free"]),
     }
 
 
@@ -4457,6 +4572,7 @@ def _ensure_postgres_columns(cursor: psycopg2.extensions.cursor) -> None:
         "ALTER TABLE scheduled_report_settings ADD COLUMN IF NOT EXISTS schedule_json JSONB NOT NULL DEFAULT '{\"type\":\"daily\",\"time\":\"00:00\",\"timezone\":\"Asia/Seoul\"}'::jsonb",
         "ALTER TABLE scheduled_report_settings ADD COLUMN IF NOT EXISTS query_json JSONB NOT NULL DEFAULT '{\"dataset\":\"attendance\",\"period\":\"today\",\"group_by\":\"alliance\",\"rank_target\":\"user\",\"metric\":\"attendance_count\",\"limit\":10}'::jsonb",
         "ALTER TABLE scheduled_report_settings ADD COLUMN IF NOT EXISTS render_json JSONB NOT NULL DEFAULT '{\"output\":\"grouped_ranking\",\"title\":\"금일 혈맹별 출석 랭킹 TOP10\",\"group_header\":\"{group_name}\",\"row\":\"{rank}. {label} - {value}회\",\"empty\":\"출석 기록 없음\"}'::jsonb",
+        "ALTER TABLE bid_items ADD COLUMN IF NOT EXISTS is_free BOOLEAN NOT NULL DEFAULT FALSE",
     ]
     for sql in column_sql:
         cursor.execute(sql)
@@ -4898,6 +5014,7 @@ CREATE TABLE IF NOT EXISTS bid_items (
     guild_id BIGINT NOT NULL REFERENCES guilds(guild_id) ON DELETE CASCADE,
     item_name TEXT NOT NULL,
     sort_order INTEGER,
+    is_free BOOLEAN NOT NULL DEFAULT FALSE,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     memo TEXT,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
