@@ -2687,7 +2687,7 @@ def _loot_event_datetime(event: dict[str, Any]) -> datetime | None:
 
 
 def _loot_period_bounds(period: str | None) -> tuple[str, datetime | None, str]:
-    normalized = period if period in {"all", "30d", "7d"} else "7d"
+    normalized = period if period in {"all", "30d", "7d"} else "all"
     now = datetime.now(KST).replace(tzinfo=None)
     if normalized == "all":
         return normalized, None, "전체 기간"
