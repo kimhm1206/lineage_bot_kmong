@@ -487,6 +487,7 @@ class Database:
         fee_rate: Decimal = DEFAULT_DISTRIBUTION_FEE_RATE,
         memo: str | None,
         created_by_discord_id: int | None,
+        excluded_alliance_ids: list[int] | None = None,
     ) -> int:
         return create_loot_drop(
             guild_id,
@@ -499,6 +500,7 @@ class Database:
             fee_rate=fee_rate,
             memo=memo,
             created_by_discord_id=created_by_discord_id,
+            excluded_alliance_ids=excluded_alliance_ids,
         )
 
     def update_loot_drop(
@@ -1511,6 +1513,7 @@ def get_attendance_status_sessions(
         """
         SELECT
             e.attendance_id,
+            u.alliance_id,
             COALESCE(a.alliance_name, '미분류') AS alliance_name,
             u.user_id,
             u.discord_id,
@@ -1523,13 +1526,22 @@ def get_attendance_status_sessions(
         """,
         (session_ids,),
     )
-    grouped: dict[int, dict[str, list[dict[str, Any]]]] = {
+    grouped: dict[int, dict[int | None, dict[str, Any]]] = {
         attendance_id: {} for attendance_id in session_ids
     }
     for row in participant_rows:
         attendance_id = int(row["attendance_id"])
         alliance_name = str(row["alliance_name"])
-        grouped.setdefault(attendance_id, {}).setdefault(alliance_name, []).append(
+        alliance_id = _optional_int(row["alliance_id"])
+        group = grouped.setdefault(attendance_id, {}).setdefault(
+            alliance_id,
+            {
+                "alliance_id": alliance_id,
+                "alliance_name": alliance_name,
+                "members": [],
+            },
+        )
+        group["members"].append(
             {
                 "user_id": int(row["user_id"]),
                 "discord_id": int(row["discord_id"]),
@@ -1542,11 +1554,15 @@ def get_attendance_status_sessions(
         attendance_id = int(row["attendance_id"])
         alliances = [
             {
-                "alliance_name": alliance_name,
-                "count": len(members),
-                "members": members,
+                "alliance_id": group["alliance_id"],
+                "alliance_name": group["alliance_name"],
+                "count": len(group["members"]),
+                "members": group["members"],
             }
-            for alliance_name, members in sorted(grouped.get(attendance_id, {}).items())
+            for group in sorted(
+                grouped.get(attendance_id, {}).values(),
+                key=lambda item: str(item["alliance_name"]),
+            )
         ]
         sessions.append(
             {
@@ -2444,6 +2460,7 @@ def create_loot_drop(
     fee_rate: Decimal = DEFAULT_DISTRIBUTION_FEE_RATE,
     memo: str | None,
     created_by_discord_id: int | None,
+    excluded_alliance_ids: list[int] | None = None,
 ) -> int:
     ensure_guild(guild_id)
     normalized_item_name = item_name.strip()
@@ -2456,6 +2473,8 @@ def create_loot_drop(
     if normalized_fee_rate < 0:
         raise ValueError("Fee rate must not be negative.")
     net_amount = sale_amount - (sale_amount * normalized_fee_rate)
+    excluded_ids = _normalize_alliance_id_list(excluded_alliance_ids)
+    excluded_id_set = set(excluded_ids)
     with _connect() as connection:
         with connection.cursor() as cursor:
             session = _get_attendance_session_for_loot(cursor, guild_id, attendance_id)
@@ -2481,10 +2500,11 @@ def create_loot_drop(
                     title,
                     memo,
                     adena_rate,
+                    excluded_alliance_ids,
                     created_by_discord_id,
                     updated_at
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
                 RETURNING loot_event_id
                 """,
                 (
@@ -2495,6 +2515,7 @@ def create_loot_drop(
                     resolved_item_name,
                     _blank_to_none(memo),
                     _decimal(adena_rate),
+                    Json(excluded_ids),
                     created_by_discord_id,
                 ),
             )
@@ -2511,6 +2532,8 @@ def create_loot_drop(
                             "미분류",
                         )
                     alliance_id = unclassified_alliance_id
+                if alliance_id in excluded_id_set:
+                    continue
                 participant_counts[alliance_id] = participant_counts.get(alliance_id, 0) + 1
                 cursor.execute(
                     """
@@ -2534,6 +2557,9 @@ def create_loot_drop(
                         started_at,
                     ),
                 )
+
+            if not participant_counts:
+                raise ValueError("분배 대상 혈맹을 1개 이상 포함해주세요.")
 
             for alliance_id, count in participant_counts.items():
                 cursor.execute(
@@ -2711,6 +2737,7 @@ def get_loot_drop_events(guild_id: int, limit: int = 30) -> list[dict[str, Any]]
             le.title,
             le.memo,
             le.adena_rate,
+            le.excluded_alliance_ids,
             le.created_by_discord_id,
             le.updated_at,
             s.started_at AS attendance_started_at,
@@ -2755,6 +2782,33 @@ def get_loot_drop_events(guild_id: int, limit: int = 30) -> list[dict[str, Any]]
     event_ids = [int(row["loot_event_id"]) for row in event_rows]
     if not event_ids:
         return []
+    excluded_by_event = {
+        int(row["loot_event_id"]): _normalize_alliance_id_list(
+            row.get("excluded_alliance_ids"),
+        )
+        for row in event_rows
+    }
+    excluded_ids = sorted(
+        {
+            alliance_id
+            for ids in excluded_by_event.values()
+            for alliance_id in ids
+        }
+    )
+    excluded_name_map: dict[int, str] = {}
+    if excluded_ids:
+        excluded_rows = _fetchall(
+            """
+            SELECT alliance_id, alliance_name
+            FROM alliances
+            WHERE alliance_id = ANY(%s::bigint[])
+            """,
+            (excluded_ids,),
+        )
+        excluded_name_map = {
+            int(row["alliance_id"]): str(row["alliance_name"])
+            for row in excluded_rows
+        }
 
     payout_rows = _fetchall(
         """
@@ -2836,6 +2890,14 @@ def get_loot_drop_events(guild_id: int, limit: int = 30) -> list[dict[str, Any]]
         loot_event_id = int(row["loot_event_id"])
         participant_count = int(row["total_participant_count"] or 0)
         total_net_amount = _decimal(row["total_net_amount"])
+        excluded_alliance_ids = excluded_by_event.get(loot_event_id, [])
+        excluded_alliances = [
+            {
+                "alliance_id": alliance_id,
+                "alliance_name": excluded_name_map.get(alliance_id, str(alliance_id)),
+            }
+            for alliance_id in excluded_alliance_ids
+        ]
         alliances = [
             {
                 "alliance_id": group["alliance_id"],
@@ -2874,6 +2936,8 @@ def get_loot_drop_events(guild_id: int, limit: int = 30) -> list[dict[str, Any]]
                 "per_member_amount": _safe_divide(total_net_amount, participant_count),
                 "alliance_payouts": payouts_by_event.get(loot_event_id, []),
                 "alliances": alliances,
+                "excluded_alliance_ids": excluded_alliance_ids,
+                "excluded_alliances": excluded_alliances,
                 "updated_at": row["updated_at"],
             }
         )
@@ -3467,7 +3531,8 @@ def _rebuild_loot_for_attendance(
             le.loot_event_id,
             li.loot_item_id,
             li.sale_price,
-            li.fee_rate
+            li.fee_rate,
+            le.excluded_alliance_ids
         FROM loot_events le
         INNER JOIN loot_event_items li ON li.loot_event_id = le.loot_event_id
         WHERE le.guild_id = %s
@@ -3482,18 +3547,12 @@ def _rebuild_loot_for_attendance(
 
     session = _get_attendance_session_for_loot(cursor, guild_id, attendance_id)
     participants = _get_attendance_participants_for_loot(cursor, attendance_id)
-    participant_counts: dict[int, int] = {}
     unclassified_alliance_id: int | None = None
-    for participant in participants:
-        alliance_id = _optional_int(participant["alliance_id"])
-        if alliance_id is None:
-            if unclassified_alliance_id is None:
-                unclassified_alliance_id = _ensure_alliance_id(cursor, "미분류")
-            alliance_id = unclassified_alliance_id
-        participant_counts[alliance_id] = participant_counts.get(alliance_id, 0) + 1
 
     for loot_row in loot_rows:
         loot_event_id = int(loot_row["loot_event_id"])
+        excluded_id_set = set(_normalize_alliance_id_list(loot_row.get("excluded_alliance_ids")))
+        participant_counts: dict[int, int] = {}
         cursor.execute(
             """
             DELETE FROM loot_event_participants
@@ -3514,6 +3573,9 @@ def _rebuild_loot_for_attendance(
                 if unclassified_alliance_id is None:
                     unclassified_alliance_id = _ensure_alliance_id(cursor, "미분류")
                 alliance_id = unclassified_alliance_id
+            if alliance_id in excluded_id_set:
+                continue
+            participant_counts[alliance_id] = participant_counts.get(alliance_id, 0) + 1
             cursor.execute(
                 """
                 INSERT INTO loot_event_participants (
@@ -3838,6 +3900,32 @@ def _optional_int(value: Any) -> int | None:
     return int(value)
 
 
+def _normalize_alliance_id_list(value: Any) -> list[int]:
+    if value in (None, ""):
+        return []
+    if isinstance(value, str):
+        try:
+            import json
+
+            value = json.loads(value)
+        except (TypeError, ValueError):
+            return []
+    if not isinstance(value, (list, tuple, set)):
+        return []
+    normalized: list[int] = []
+    seen: set[int] = set()
+    for item in value:
+        try:
+            alliance_id = _optional_int(item)
+        except (TypeError, ValueError):
+            alliance_id = None
+        if alliance_id is None or alliance_id <= 0 or alliance_id in seen:
+            continue
+        normalized.append(alliance_id)
+        seen.add(alliance_id)
+    return normalized
+
+
 def _blank_to_none(value: str | None) -> str | None:
     if value is None:
         return None
@@ -3889,6 +3977,7 @@ def _ensure_postgres_columns(cursor: psycopg2.extensions.cursor) -> None:
         "ALTER TABLE items ADD COLUMN IF NOT EXISTS guild_id BIGINT REFERENCES guilds(guild_id) ON DELETE CASCADE",
         "ALTER TABLE loot_events ADD COLUMN IF NOT EXISTS attendance_id BIGINT REFERENCES attendance_sessions(attendance_id) ON DELETE SET NULL",
         "ALTER TABLE loot_events ADD COLUMN IF NOT EXISTS adena_rate NUMERIC(18, 6) NOT NULL DEFAULT 0",
+        "ALTER TABLE loot_events ADD COLUMN IF NOT EXISTS excluded_alliance_ids JSONB NOT NULL DEFAULT '[]'::jsonb",
         "ALTER TABLE loot_event_items ADD COLUMN IF NOT EXISTS cash_price_krw NUMERIC(18, 2) NOT NULL DEFAULT 0",
         "ALTER TABLE distribution_batches ADD COLUMN IF NOT EXISTS guild_id BIGINT REFERENCES guilds(guild_id) ON DELETE CASCADE",
         "ALTER TABLE distribution_batches ADD COLUMN IF NOT EXISTS fee_rate NUMERIC(8, 6) NOT NULL DEFAULT 0",
@@ -4344,6 +4433,7 @@ CREATE TABLE IF NOT EXISTS loot_events (
     title TEXT,
     memo TEXT,
     adena_rate NUMERIC(18, 6) NOT NULL DEFAULT 0,
+    excluded_alliance_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
     created_by_discord_id BIGINT,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

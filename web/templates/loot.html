@@ -213,6 +213,12 @@
     <section class="loot-tab-panel" data-loot-panel="create" hidden>
       <section class="loot-layout">
         <form class="panel loot-create-panel" method="post" action="/loot?guild_id={{ auth.selected_guild_id }}" data-loot-form>
+          <input
+            type="hidden"
+            name="excluded_alliance_ids"
+            value="{{ loot_form.excluded_alliance_ids }}"
+            data-loot-excluded-alliances
+          >
           <header class="panel-header">
             <h2>드랍 등록</h2>
             <a class="tiny-button" href="#item-settings" data-loot-tab-link="item-settings">아이템 추가하기</a>
@@ -425,6 +431,17 @@
                       삭제
                     </button>
                   </form>
+                </div>
+              {% endif %}
+
+              {% if event.excluded_alliances %}
+                <div class="loot-excluded-alliance-note">
+                  <span>분배 제외 혈맹</span>
+                  <div>
+                    {% for alliance in event.excluded_alliances %}
+                      <strong>{{ alliance.alliance_name }}</strong>
+                    {% endfor %}
+                  </div>
                 </div>
               {% endif %}
 
@@ -1010,8 +1027,46 @@
     const attendancePreview = document.querySelector("[data-loot-attendance-preview]");
     const itemSelect = document.querySelector("[data-loot-item]");
     const createForm = document.querySelector("[data-loot-form]");
+    const excludedAllianceInput = document.querySelector("[data-loot-excluded-alliances]");
+    const excludedAllianceIds = new Set(
+      String(excludedAllianceInput?.value || "")
+        .split(",")
+        .map((value) => value.trim())
+        .filter(Boolean),
+    );
     function selectedAttendance() {
       return attendanceOptions.find((session) => String(session.attendance_id) === attendanceSelect?.value);
+    }
+
+    function syncExcludedAllianceInput() {
+      if (!excludedAllianceInput) {
+        return;
+      }
+      excludedAllianceInput.value = Array.from(excludedAllianceIds).join(",");
+    }
+
+    function setAllianceExcluded(allianceId, isExcluded) {
+      const key = String(allianceId || "");
+      if (!key) {
+        return;
+      }
+      if (isExcluded) {
+        excludedAllianceIds.add(key);
+      } else {
+        excludedAllianceIds.delete(key);
+      }
+      syncExcludedAllianceInput();
+      document.querySelectorAll(`[data-loot-alliance-toggle="${key}"]`).forEach((button) => {
+        button.classList.toggle("is-excluded", isExcluded);
+        button.setAttribute("aria-pressed", isExcluded ? "false" : "true");
+        const label = button.querySelector("[data-toggle-state]");
+        if (label) {
+          label.textContent = isExcluded ? "제외" : "포함";
+        }
+      });
+      document.querySelectorAll(`[data-loot-preview-group="${key}"]`).forEach((group) => {
+        group.classList.toggle("is-excluded", isExcluded);
+      });
     }
 
     function renderAttendancePreview() {
@@ -1033,9 +1088,44 @@
       header.innerHTML = `<strong>#${selected.attendance_id} · ${selected.started_at}</strong><span>총 ${selected.participant_count}명</span>`;
       attendancePreview.appendChild(header);
 
+      const toggles = document.createElement("div");
+      toggles.className = "loot-alliance-toggle-row";
+      selected.alliances.forEach((alliance) => {
+        if (!alliance.alliance_id) {
+          return;
+        }
+        const key = String(alliance.alliance_id);
+        const isExcluded = excludedAllianceIds.has(key);
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = `loot-alliance-toggle ${isExcluded ? "is-excluded" : ""}`;
+        button.dataset.lootAllianceToggle = key;
+        button.setAttribute("aria-pressed", isExcluded ? "false" : "true");
+        const name = document.createElement("strong");
+        name.textContent = alliance.alliance_name;
+        const count = document.createElement("span");
+        count.textContent = `${alliance.count}명`;
+        const state = document.createElement("em");
+        state.dataset.toggleState = "true";
+        state.textContent = isExcluded ? "제외" : "포함";
+        button.append(name, count, state);
+        button.addEventListener("click", () => {
+          setAllianceExcluded(key, !excludedAllianceIds.has(key));
+        });
+        toggles.appendChild(button);
+      });
+      if (toggles.children.length > 0) {
+        attendancePreview.appendChild(toggles);
+      }
+
       selected.alliances.forEach((alliance) => {
         const group = document.createElement("div");
         group.className = "loot-preview-group";
+        if (alliance.alliance_id) {
+          const key = String(alliance.alliance_id);
+          group.dataset.lootPreviewGroup = key;
+          group.classList.toggle("is-excluded", excludedAllianceIds.has(key));
+        }
         const top = document.createElement("div");
         top.innerHTML = `<strong>${alliance.alliance_name}</strong><span>${alliance.count}명</span>`;
         const members = document.createElement("div");

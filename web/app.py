@@ -3570,6 +3570,7 @@ def _default_loot_form(guild_id: int) -> dict[str, str]:
         "adena_rate": _decimal_input(latest_adena_rate),
         "fee_percent": "10",
         "memo": "",
+        "excluded_alliance_ids": "",
     }
 
 
@@ -3579,6 +3580,24 @@ def _loot_form_from_values(values: dict[str, Any], guild_id: int) -> dict[str, s
         if key in values:
             form[key] = str(values.get(key) or "")
     return form
+
+
+def _parse_loot_excluded_alliance_ids(value: str | None) -> list[int]:
+    ids: list[int] = []
+    seen: set[int] = set()
+    for item in str(value or "").split(","):
+        item = item.strip()
+        if not item:
+            continue
+        try:
+            alliance_id = int(item)
+        except ValueError:
+            continue
+        if alliance_id <= 0 or alliance_id in seen:
+            continue
+        ids.append(alliance_id)
+        seen.add(alliance_id)
+    return ids
 
 
 def _loot_template_context(
@@ -4682,9 +4701,15 @@ async def create_loot_drop(
         errors,
     )
     fee_rate = _fee_rate_from_form(form_data, errors)
+    excluded_alliance_ids = _parse_loot_excluded_alliance_ids(
+        form_data.get("excluded_alliance_ids"),
+    )
     form_data["cash_price_krw"] = _decimal_input(cash_price_krw)
     form_data["sale_price"] = _decimal_input(sale_price)
     form_data["fee_percent"] = _decimal_input(fee_rate * Decimal("100"))
+    form_data["excluded_alliance_ids"] = ",".join(
+        str(alliance_id) for alliance_id in excluded_alliance_ids
+    )
 
     if errors:
         return _render(
@@ -4712,6 +4737,7 @@ async def create_loot_drop(
             fee_rate=fee_rate,
             memo=str(form_data.get("memo") or ""),
             created_by_discord_id=int(auth["user"]["id"]),
+            excluded_alliance_ids=excluded_alliance_ids,
         )
         _record_work_log(
             auth,
@@ -4728,6 +4754,7 @@ async def create_loot_drop(
                 "sale_price": _decimal_input(sale_price),
                 "adena_rate": _decimal_input(adena_rate),
                 "fee_rate": _decimal_input(fee_rate),
+                "excluded_alliance_ids": excluded_alliance_ids,
             },
         )
     except ValueError as exc:
