@@ -2523,7 +2523,7 @@ def _bid_items(cursor: psycopg2.extensions.cursor, guild_id: int) -> list[dict[s
         FROM bid_items
         WHERE guild_id = %s
           AND is_active = TRUE
-        ORDER BY is_free ASC, sort_order ASC NULLS LAST, item_name ASC, bid_item_id ASC
+        ORDER BY is_free ASC, LOWER(item_name) ASC, item_name ASC, bid_item_id ASC
         """,
         (guild_id,),
     )
