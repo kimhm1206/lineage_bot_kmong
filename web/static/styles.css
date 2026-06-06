@@ -382,17 +382,17 @@ textarea {
   backdrop-filter: blur(18px);
 }
 
-.site-role-user .ops-hero,
-.site-role-admin .ops-hero,
-.site-role-owner .ops-hero,
-.site-role-developer .ops-hero {
+.page-role-user .ops-hero,
+.page-role-admin .ops-hero,
+.page-role-owner .ops-hero,
+.page-role-developer .ops-hero {
   padding-right: 126px;
 }
 
-.site-role-user .ops-hero::after,
-.site-role-admin .ops-hero::after,
-.site-role-owner .ops-hero::after,
-.site-role-developer .ops-hero::after {
+.page-role-user .ops-hero::after,
+.page-role-admin .ops-hero::after,
+.page-role-owner .ops-hero::after,
+.page-role-developer .ops-hero::after {
   position: absolute;
   top: 16px;
   right: 16px;
@@ -411,25 +411,25 @@ textarea {
   box-shadow: 0 10px 24px rgba(18, 28, 43, 0.08);
 }
 
-.site-role-user .ops-hero::after {
+.page-role-user .ops-hero::after {
   content: "user";
 }
 
-.site-role-admin .ops-hero::after {
+.page-role-admin .ops-hero::after {
   content: "admin";
   color: #19624d;
   background: rgba(214, 249, 235, 0.9);
   border-color: rgba(34, 197, 138, 0.28);
 }
 
-.site-role-owner .ops-hero::after {
+.page-role-owner .ops-hero::after {
   content: "owner";
   color: #8a4b06;
   background: rgba(255, 237, 213, 0.94);
   border-color: rgba(245, 158, 11, 0.32);
 }
 
-.site-role-developer .ops-hero::after {
+.page-role-developer .ops-hero::after {
   content: "developer";
   color: #075985;
   background: rgba(224, 242, 254, 0.92);
@@ -3589,28 +3589,28 @@ button:disabled {
   box-shadow: var(--shadow);
 }
 
-:root[data-theme="dark"] .site-role-user .ops-hero::after,
-:root[data-theme="dark"] .site-role-admin .ops-hero::after,
-:root[data-theme="dark"] .site-role-owner .ops-hero::after,
-:root[data-theme="dark"] .site-role-developer .ops-hero::after {
+:root[data-theme="dark"] .page-role-user .ops-hero::after,
+:root[data-theme="dark"] .page-role-admin .ops-hero::after,
+:root[data-theme="dark"] .page-role-owner .ops-hero::after,
+:root[data-theme="dark"] .page-role-developer .ops-hero::after {
   border-color: rgba(148, 163, 184, 0.28);
   background: rgba(15, 23, 42, 0.94);
   box-shadow: none;
 }
 
-:root[data-theme="dark"] .site-role-user .ops-hero::after {
+:root[data-theme="dark"] .page-role-user .ops-hero::after {
   color: #cbd5e1;
 }
 
-:root[data-theme="dark"] .site-role-admin .ops-hero::after {
+:root[data-theme="dark"] .page-role-admin .ops-hero::after {
   color: #86efac;
 }
 
-:root[data-theme="dark"] .site-role-owner .ops-hero::after {
+:root[data-theme="dark"] .page-role-owner .ops-hero::after {
   color: #facc15;
 }
 
-:root[data-theme="dark"] .site-role-developer .ops-hero::after {
+:root[data-theme="dark"] .page-role-developer .ops-hero::after {
   color: #7dd3fc;
 }
 
@@ -3906,18 +3906,18 @@ button:disabled {
     padding: 18px;
   }
 
-  .site-role-user .ops-hero,
-  .site-role-admin .ops-hero,
-  .site-role-owner .ops-hero,
-  .site-role-developer .ops-hero {
+  .page-role-user .ops-hero,
+  .page-role-admin .ops-hero,
+  .page-role-owner .ops-hero,
+  .page-role-developer .ops-hero {
     padding-right: 18px;
     padding-top: 54px;
   }
 
-  .site-role-user .ops-hero::after,
-  .site-role-admin .ops-hero::after,
-  .site-role-owner .ops-hero::after,
-  .site-role-developer .ops-hero::after {
+  .page-role-user .ops-hero::after,
+  .page-role-admin .ops-hero::after,
+  .page-role-owner .ops-hero::after,
+  .page-role-developer .ops-hero::after {
     top: 16px;
     left: 18px;
     right: auto;

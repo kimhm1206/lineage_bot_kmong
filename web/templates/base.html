@@ -14,9 +14,9 @@
         }
       })();
     </script>
-    <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}?v=20260606-role-marker">
+    <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}?v=20260606-page-role-marker">
   </head>
-  <body class="{% block body_class %}{% endblock %}{% if auth %} site-role-{% if auth.selected_server.role == 'developer' %}developer{% elif auth.selected_server.is_owner %}owner{% elif auth.selected_server.can_manage %}admin{% else %}user{% endif %}{% endif %}">
+  <body class="{% block body_class %}{% endblock %}{% if auth %} page-role-{{ page_required_role|default('user') }}{% endif %}">
     <header class="topbar {% if not auth %}topbar-public{% endif %}">
       <a class="brand" href="/attendance">Lineage Ops</a>
       {% if auth %}

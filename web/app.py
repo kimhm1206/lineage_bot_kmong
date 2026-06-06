@@ -80,6 +80,17 @@ WORK_LOG_TABS = (
 )
 OTHER_ALLIANCE_VALUE = "__other__"
 OTHER_ALLIANCE_LABEL = "-그 외-"
+PAGE_REQUIRED_ROLES = {
+    "attendance": "user",
+    "status": "user",
+    "loot": "user",
+    "dashboard": "user",
+    "my_alliance": "user",
+    "settings": "admin",
+    "work_logs": "owner",
+    "logs": "developer",
+    "developer_servers": "developer",
+}
 
 _BOT_BRIDGE_WEBSOCKET: WebSocket | None = None
 _BOT_BRIDGE_LOCK = asyncio.Lock()
@@ -1009,10 +1020,16 @@ def _render(
     context: dict[str, Any] | None = None,
     status_code: int = 200,
 ) -> HTMLResponse:
+    context = dict(context or {})
+    active_page = str(context.get("active_page") or "")
+    context.setdefault(
+        "page_required_role",
+        PAGE_REQUIRED_ROLES.get(active_page, "user"),
+    )
     return templates.TemplateResponse(
         request,
         template_name,
-        context or {},
+        context,
         status_code=status_code,
     )
 
