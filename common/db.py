@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import os
+import secrets
 import sys
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
 from urllib.parse import quote
@@ -17,6 +19,7 @@ load_dotenv()
 DEFAULT_ALLIANCE_NAMES = ("정지", "랭커", "삼국", "해적", "보스", "인연")
 DEFAULT_DISTRIBUTION_FEE_RATE = Decimal("0.10")
 TEST_DB_FLAG = "--test"
+KST = timezone(timedelta(hours=9))
 
 
 def is_test_database_mode() -> bool:
@@ -24,6 +27,10 @@ def is_test_database_mode() -> bool:
         "test",
         "remote",
     }
+
+
+def _now_kst_text() -> str:
+    return datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
 
 
 @dataclass(slots=True)
@@ -473,6 +480,30 @@ class Database:
 
     def get_latest_adena_rate(self, guild_id: int) -> Decimal:
         return get_latest_adena_rate(guild_id)
+
+    def get_bid_item_dashboard(self, guild_id: int) -> dict[str, Any]:
+        return get_bid_item_dashboard(guild_id)
+
+    def draw_bid_item_alliance(
+        self,
+        guild_id: int,
+        bid_item_id: int,
+        *,
+        drawn_by_discord_id: int | None,
+    ) -> dict[str, Any]:
+        return draw_bid_item_alliance(
+            guild_id,
+            bid_item_id,
+            drawn_by_discord_id=drawn_by_discord_id,
+        )
+
+    def import_bid_item_sheet(
+        self,
+        guild_id: int,
+        items: list[str],
+        completed: dict[str, set[str]],
+    ) -> dict[str, int]:
+        return import_bid_item_sheet(guild_id, items, completed)
 
     def create_loot_drop(
         self,
@@ -2433,6 +2464,317 @@ def deactivate_item_price(guild_id: int, item_id: int) -> None:
         connection.commit()
 
 
+def _bid_candidate_alliances(cursor: psycopg2.extensions.cursor, guild_id: int) -> list[dict[str, Any]]:
+    cursor.execute(
+        """
+        SELECT DISTINCT
+            a.alliance_id,
+            a.alliance_name,
+            a.sort_order
+        FROM guild_alliance_role_mappings m
+        INNER JOIN alliances a ON a.alliance_id = m.alliance_id
+        WHERE m.guild_id = %s
+          AND a.is_active = TRUE
+        ORDER BY a.sort_order ASC NULLS LAST, a.alliance_name ASC
+        """,
+        (guild_id,),
+    )
+    return [
+        {
+            "alliance_id": int(row["alliance_id"]),
+            "alliance_name": str(row["alliance_name"]),
+        }
+        for row in cursor.fetchall()
+    ]
+
+
+def _bid_items(cursor: psycopg2.extensions.cursor, guild_id: int) -> list[dict[str, Any]]:
+    cursor.execute(
+        """
+        SELECT
+            bid_item_id,
+            item_name,
+            sort_order,
+            memo,
+            updated_at
+        FROM bid_items
+        WHERE guild_id = %s
+          AND is_active = TRUE
+        ORDER BY sort_order ASC NULLS LAST, item_name ASC, bid_item_id ASC
+        """,
+        (guild_id,),
+    )
+    return [
+        {
+            "bid_item_id": int(row["bid_item_id"]),
+            "item_name": str(row["item_name"]),
+            "sort_order": int(row["sort_order"] or 0),
+            "memo": row["memo"] or "",
+            "updated_at": row["updated_at"],
+        }
+        for row in cursor.fetchall()
+    ]
+
+
+def _bid_result_rows(
+    cursor: psycopg2.extensions.cursor,
+    guild_id: int,
+    bid_item_ids: list[int],
+) -> list[dict[str, Any]]:
+    if not bid_item_ids:
+        return []
+    cursor.execute(
+        """
+        SELECT
+            r.result_id,
+            r.bid_item_id,
+            r.alliance_id,
+            a.alliance_name,
+            r.cycle_no,
+            r.selected_by_discord_id,
+            r.selected_at,
+            r.memo
+        FROM bid_item_results r
+        INNER JOIN alliances a ON a.alliance_id = r.alliance_id
+        WHERE r.guild_id = %s
+          AND r.bid_item_id = ANY(%s::bigint[])
+        ORDER BY r.bid_item_id ASC, r.cycle_no DESC, r.selected_at DESC, r.result_id DESC
+        """,
+        (guild_id, bid_item_ids),
+    )
+    return [dict(row) for row in cursor.fetchall()]
+
+
+def _bid_item_state(
+    item: dict[str, Any],
+    candidates: list[dict[str, Any]],
+    results: list[dict[str, Any]],
+) -> dict[str, Any]:
+    candidate_ids = [int(alliance["alliance_id"]) for alliance in candidates]
+    candidate_by_id = {int(alliance["alliance_id"]): alliance for alliance in candidates}
+    cycles = [int(row["cycle_no"] or 1) for row in results]
+    current_cycle = max(cycles) if cycles else 1
+    completed_rows = [
+        row
+        for row in results
+        if int(row["cycle_no"] or 1) == current_cycle
+        and int(row["alliance_id"]) in candidate_by_id
+    ]
+    completed_ids = {int(row["alliance_id"]) for row in completed_rows}
+    if candidate_ids and len(completed_ids) >= len(candidate_ids):
+        current_cycle += 1
+        completed_rows = []
+        completed_ids = set()
+    remaining = [
+        alliance
+        for alliance in candidates
+        if int(alliance["alliance_id"]) not in completed_ids
+    ]
+    return {
+        **item,
+        "cycle_no": current_cycle,
+        "candidate_count": len(candidate_ids),
+        "completed_count": len(completed_ids),
+        "remaining_count": len(remaining),
+        "progress_text": f"{len(completed_ids)} / {len(candidate_ids)}",
+        "completed_alliances": [
+            {
+                "alliance_id": int(row["alliance_id"]),
+                "alliance_name": str(row["alliance_name"]),
+                "selected_at": row["selected_at"] or "",
+            }
+            for row in completed_rows
+        ],
+        "remaining_alliances": remaining,
+        "history": [
+            {
+                "result_id": int(row["result_id"]),
+                "alliance_id": int(row["alliance_id"]),
+                "alliance_name": str(row["alliance_name"]),
+                "cycle_no": int(row["cycle_no"] or 1),
+                "selected_at": row["selected_at"] or "",
+                "selected_by_discord_id": _optional_int(row["selected_by_discord_id"]),
+            }
+            for row in results[:8]
+        ],
+    }
+
+
+def get_bid_item_dashboard(guild_id: int) -> dict[str, Any]:
+    ensure_guild(guild_id)
+    with _connect() as connection:
+        with connection.cursor() as cursor:
+            candidates = _bid_candidate_alliances(cursor, guild_id)
+            items = _bid_items(cursor, guild_id)
+            bid_item_ids = [int(item["bid_item_id"]) for item in items]
+            results = _bid_result_rows(cursor, guild_id, bid_item_ids)
+
+    results_by_item: dict[int, list[dict[str, Any]]] = {
+        int(item["bid_item_id"]): [] for item in items
+    }
+    for result in results:
+        results_by_item.setdefault(int(result["bid_item_id"]), []).append(result)
+    states = [
+        _bid_item_state(item, candidates, results_by_item.get(int(item["bid_item_id"]), []))
+        for item in items
+    ]
+    ready_count = sum(1 for item in states if item["remaining_count"] > 0)
+    return {
+        "items": states,
+        "alliances": candidates,
+        "summary": {
+            "item_count": len(states),
+            "alliance_count": len(candidates),
+            "ready_count": ready_count,
+            "completed_count": len(states) - ready_count,
+        },
+    }
+
+
+def draw_bid_item_alliance(
+    guild_id: int,
+    bid_item_id: int,
+    *,
+    drawn_by_discord_id: int | None,
+) -> dict[str, Any]:
+    ensure_guild(guild_id)
+    with _connect() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT pg_advisory_xact_lock(%s)", (bid_item_id,))
+            candidates = _bid_candidate_alliances(cursor, guild_id)
+            if not candidates:
+                raise ValueError("등록된 혈맹 역할 매핑이 없습니다.")
+            cursor.execute(
+                """
+                SELECT bid_item_id, item_name, sort_order, memo, updated_at
+                FROM bid_items
+                WHERE guild_id = %s
+                  AND bid_item_id = %s
+                  AND is_active = TRUE
+                """,
+                (guild_id, bid_item_id),
+            )
+            item_row = cursor.fetchone()
+            if item_row is None:
+                raise ValueError("입찰 아이템을 찾을 수 없습니다.")
+            item = {
+                "bid_item_id": int(item_row["bid_item_id"]),
+                "item_name": str(item_row["item_name"]),
+                "sort_order": int(item_row["sort_order"] or 0),
+                "memo": item_row["memo"] or "",
+                "updated_at": item_row["updated_at"],
+            }
+            results = _bid_result_rows(cursor, guild_id, [bid_item_id])
+            state = _bid_item_state(item, candidates, results)
+            remaining = state["remaining_alliances"]
+            if not remaining:
+                state["cycle_no"] = int(state["cycle_no"]) + 1
+                remaining = candidates
+            selected = secrets.choice(remaining)
+            selected_at = _now_kst_text()
+            cursor.execute(
+                """
+                INSERT INTO bid_item_results (
+                    guild_id,
+                    bid_item_id,
+                    alliance_id,
+                    cycle_no,
+                    selected_by_discord_id,
+                    selected_at
+                )
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (guild_id, bid_item_id, alliance_id, cycle_no)
+                DO UPDATE SET
+                    selected_by_discord_id = EXCLUDED.selected_by_discord_id,
+                    selected_at = EXCLUDED.selected_at
+                RETURNING result_id
+                """,
+                (
+                    guild_id,
+                    bid_item_id,
+                    int(selected["alliance_id"]),
+                    int(state["cycle_no"]),
+                    drawn_by_discord_id,
+                    selected_at,
+                ),
+            )
+            result_id = int(cursor.fetchone()["result_id"])
+        connection.commit()
+    return {
+        "result_id": result_id,
+        "bid_item_id": bid_item_id,
+        "item_name": item["item_name"],
+        "alliance_id": int(selected["alliance_id"]),
+        "alliance_name": str(selected["alliance_name"]),
+        "cycle_no": int(state["cycle_no"]),
+        "selected_at": selected_at,
+    }
+
+
+def import_bid_item_sheet(
+    guild_id: int,
+    items: list[str],
+    completed: dict[str, set[str]],
+) -> dict[str, int]:
+    ensure_guild(guild_id)
+    normalized_items = [item.strip() for item in items if item and item.strip()]
+    imported_items = 0
+    imported_results = 0
+    with _connect() as connection:
+        with connection.cursor() as cursor:
+            candidates = _bid_candidate_alliances(cursor, guild_id)
+            alliance_by_name = {
+                str(alliance["alliance_name"]).strip(): int(alliance["alliance_id"])
+                for alliance in candidates
+            }
+            for index, item_name in enumerate(normalized_items, start=1):
+                cursor.execute(
+                    """
+                    INSERT INTO bid_items (
+                        guild_id,
+                        item_name,
+                        sort_order,
+                        is_active,
+                        updated_at
+                    )
+                    VALUES (%s, %s, %s, TRUE, CURRENT_TIMESTAMP)
+                    ON CONFLICT (guild_id, (lower(item_name)))
+                    DO UPDATE SET
+                        item_name = EXCLUDED.item_name,
+                        sort_order = COALESCE(bid_items.sort_order, EXCLUDED.sort_order),
+                        is_active = TRUE,
+                        updated_at = CURRENT_TIMESTAMP
+                    RETURNING bid_item_id
+                    """,
+                    (guild_id, item_name, index),
+                )
+                bid_item_id = int(cursor.fetchone()["bid_item_id"])
+                imported_items += 1
+                for alliance_name in sorted(completed.get(item_name, set())):
+                    alliance_id = alliance_by_name.get(alliance_name.strip())
+                    if alliance_id is None:
+                        continue
+                    cursor.execute(
+                        """
+                        INSERT INTO bid_item_results (
+                            guild_id,
+                            bid_item_id,
+                            alliance_id,
+                            cycle_no,
+                            selected_at,
+                            memo
+                        )
+                        VALUES (%s, %s, %s, 1, %s, 'xlsx import')
+                        ON CONFLICT (guild_id, bid_item_id, alliance_id, cycle_no)
+                        DO NOTHING
+                        """,
+                        (guild_id, bid_item_id, alliance_id, _now_kst_text()),
+                    )
+                    imported_results += cursor.rowcount
+        connection.commit()
+    return {"items": imported_items, "results": imported_results}
+
+
 def get_latest_adena_rate(guild_id: int) -> Decimal:
     row = _fetchone(
         """
@@ -4082,6 +4424,18 @@ def _ensure_postgres_columns(cursor: psycopg2.extensions.cursor) -> None:
         "ON items(guild_id, is_active)"
     )
     cursor.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_bid_items_guild_name_unique "
+        "ON bid_items(guild_id, LOWER(item_name))"
+    )
+    cursor.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_bid_results_unique_cycle "
+        "ON bid_item_results(guild_id, bid_item_id, alliance_id, cycle_no)"
+    )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_bid_results_item_cycle "
+        "ON bid_item_results(guild_id, bid_item_id, cycle_no)"
+    )
+    cursor.execute(
         "CREATE INDEX IF NOT EXISTS idx_guild_bookkeepers_discord "
         "ON guild_bookkeepers(guild_id, discord_id)"
     )
@@ -4414,6 +4768,29 @@ CREATE TABLE IF NOT EXISTS item_bid_rules (
     memo TEXT
 );
 
+CREATE TABLE IF NOT EXISTS bid_items (
+    bid_item_id BIGSERIAL PRIMARY KEY,
+    guild_id BIGINT NOT NULL REFERENCES guilds(guild_id) ON DELETE CASCADE,
+    item_name TEXT NOT NULL,
+    sort_order INTEGER,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    memo TEXT,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS bid_item_results (
+    result_id BIGSERIAL PRIMARY KEY,
+    guild_id BIGINT NOT NULL REFERENCES guilds(guild_id) ON DELETE CASCADE,
+    bid_item_id BIGINT NOT NULL REFERENCES bid_items(bid_item_id) ON DELETE CASCADE,
+    alliance_id BIGINT NOT NULL REFERENCES alliances(alliance_id) ON DELETE CASCADE,
+    cycle_no INTEGER NOT NULL DEFAULT 1,
+    selected_by_discord_id BIGINT,
+    selected_at TEXT NOT NULL,
+    memo TEXT,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT chk_bid_item_results_cycle CHECK (cycle_no >= 1)
+);
+
 CREATE TABLE IF NOT EXISTS alliance_item_bid_statuses (
     alliance_id BIGINT NOT NULL REFERENCES alliances(alliance_id) ON DELETE CASCADE,
     item_id BIGINT NOT NULL REFERENCES items(item_id) ON DELETE CASCADE,
@@ -4563,5 +4940,8 @@ CREATE INDEX IF NOT EXISTS idx_scheduled_report_settings_next_run
 ON scheduled_report_settings(status, next_run_at);
 CREATE INDEX IF NOT EXISTS idx_attendance_live_sessions_guild_status ON attendance_live_sessions(guild_id, status);
 CREATE INDEX IF NOT EXISTS idx_items_name ON items(item_name);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_bid_items_guild_name_unique ON bid_items(guild_id, LOWER(item_name));
+CREATE UNIQUE INDEX IF NOT EXISTS idx_bid_results_unique_cycle ON bid_item_results(guild_id, bid_item_id, alliance_id, cycle_no);
+CREATE INDEX IF NOT EXISTS idx_bid_results_item_cycle ON bid_item_results(guild_id, bid_item_id, cycle_no);
 CREATE INDEX IF NOT EXISTS idx_loot_events_date ON loot_events(event_date);
 """

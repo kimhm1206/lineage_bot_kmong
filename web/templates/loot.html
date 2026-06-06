@@ -24,6 +24,10 @@
     <div class="alert success">드랍 기록을 삭제했습니다.</div>
   {% elif saved == "payout" %}
     <div class="alert success">혈맹 분배 상태를 변경했습니다.</div>
+  {% elif saved == "bid_drawn" %}
+    <div class="alert success">아이템 입찰 혈맹을 추첨했습니다.</div>
+  {% elif saved == "bid_error" %}
+    <div class="alert error">아이템 입찰 추첨에 실패했습니다.</div>
   {% elif saved == "member_payout" %}
     <div class="alert success">혈맹원 분배를 완료 처리했습니다.</div>
   {% elif saved == "fee_rule" %}
@@ -50,6 +54,7 @@
 
   <nav class="loot-tabs" aria-label="드랍&분배 탭">
     <a class="loot-tab-button is-active" href="#distribution" data-loot-tab="distribution" data-required-role="user">분배금 현황</a>
+    <a class="loot-tab-button" href="#item-bids" data-loot-tab="item-bids" data-required-role="user">아이템 입찰</a>
     {% if auth.selected_server.can_bookkeep %}
       <a class="loot-tab-button" href="#create" data-loot-tab="create" data-required-role="owner">드랍 등록</a>
     {% endif %}
@@ -207,6 +212,130 @@
         </article>
       {% endfor %}
     </section>
+  </section>
+
+  <section class="loot-tab-panel" data-loot-panel="item-bids" hidden>
+    <section class="bid-overview-grid">
+      <article class="panel bid-stat-card">
+        <span>입찰 아이템</span>
+        <strong>{{ bid_dashboard.summary.item_count }}</strong>
+        <small>분배 시세 아이템과 별도 관리</small>
+      </article>
+      <article class="panel bid-stat-card">
+        <span>대상 혈맹</span>
+        <strong>{{ bid_dashboard.summary.alliance_count }}</strong>
+        <small>서버 역할 매핑 기준</small>
+      </article>
+      <article class="panel bid-stat-card">
+        <span>추첨 가능</span>
+        <strong>{{ bid_dashboard.summary.ready_count }}</strong>
+        <small>현재 회차에 남은 후보 있음</small>
+      </article>
+      <article class="panel bid-rule-card">
+        <strong>운영 방식</strong>
+        <span>아이템별로 같은 회차에 한 번 구매한 혈맹은 제외됩니다. 모든 혈맹이 한 번씩 구매하면 다음 회차가 자동으로 시작됩니다.</span>
+      </article>
+    </section>
+
+    {% if bid_dashboard.alliances %}
+      <section class="bid-alliance-strip panel">
+        <span>입찰 대상 혈맹</span>
+        <div class="alliance-chip-row">
+          {% for alliance in bid_dashboard.alliances %}
+            <span class="alliance-chip">{{ alliance.alliance_name }}</span>
+          {% endfor %}
+        </div>
+      </section>
+    {% else %}
+      <article class="panel">
+        <div class="empty report-empty">혈맹 역할 매핑이 등록되면 아이템 입찰 대상이 표시됩니다.</div>
+      </article>
+    {% endif %}
+
+    <section class="bid-item-grid">
+      {% for item in bid_dashboard["items"] %}
+        <article class="panel bid-item-card" data-bid-item-card data-bid-item-id="{{ item.bid_item_id }}">
+          <header class="bid-item-header">
+            <div>
+              <span>{{ item.cycle_no }}회차</span>
+              <h2>{{ item.item_name }}</h2>
+            </div>
+            <div class="bid-progress-ring" aria-label="입찰 진행률">
+              <strong>{{ item.progress_text }}</strong>
+              <span>완료</span>
+            </div>
+          </header>
+
+          <div class="bid-progress-bar">
+            <span style="width: {% if item.candidate_count %}{{ (item.completed_count / item.candidate_count * 100)|round(0) }}{% else %}0{% endif %}%"></span>
+          </div>
+
+          <div class="bid-chip-section">
+            <span>구매완료</span>
+            <div class="bid-chip-row">
+              {% for alliance in item.completed_alliances %}
+                <strong class="bid-chip is-complete">{{ alliance.alliance_name }}</strong>
+              {% else %}
+                <strong class="bid-chip is-empty">없음</strong>
+              {% endfor %}
+            </div>
+          </div>
+
+          <div class="bid-chip-section">
+            <span>남은 후보</span>
+            <div class="bid-chip-row">
+              {% for alliance in item.remaining_alliances %}
+                <strong class="bid-chip">{{ alliance.alliance_name }}</strong>
+              {% else %}
+                <strong class="bid-chip is-empty">다음 회차 대기</strong>
+              {% endfor %}
+            </div>
+          </div>
+
+          <div class="bid-history">
+            <span>최근 기록</span>
+            {% for history in item.history[:3] %}
+              <div>
+                <strong>{{ history.alliance_name }}</strong>
+                <small>{{ history.cycle_no }}회차 · {{ history.selected_at }}</small>
+              </div>
+            {% else %}
+              <div class="empty">아직 추첨 기록이 없습니다.</div>
+            {% endfor %}
+          </div>
+
+          {% if auth.selected_server.can_bookkeep %}
+            <form class="bid-draw-form" method="post" action="/loot/bids/draw?guild_id={{ auth.selected_guild_id }}" data-bid-draw-form>
+              <input type="hidden" name="bid_item_id" value="{{ item.bid_item_id }}">
+              <button class="primary-button" type="submit" {% if not item.remaining_count and item.candidate_count == 0 %}disabled{% endif %}>
+                돌림판 추첨
+              </button>
+            </form>
+          {% endif %}
+        </article>
+      {% else %}
+        <article class="panel">
+          <div class="empty report-empty">등록된 입찰 아이템이 없습니다.</div>
+        </article>
+      {% endfor %}
+    </section>
+
+    <div class="modal-backdrop" data-bid-result-modal hidden>
+      <div class="modal-card bid-result-modal-card" role="dialog" aria-modal="true" aria-labelledby="bid-result-modal-title">
+        <header class="panel-header">
+          <div>
+            <h2 id="bid-result-modal-title">입찰 추첨 결과</h2>
+            <span class="panel-caption" data-bid-result-item>아이템</span>
+          </div>
+          <button class="icon-button" type="button" aria-label="닫기" data-bid-result-close>&times;</button>
+        </header>
+        <div class="bid-result-body">
+          <span>선정 혈맹</span>
+          <strong data-bid-result-alliance>혈맹</strong>
+          <small data-bid-result-meta>회차</small>
+        </div>
+      </div>
+    </div>
   </section>
 
   {% if auth.selected_server.can_bookkeep %}
@@ -1892,9 +2021,70 @@
         setFeeRuleModalOpen(false);
       }
     });
+
+    const bidResultModal = document.querySelector("[data-bid-result-modal]");
+    const closeBidResultButton = document.querySelector("[data-bid-result-close]");
+    function setBidResultModalOpen(isOpen) {
+      if (!bidResultModal) {
+        return;
+      }
+      bidResultModal.hidden = !isOpen;
+    }
+    function showBidResult(result) {
+      const item = bidResultModal?.querySelector("[data-bid-result-item]");
+      const alliance = bidResultModal?.querySelector("[data-bid-result-alliance]");
+      const meta = bidResultModal?.querySelector("[data-bid-result-meta]");
+      if (item) {
+        item.textContent = result.item_name || "아이템";
+      }
+      if (alliance) {
+        alliance.textContent = result.alliance_name || "혈맹";
+      }
+      if (meta) {
+        meta.textContent = `${result.cycle_no || 1}회차 · ${result.selected_at || ""}`;
+      }
+      setBidResultModalOpen(true);
+    }
+    closeBidResultButton?.addEventListener("click", () => {
+      setBidResultModalOpen(false);
+      window.location.reload();
+    });
+    bidResultModal?.addEventListener("click", (event) => {
+      if (event.target === bidResultModal) {
+        setBidResultModalOpen(false);
+        window.location.reload();
+      }
+    });
+
+    document.querySelectorAll("[data-bid-draw-form]").forEach((form) => {
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const button = form.querySelector("button");
+        if (!button || button.disabled) {
+          return;
+        }
+        const originalText = button.textContent;
+        button.disabled = true;
+        button.textContent = "추첨중";
+        try {
+          const payload = await submitJsonForm(form);
+          showBidResult(payload.result || {});
+          window.setTimeout(() => window.location.reload(), 1800);
+        } catch (error) {
+          alert(error.message);
+          button.disabled = false;
+          button.textContent = originalText;
+        }
+      });
+    });
+
     window.addEventListener("keydown", (event) => {
       if (event.key === "Escape" && lootPeriodModal && !lootPeriodModal.hidden) {
         setLootPeriodModalOpen(false);
+      }
+      if (event.key === "Escape" && bidResultModal && !bidResultModal.hidden) {
+        setBidResultModalOpen(false);
+        window.location.reload();
       }
       if (event.key === "Escape" && feeRuleModal && !feeRuleModal.hidden) {
         setFeeRuleModalOpen(false);
