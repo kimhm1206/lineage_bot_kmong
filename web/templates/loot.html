@@ -412,7 +412,7 @@
     <section class="panel bid-table-panel" data-bid-view-panel="table" hidden>
       {% set bid_table_chunk_size = 8 %}
       <div class="bid-table-stack">
-        {% for item_batch in bid_dashboard["items"]|batch(bid_table_chunk_size) %}
+        {% for item_batch in bid_dashboard["items"]|batch(bid_table_chunk_size, false) %}
           {% set batch_index = loop.index0 %}
           {% set start = batch_index * bid_table_chunk_size %}
           {% set end = start + bid_table_chunk_size %}
@@ -428,10 +428,14 @@
                 <tr>
                   <th>혈맹</th>
                   {% for item in item_batch %}
-                    <th class="{% if item.is_free %}is-free{% endif %}" data-bid-table-header data-bid-item-id="{{ item.bid_item_id }}" data-bid-item-name="{{ item.item_name|lower }}" data-bid-table-progress="{{ item.bid_item_id }}">
-                      <strong>{{ item.item_name }}</strong>
-                      <small>{{ item.progress_text }}</small>
-                    </th>
+                    {% if item %}
+                      <th class="{% if item.is_free %}is-free{% endif %}" data-bid-table-header data-bid-item-id="{{ item.bid_item_id }}" data-bid-item-name="{{ item.item_name|lower }}" data-bid-table-progress="{{ item.bid_item_id }}">
+                        <strong>{{ item.item_name }}</strong>
+                        <small>{{ item.progress_text }}</small>
+                      </th>
+                    {% else %}
+                      <th class="bid-table-empty-cell" aria-hidden="true"></th>
+                    {% endif %}
                   {% endfor %}
                 </tr>
               </thead>
@@ -462,6 +466,9 @@
                           </span>
                         {% endif %}
                       </td>
+                    {% endfor %}
+                    {% for _ in range(bid_table_chunk_size - (row.cells[start:end]|length)) %}
+                      <td class="bid-table-empty-cell" aria-hidden="true"></td>
                     {% endfor %}
                   </tr>
                 {% endfor %}
