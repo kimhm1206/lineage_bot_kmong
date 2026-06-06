@@ -2415,7 +2415,7 @@ button:disabled {
 }
 
 .bid-item-card {
-  min-height: 86px;
+  min-height: 98px;
   padding: 0;
   overflow: hidden;
 }
@@ -2423,9 +2423,11 @@ button:disabled {
 .bid-card-button {
   appearance: none;
   display: grid;
+  grid-template-rows: 18px minmax(22px, 1fr) 28px;
+  align-items: stretch;
   width: 100%;
-  min-height: 86px;
-  padding: 14px;
+  min-height: 98px;
+  padding: 10px 14px 12px;
   border: 0;
   background: transparent;
   color: inherit;
@@ -2433,8 +2435,24 @@ button:disabled {
   text-align: left;
 }
 
-.bid-card-button strong {
+.bid-card-cycle {
   align-self: start;
+  justify-self: start;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 1000;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bid-card-name {
+  align-self: center;
+  display: block;
+  width: 100%;
+  min-width: 0;
   overflow: hidden;
   color: var(--text);
   font-size: 17px;
@@ -2444,7 +2462,7 @@ button:disabled {
   white-space: nowrap;
 }
 
-.bid-item-card.is-free .bid-card-button strong,
+.bid-item-card.is-free .bid-card-name,
 .bid-detail-header h2.is-free,
 .bid-sheet-table th.is-free strong {
   color: #f5b51b;
@@ -2463,8 +2481,9 @@ button:disabled {
   font-weight: 1000;
 }
 
-.bid-card-button span {
+.bid-card-progress {
   align-self: end;
+  justify-self: start;
   color: var(--accent-strong);
   font-size: 24px;
   font-weight: 1000;

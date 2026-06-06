@@ -298,8 +298,9 @@
       {% for item in bid_dashboard["items"] %}
         <article class="panel bid-item-card {% if item.is_free %}is-free{% endif %}" data-bid-item-card data-bid-item-id="{{ item.bid_item_id }}">
           <button class="bid-card-button" type="button" data-bid-card-toggle aria-expanded="false">
-            <strong>{{ item.item_name }}</strong>
-            <span data-bid-progress-text>{{ item.progress_text }}</span>
+            <span class="bid-card-cycle">{{ item.cycle_no }}회차</span>
+            <strong class="bid-card-name">{{ item.item_name }}</strong>
+            <span class="bid-card-progress" data-bid-progress-text>{{ item.progress_text }}</span>
           </button>
           <div data-bid-detail-source hidden>
             <section class="bid-detail-panel-inner" data-bid-detail data-bid-item-id="{{ item.bid_item_id }}">
