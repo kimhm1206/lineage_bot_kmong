@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import secrets
 import sys
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -484,17 +483,21 @@ class Database:
     def get_bid_item_dashboard(self, guild_id: int) -> dict[str, Any]:
         return get_bid_item_dashboard(guild_id)
 
-    def draw_bid_item_alliance(
+    def set_bid_item_alliance_status(
         self,
         guild_id: int,
         bid_item_id: int,
         *,
-        drawn_by_discord_id: int | None,
+        alliance_id: int,
+        is_completed: bool,
+        updated_by_discord_id: int | None,
     ) -> dict[str, Any]:
-        return draw_bid_item_alliance(
+        return set_bid_item_alliance_status(
             guild_id,
             bid_item_id,
-            drawn_by_discord_id=drawn_by_discord_id,
+            alliance_id=alliance_id,
+            is_completed=is_completed,
+            updated_by_discord_id=updated_by_discord_id,
         )
 
     def import_bid_item_sheet(
@@ -2561,15 +2564,48 @@ def _bid_item_state(
         and int(row["alliance_id"]) in candidate_by_id
     ]
     completed_ids = {int(row["alliance_id"]) for row in completed_rows}
-    if candidate_ids and len(completed_ids) >= len(candidate_ids):
-        current_cycle += 1
-        completed_rows = []
-        completed_ids = set()
     remaining = [
         alliance
         for alliance in candidates
         if int(alliance["alliance_id"]) not in completed_ids
     ]
+    completed_by_alliance = {
+        int(row["alliance_id"]): row for row in completed_rows
+    }
+    history_by_alliance: dict[int, list[dict[str, Any]]] = {
+        alliance_id: [] for alliance_id in candidate_ids
+    }
+    for row in results:
+        alliance_id = int(row["alliance_id"])
+        if alliance_id in history_by_alliance:
+            history_by_alliance[alliance_id].append(row)
+    alliance_statuses = []
+    for alliance in candidates:
+        alliance_id = int(alliance["alliance_id"])
+        current_row = completed_by_alliance.get(alliance_id)
+        is_completed = current_row is not None
+        alliance_statuses.append(
+            {
+                "alliance_id": alliance_id,
+                "alliance_name": str(alliance["alliance_name"]),
+                "is_completed": is_completed,
+                "status_label": "완료" if is_completed else "대기",
+                "next_is_completed": not is_completed,
+                "next_label": "해제" if is_completed else "완료 처리",
+                "selected_at": (current_row or {}).get("selected_at") or "",
+                "cycle_no": current_cycle,
+                "history": [
+                    {
+                        "result_id": int(history["result_id"]),
+                        "cycle_no": int(history["cycle_no"] or 1),
+                        "selected_at": history["selected_at"] or "",
+                        "selected_by_discord_id": _optional_int(history["selected_by_discord_id"]),
+                        "memo": history.get("memo") or "",
+                    }
+                    for history in history_by_alliance.get(alliance_id, [])
+                ],
+            }
+        )
     return {
         **item,
         "cycle_no": current_cycle,
@@ -2597,6 +2633,7 @@ def _bid_item_state(
             }
             for row in results[:8]
         ],
+        "alliance_statuses": alliance_statuses,
     }
 
 
@@ -2631,11 +2668,13 @@ def get_bid_item_dashboard(guild_id: int) -> dict[str, Any]:
     }
 
 
-def draw_bid_item_alliance(
+def set_bid_item_alliance_status(
     guild_id: int,
     bid_item_id: int,
     *,
-    drawn_by_discord_id: int | None,
+    alliance_id: int,
+    is_completed: bool,
+    updated_by_discord_id: int | None,
 ) -> dict[str, Any]:
     ensure_guild(guild_id)
     with _connect() as connection:
@@ -2644,6 +2683,12 @@ def draw_bid_item_alliance(
             candidates = _bid_candidate_alliances(cursor, guild_id)
             if not candidates:
                 raise ValueError("등록된 혈맹 역할 매핑이 없습니다.")
+            candidate_by_id = {
+                int(candidate["alliance_id"]): candidate for candidate in candidates
+            }
+            alliance_id = int(alliance_id)
+            if alliance_id not in candidate_by_id:
+                raise ValueError("입찰 대상 혈맹이 아닙니다.")
             cursor.execute(
                 """
                 SELECT bid_item_id, item_name, sort_order, memo, updated_at
@@ -2666,48 +2711,84 @@ def draw_bid_item_alliance(
             }
             results = _bid_result_rows(cursor, guild_id, [bid_item_id])
             state = _bid_item_state(item, candidates, results)
-            remaining = state["remaining_alliances"]
-            if not remaining:
-                state["cycle_no"] = int(state["cycle_no"]) + 1
-                remaining = candidates
-            selected = secrets.choice(remaining)
-            selected_at = _now_kst_text()
-            cursor.execute(
-                """
-                INSERT INTO bid_item_results (
-                    guild_id,
-                    bid_item_id,
-                    alliance_id,
-                    cycle_no,
-                    selected_by_discord_id,
-                    selected_at
+            selected_at = ""
+            result_id = None
+            if is_completed:
+                selected_at = _now_kst_text()
+                cursor.execute(
+                    """
+                    INSERT INTO bid_item_results (
+                        guild_id,
+                        bid_item_id,
+                        alliance_id,
+                        cycle_no,
+                        selected_by_discord_id,
+                        selected_at,
+                        memo
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (guild_id, bid_item_id, alliance_id, cycle_no)
+                    DO UPDATE SET
+                        selected_by_discord_id = EXCLUDED.selected_by_discord_id,
+                        selected_at = EXCLUDED.selected_at,
+                        memo = EXCLUDED.memo
+                    RETURNING result_id
+                    """,
+                    (
+                        guild_id,
+                        bid_item_id,
+                        alliance_id,
+                        int(state["cycle_no"]),
+                        updated_by_discord_id,
+                        selected_at,
+                        "manual",
+                    ),
                 )
-                VALUES (%s, %s, %s, %s, %s, %s)
-                ON CONFLICT (guild_id, bid_item_id, alliance_id, cycle_no)
-                DO UPDATE SET
-                    selected_by_discord_id = EXCLUDED.selected_by_discord_id,
-                    selected_at = EXCLUDED.selected_at
-                RETURNING result_id
-                """,
-                (
-                    guild_id,
-                    bid_item_id,
-                    int(selected["alliance_id"]),
-                    int(state["cycle_no"]),
-                    drawn_by_discord_id,
-                    selected_at,
-                ),
-            )
-            result_id = int(cursor.fetchone()["result_id"])
+                result_id = int(cursor.fetchone()["result_id"])
+            else:
+                cursor.execute(
+                    """
+                    DELETE FROM bid_item_results
+                    WHERE guild_id = %s
+                      AND bid_item_id = %s
+                      AND alliance_id = %s
+                      AND cycle_no = %s
+                    RETURNING result_id
+                    """,
+                    (guild_id, bid_item_id, alliance_id, int(state["cycle_no"])),
+                )
+                deleted = cursor.fetchone()
+                result_id = int(deleted["result_id"]) if deleted else None
+            results = _bid_result_rows(cursor, guild_id, [bid_item_id])
+            state = _bid_item_state(item, candidates, results)
         connection.commit()
+    alliance_state = next(
+        (
+            status
+            for status in state["alliance_statuses"]
+            if int(status["alliance_id"]) == alliance_id
+        ),
+        None,
+    )
     return {
         "result_id": result_id,
         "bid_item_id": bid_item_id,
         "item_name": item["item_name"],
-        "alliance_id": int(selected["alliance_id"]),
-        "alliance_name": str(selected["alliance_name"]),
+        "alliance_id": alliance_id,
+        "alliance_name": str(candidate_by_id[alliance_id]["alliance_name"]),
         "cycle_no": int(state["cycle_no"]),
         "selected_at": selected_at,
+        "is_completed": bool(is_completed),
+        "status_label": (alliance_state or {}).get("status_label") or ("완료" if is_completed else "대기"),
+        "next_is_completed": (alliance_state or {}).get("next_is_completed", not is_completed),
+        "next_label": (alliance_state or {}).get("next_label") or ("해제" if is_completed else "완료 처리"),
+        "item": {
+            "bid_item_id": bid_item_id,
+            "progress_text": state["progress_text"],
+            "completed_count": state["completed_count"],
+            "candidate_count": state["candidate_count"],
+            "remaining_count": state["remaining_count"],
+        },
     }
 
 

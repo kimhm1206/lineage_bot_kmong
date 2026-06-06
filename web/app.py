@@ -77,7 +77,7 @@ WORK_LOG_TABS = (
     {"value": "loot_create", "label": "드랍 등록"},
     {"value": "loot_update", "label": "드랍 수정"},
     {"value": "loot_delete", "label": "드랍 삭제"},
-    {"value": "bid_draw", "label": "입찰 추첨"},
+    {"value": "bid_status", "label": "입찰 상태"},
 )
 OTHER_ALLIANCE_VALUE = "__other__"
 OTHER_ALLIANCE_LABEL = "-그 외-"
@@ -4779,8 +4779,8 @@ async def create_loot_drop(
     )
 
 
-@app.post("/loot/bids/draw")
-async def draw_loot_bid_item(
+@app.post("/loot/bids/status")
+async def update_loot_bid_item_status(
     request: Request,
     guild_id: str | None = None,
 ):
@@ -4808,35 +4808,47 @@ async def draw_loot_bid_item(
     }
     try:
         bid_item_id = int(form_data.get("bid_item_id") or "")
+        alliance_id = int(form_data.get("alliance_id") or "")
+        is_completed = str(form_data.get("is_completed") or "").lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+            "completed",
+        }
         if bid_item_id <= 0:
             raise ValueError
-        result = database.draw_bid_item_alliance(
+        if alliance_id <= 0:
+            raise ValueError
+        result = database.set_bid_item_alliance_status(
             selected_guild_id,
             bid_item_id,
-            drawn_by_discord_id=int(auth["user"]["id"]),
+            alliance_id=alliance_id,
+            is_completed=is_completed,
+            updated_by_discord_id=int(auth["user"]["id"]),
         )
         _record_work_log(
             auth,
             selected_guild_id,
-            action_type="bid_draw",
+            action_type="bid_status",
             target_type="bid_item",
             target_id=bid_item_id,
             summary=(
-                f"입찰 추첨: {result['item_name']} -> "
-                f"{result['alliance_name']} ({result['cycle_no']}회차)"
+                f"입찰 상태: {result['item_name']} / "
+                f"{result['alliance_name']} -> {result['status_label']}"
             ),
             details=result,
         )
         if wants_json:
             return JSONResponse({"ok": True, "result": result})
         return RedirectResponse(
-            f"/loot?guild_id={selected_guild_id}&saved=bid_drawn#item-bids",
+            f"/loot?guild_id={selected_guild_id}&saved=bid_status#item-bids",
             status_code=303,
         )
     except Exception as exc:
         if wants_json:
             return JSONResponse(
-                {"ok": False, "message": str(exc) or "입찰 추첨에 실패했습니다."},
+                {"ok": False, "message": str(exc) or "입찰 상태 변경에 실패했습니다."},
                 status_code=400,
             )
         return RedirectResponse(

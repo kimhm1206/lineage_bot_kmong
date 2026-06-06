@@ -24,10 +24,10 @@
     <div class="alert success">드랍 기록을 삭제했습니다.</div>
   {% elif saved == "payout" %}
     <div class="alert success">혈맹 분배 상태를 변경했습니다.</div>
-  {% elif saved == "bid_drawn" %}
-    <div class="alert success">아이템 입찰 혈맹을 추첨했습니다.</div>
+  {% elif saved == "bid_status" %}
+    <div class="alert success">아이템 입찰 상태를 변경했습니다.</div>
   {% elif saved == "bid_error" %}
-    <div class="alert error">아이템 입찰 추첨에 실패했습니다.</div>
+    <div class="alert error">아이템 입찰 상태 변경에 실패했습니다.</div>
   {% elif saved == "member_payout" %}
     <div class="alert success">혈맹원 분배를 완료 처리했습니다.</div>
   {% elif saved == "fee_rule" %}
@@ -226,14 +226,9 @@
         <strong>{{ bid_dashboard.summary.alliance_count }}</strong>
         <small>서버 역할 매핑 기준</small>
       </article>
-      <article class="panel bid-stat-card">
-        <span>추첨 가능</span>
-        <strong>{{ bid_dashboard.summary.ready_count }}</strong>
-        <small>현재 회차에 남은 후보 있음</small>
-      </article>
       <article class="panel bid-rule-card">
         <strong>운영 방식</strong>
-        <span>아이템별로 같은 회차에 한 번 구매한 혈맹은 제외됩니다. 모든 혈맹이 한 번씩 구매하면 다음 회차가 자동으로 시작됩니다.</span>
+        <span>아이템별로 혈맹의 현재 입찰 상태를 직접 관리합니다. 완료된 혈맹도 상세에서 다시 대기로 되돌릴 수 있습니다.</span>
       </article>
     </section>
 
@@ -255,63 +250,48 @@
     <section class="bid-item-grid">
       {% for item in bid_dashboard["items"] %}
         <article class="panel bid-item-card" data-bid-item-card data-bid-item-id="{{ item.bid_item_id }}">
-          <header class="bid-item-header">
-            <div>
-              <span>{{ item.cycle_no }}회차</span>
-              <h2>{{ item.item_name }}</h2>
-            </div>
-            <div class="bid-progress-ring" aria-label="입찰 진행률">
-              <strong>{{ item.progress_text }}</strong>
-              <span>완료</span>
-            </div>
-          </header>
-
-          <div class="bid-progress-bar">
-            <span style="width: {% if item.candidate_count %}{{ (item.completed_count / item.candidate_count * 100)|round(0) }}{% else %}0{% endif %}%"></span>
-          </div>
-
-          <div class="bid-chip-section">
-            <span>구매완료</span>
-            <div class="bid-chip-row">
-              {% for alliance in item.completed_alliances %}
-                <strong class="bid-chip is-complete">{{ alliance.alliance_name }}</strong>
-              {% else %}
-                <strong class="bid-chip is-empty">없음</strong>
-              {% endfor %}
-            </div>
-          </div>
-
-          <div class="bid-chip-section">
-            <span>남은 후보</span>
-            <div class="bid-chip-row">
-              {% for alliance in item.remaining_alliances %}
-                <strong class="bid-chip">{{ alliance.alliance_name }}</strong>
-              {% else %}
-                <strong class="bid-chip is-empty">다음 회차 대기</strong>
-              {% endfor %}
-            </div>
-          </div>
-
-          <div class="bid-history">
-            <span>최근 기록</span>
-            {% for history in item.history[:3] %}
-              <div>
-                <strong>{{ history.alliance_name }}</strong>
-                <small>{{ history.cycle_no }}회차 · {{ history.selected_at }}</small>
+          <button class="bid-card-button" type="button" data-bid-card-toggle aria-expanded="false">
+            <strong>{{ item.item_name }}</strong>
+            <span data-bid-progress-text>{{ item.progress_text }}</span>
+          </button>
+          <div data-bid-detail-source hidden>
+            <section class="bid-detail-panel-inner" data-bid-detail data-bid-item-id="{{ item.bid_item_id }}">
+              <header class="bid-detail-header">
+                <div>
+                  <span>{{ item.cycle_no }}회차</span>
+                  <h2>{{ item.item_name }}</h2>
+                </div>
+                <strong data-bid-progress-text>{{ item.progress_text }}</strong>
+              </header>
+              <div class="bid-status-grid">
+                {% for alliance in item.alliance_statuses %}
+                  <article class="bid-status-card {% if alliance.is_completed %}is-complete{% endif %}" data-bid-status-row data-bid-alliance-id="{{ alliance.alliance_id }}">
+                    <header>
+                      <strong>{{ alliance.alliance_name }}</strong>
+                      <span class="status-pill {% if alliance.is_completed %}success{% else %}muted{% endif %}" data-bid-status-label>{{ alliance.status_label }}</span>
+                    </header>
+                    <div class="bid-status-history">
+                      {% for history in alliance.history[:5] %}
+                        <span data-bid-history-row {% if history.cycle_no == alliance.cycle_no %}data-current-cycle="1"{% endif %}>
+                          {{ history.cycle_no }}회차 · {{ history.selected_at }}
+                        </span>
+                      {% else %}
+                        <span class="is-empty">과거 기록 없음</span>
+                      {% endfor %}
+                    </div>
+                    {% if auth.selected_server.can_bookkeep %}
+                      <form class="bid-status-form" method="post" action="/loot/bids/status?guild_id={{ auth.selected_guild_id }}" data-bid-status-form>
+                        <input type="hidden" name="bid_item_id" value="{{ item.bid_item_id }}">
+                        <input type="hidden" name="alliance_id" value="{{ alliance.alliance_id }}">
+                        <input type="hidden" name="is_completed" value="{{ 1 if alliance.next_is_completed else 0 }}" data-bid-next-value>
+                        <button class="secondary-button" type="submit" data-bid-status-action>{{ alliance.next_label }}</button>
+                      </form>
+                    {% endif %}
+                  </article>
+                {% endfor %}
               </div>
-            {% else %}
-              <div class="empty">아직 추첨 기록이 없습니다.</div>
-            {% endfor %}
+            </section>
           </div>
-
-          {% if auth.selected_server.can_bookkeep %}
-            <form class="bid-draw-form" method="post" action="/loot/bids/draw?guild_id={{ auth.selected_guild_id }}" data-bid-draw-form>
-              <input type="hidden" name="bid_item_id" value="{{ item.bid_item_id }}">
-              <button class="primary-button" type="submit" {% if not item.remaining_count and item.candidate_count == 0 %}disabled{% endif %}>
-                돌림판 추첨
-              </button>
-            </form>
-          {% endif %}
         </article>
       {% else %}
         <article class="panel">
@@ -319,23 +299,6 @@
         </article>
       {% endfor %}
     </section>
-
-    <div class="modal-backdrop" data-bid-result-modal hidden>
-      <div class="modal-card bid-result-modal-card" role="dialog" aria-modal="true" aria-labelledby="bid-result-modal-title">
-        <header class="panel-header">
-          <div>
-            <h2 id="bid-result-modal-title">입찰 추첨 결과</h2>
-            <span class="panel-caption" data-bid-result-item>아이템</span>
-          </div>
-          <button class="icon-button" type="button" aria-label="닫기" data-bid-result-close>&times;</button>
-        </header>
-        <div class="bid-result-body">
-          <span>선정 혈맹</span>
-          <strong data-bid-result-alliance>혈맹</strong>
-          <small data-bid-result-meta>회차</small>
-        </div>
-      </div>
-    </div>
   </section>
 
   {% if auth.selected_server.can_bookkeep %}
@@ -2025,69 +1988,164 @@
       }
     });
 
-    const bidResultModal = document.querySelector("[data-bid-result-modal]");
-    const closeBidResultButton = document.querySelector("[data-bid-result-close]");
-    function setBidResultModalOpen(isOpen) {
-      if (!bidResultModal) {
+    const bidItemGrid = document.querySelector(".bid-item-grid");
+    const bidDetailPanel = document.createElement("article");
+    bidDetailPanel.className = "panel bid-row-detail-panel";
+    bidDetailPanel.hidden = true;
+    let openBidItemId = "";
+
+    function bidGridColumnCount() {
+      if (!bidItemGrid) {
+        return 1;
+      }
+      return getComputedStyle(bidItemGrid).gridTemplateColumns
+        .split(" ")
+        .filter(Boolean).length || 1;
+    }
+
+    function placeBidDetailPanel(card) {
+      if (!bidItemGrid || !card) {
         return;
       }
-      bidResultModal.hidden = !isOpen;
+      const cards = Array.from(bidItemGrid.querySelectorAll("[data-bid-item-card]"));
+      const index = cards.indexOf(card);
+      const columns = bidGridColumnCount();
+      const rowEndIndex = Math.min(cards.length - 1, Math.floor(index / columns) * columns + columns - 1);
+      cards[rowEndIndex].after(bidDetailPanel);
     }
-    function showBidResult(result) {
-      const item = bidResultModal?.querySelector("[data-bid-result-item]");
-      const alliance = bidResultModal?.querySelector("[data-bid-result-alliance]");
-      const meta = bidResultModal?.querySelector("[data-bid-result-meta]");
-      if (item) {
-        item.textContent = result.item_name || "아이템";
-      }
-      if (alliance) {
-        alliance.textContent = result.alliance_name || "혈맹";
-      }
-      if (meta) {
-        meta.textContent = `${result.cycle_no || 1}회차 · ${result.selected_at || ""}`;
-      }
-      setBidResultModalOpen(true);
+
+    function closeBidDetailPanel() {
+      document.querySelectorAll("[data-bid-item-card].is-open").forEach((card) => {
+        card.classList.remove("is-open");
+        card.querySelector("[data-bid-card-toggle]")?.setAttribute("aria-expanded", "false");
+      });
+      bidDetailPanel.hidden = true;
+      bidDetailPanel.innerHTML = "";
+      openBidItemId = "";
     }
-    closeBidResultButton?.addEventListener("click", () => {
-      setBidResultModalOpen(false);
-      window.location.reload();
-    });
-    bidResultModal?.addEventListener("click", (event) => {
-      if (event.target === bidResultModal) {
-        setBidResultModalOpen(false);
-        window.location.reload();
+
+    function openBidDetailPanel(card) {
+      const detailSource = card?.querySelector("[data-bid-detail-source]");
+      if (!card || !detailSource) {
+        return;
+      }
+      const itemId = card.dataset.bidItemId || "";
+      if (openBidItemId === itemId && !bidDetailPanel.hidden) {
+        closeBidDetailPanel();
+        return;
+      }
+      document.querySelectorAll("[data-bid-item-card].is-open").forEach((openCard) => {
+        openCard.classList.remove("is-open");
+        openCard.querySelector("[data-bid-card-toggle]")?.setAttribute("aria-expanded", "false");
+      });
+      bidDetailPanel.innerHTML = detailSource.innerHTML;
+      bidDetailPanel.hidden = false;
+      card.classList.add("is-open");
+      card.querySelector("[data-bid-card-toggle]")?.setAttribute("aria-expanded", "true");
+      placeBidDetailPanel(card);
+      openBidItemId = itemId;
+    }
+
+    function syncBidStatusResult(result) {
+      const item = result.item || {};
+      document.querySelectorAll(`[data-bid-item-id="${result.bid_item_id}"] [data-bid-progress-text]`).forEach((element) => {
+        element.textContent = item.progress_text || "";
+      });
+      const detail = bidDetailPanel.querySelector(`[data-bid-detail][data-bid-item-id="${result.bid_item_id}"]`);
+      if (detail) {
+        detail.querySelectorAll("[data-bid-progress-text]").forEach((element) => {
+          element.textContent = item.progress_text || "";
+        });
+        const row = detail.querySelector(`[data-bid-status-row][data-bid-alliance-id="${result.alliance_id}"]`);
+        if (row) {
+          row.classList.toggle("is-complete", Boolean(result.is_completed));
+          const label = row.querySelector("[data-bid-status-label]");
+          if (label) {
+            label.textContent = result.status_label || "";
+            label.classList.toggle("success", Boolean(result.is_completed));
+            label.classList.toggle("muted", !result.is_completed);
+          }
+          const nextValue = row.querySelector("[data-bid-next-value]");
+          const action = row.querySelector("[data-bid-status-action]");
+          if (nextValue) {
+            nextValue.value = result.next_is_completed ? "1" : "0";
+          }
+          if (action) {
+            action.textContent = result.next_label || "";
+          }
+          const history = row.querySelector(".bid-status-history");
+          if (history) {
+            history.querySelectorAll("[data-current-cycle]").forEach((element) => element.remove());
+            if (result.is_completed) {
+              history.querySelector(".is-empty")?.remove();
+              const entry = document.createElement("span");
+              entry.dataset.bidHistoryRow = "";
+              entry.dataset.currentCycle = "1";
+              entry.textContent = `${result.cycle_no || 1}회차 · ${result.selected_at || ""}`;
+              history.prepend(entry);
+            }
+            if (!history.querySelector("[data-bid-history-row]")) {
+              const empty = document.createElement("span");
+              empty.className = "is-empty";
+              empty.textContent = "과거 기록 없음";
+              history.append(empty);
+            }
+          }
+        }
+      }
+      const source = document.querySelector(`[data-bid-item-card][data-bid-item-id="${result.bid_item_id}"] [data-bid-detail-source]`);
+      if (source && detail) {
+        source.innerHTML = detail.outerHTML;
+      }
+    }
+
+    bidItemGrid?.addEventListener("click", (event) => {
+      const toggle = event.target.closest("[data-bid-card-toggle]");
+      if (toggle) {
+        openBidDetailPanel(toggle.closest("[data-bid-item-card]"));
       }
     });
 
-    document.querySelectorAll("[data-bid-draw-form]").forEach((form) => {
-      form.addEventListener("submit", async (event) => {
-        event.preventDefault();
-        const button = form.querySelector("button");
-        if (!button || button.disabled) {
-          return;
-        }
-        const originalText = button.textContent;
-        button.disabled = true;
-        button.textContent = "추첨중";
-        try {
-          const payload = await submitJsonForm(form);
-          showBidResult(payload.result || {});
-          window.setTimeout(() => window.location.reload(), 1800);
-        } catch (error) {
-          alert(error.message);
-          button.disabled = false;
+    document.addEventListener("submit", async (event) => {
+      const form = event.target.closest("[data-bid-status-form]");
+      if (!form) {
+        return;
+      }
+      event.preventDefault();
+      const button = form.querySelector("button");
+      if (!button || button.disabled) {
+        return;
+      }
+      const originalText = button.textContent;
+      button.disabled = true;
+      button.textContent = "처리중";
+      try {
+        const payload = await submitJsonForm(form);
+        syncBidStatusResult(payload.result || {});
+      } catch (error) {
+        alert(error.message);
+      } finally {
+        button.disabled = false;
+        if (button.textContent === "처리중") {
           button.textContent = originalText;
         }
-      });
+      }
+    });
+
+    window.addEventListener("resize", () => {
+      if (!openBidItemId || bidDetailPanel.hidden) {
+        return;
+      }
+      const card = document.querySelector(`[data-bid-item-card][data-bid-item-id="${openBidItemId}"]`);
+      placeBidDetailPanel(card);
     });
 
     window.addEventListener("keydown", (event) => {
       if (event.key === "Escape" && lootPeriodModal && !lootPeriodModal.hidden) {
         setLootPeriodModalOpen(false);
       }
-      if (event.key === "Escape" && bidResultModal && !bidResultModal.hidden) {
-        setBidResultModalOpen(false);
-        window.location.reload();
+      if (event.key === "Escape" && !bidDetailPanel.hidden) {
+        closeBidDetailPanel();
       }
       if (event.key === "Escape" && feeRuleModal && !feeRuleModal.hidden) {
         setFeeRuleModalOpen(false);
