@@ -1275,6 +1275,8 @@
         try {
           const payload = await submitJsonForm(form);
           updatePayoutCard(card, payload);
+          button.textContent = "갱신중";
+          window.location.reload();
         } catch (error) {
           alert(error.message);
         } finally {
