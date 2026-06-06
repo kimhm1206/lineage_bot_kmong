@@ -49,18 +49,18 @@
   {% endif %}
 
   <nav class="loot-tabs" aria-label="드랍&분배 탭">
-    <a class="loot-tab-button is-active" href="#distribution" data-loot-tab="distribution">분배금 현황</a>
+    <a class="loot-tab-button is-active" href="#distribution" data-loot-tab="distribution" data-required-role="user">분배금 현황</a>
     {% if auth.selected_server.can_bookkeep %}
-      <a class="loot-tab-button" href="#create" data-loot-tab="create">드랍 등록</a>
+      <a class="loot-tab-button" href="#create" data-loot-tab="create" data-required-role="owner">드랍 등록</a>
     {% endif %}
     {% if auth.selected_server.can_manage %}
-      <a class="loot-tab-button" href="#alliance-payouts" data-loot-tab="alliance-payouts">각혈 분배</a>
+      <a class="loot-tab-button" href="#alliance-payouts" data-loot-tab="alliance-payouts" data-required-role="admin">각혈 분배</a>
     {% endif %}
     {% if auth.selected_server.can_manage and auth.selected_server.my_alliance.can_view %}
-      <a class="loot-tab-button" href="#my-alliance-payouts" data-loot-tab="my-alliance-payouts">내 혈맹</a>
+      <a class="loot-tab-button" href="#my-alliance-payouts" data-loot-tab="my-alliance-payouts" data-required-role="admin">내 혈맹</a>
     {% endif %}
     {% if auth.selected_server.can_bookkeep %}
-      <a class="loot-tab-button" href="#item-settings" data-loot-tab="item-settings">아이템 설정</a>
+      <a class="loot-tab-button" href="#item-settings" data-loot-tab="item-settings" data-required-role="owner">아이템 설정</a>
     {% endif %}
     {% if auth.selected_server.can_manage and auth.selected_server.my_alliance.can_select %}
       <div class="loot-tab-spacer" data-loot-alliance-control hidden></div>
@@ -1081,6 +1081,8 @@
 
     function activateLootTab(tabName) {
       const normalized = normalizeLootTab(tabName);
+      const activeTab = document.querySelector(`[data-loot-tab="${normalized}"]`);
+      setPageRequiredRole(activeTab?.dataset.requiredRole || "user");
       document.querySelectorAll("[data-loot-tab]").forEach((tab) => {
         tab.classList.toggle("is-active", tab.dataset.lootTab === normalized);
       });

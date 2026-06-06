@@ -58,21 +58,21 @@
 
   <section class="settings-layout" data-settings-tabs data-default-tab="{{ settings_active_tab }}">
     <aside class="settings-sidebar" aria-label="설정 메뉴">
-      <a class="settings-menu-item {% if settings_active_tab == 'alliance' %}is-active{% endif %}" href="#alliance" data-settings-tab="alliance">
+      <a class="settings-menu-item {% if settings_active_tab == 'alliance' %}is-active{% endif %}" href="#alliance" data-settings-tab="alliance" data-required-role="admin">
         <strong>혈맹 관리</strong>
         <span>역할 매핑</span>
       </a>
       {% if auth.selected_server.can_manage_bookkeepers %}
-        <a class="settings-menu-item {% if settings_active_tab == 'bookkeepers' %}is-active{% endif %}" href="#bookkeepers" data-settings-tab="bookkeepers">
+        <a class="settings-menu-item {% if settings_active_tab == 'bookkeepers' %}is-active{% endif %}" href="#bookkeepers" data-settings-tab="bookkeepers" data-required-role="owner">
           <strong>경리 인원</strong>
           <span>드랍/아이템 권한</span>
         </a>
       {% endif %}
-      <a class="settings-menu-item {% if settings_active_tab == 'reports' %}is-active{% endif %}" href="#reports" data-settings-tab="reports">
+      <a class="settings-menu-item {% if settings_active_tab == 'reports' %}is-active{% endif %}" href="#reports" data-settings-tab="reports" data-required-role="admin">
         <strong>통계 알림</strong>
         <span>스케줄/발송</span>
       </a>
-      <a class="settings-menu-item {% if settings_active_tab == 'channels' %}is-active{% endif %}" href="#channels" data-settings-tab="channels">
+      <a class="settings-menu-item {% if settings_active_tab == 'channels' %}is-active{% endif %}" href="#channels" data-settings-tab="channels" data-required-role="admin">
         <strong>채널/타이머</strong>
         <span>봇 패널/시간</span>
       </a>
@@ -616,6 +616,8 @@
       const fallbackTab = settingsTabsRoot.dataset.defaultTab || "alliance";
       const availableTabs = Array.from(settingsMenuItems).map((item) => item.dataset.settingsTab);
       const activeTab = availableTabs.includes(nextTab) ? nextTab : fallbackTab;
+      const activeItem = Array.from(settingsMenuItems).find((item) => item.dataset.settingsTab === activeTab);
+      setPageRequiredRole(activeItem?.dataset.requiredRole || "admin");
 
       settingsMenuItems.forEach((item) => {
         item.classList.toggle("is-active", item.dataset.settingsTab === activeTab);

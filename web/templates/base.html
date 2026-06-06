@@ -14,7 +14,7 @@
         }
       })();
     </script>
-    <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}?v=20260606-page-role-marker">
+    <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}?v=20260606-tab-role-marker">
   </head>
   <body class="{% block body_class %}{% endblock %}{% if auth %} page-role-{{ page_required_role|default('user') }}{% endif %}">
     <header class="topbar {% if not auth %}topbar-public{% endif %}">
@@ -122,6 +122,18 @@
       function toggleTheme() {
         const currentTheme = document.documentElement.dataset.theme === "dark" ? "dark" : "light";
         applyTheme(currentTheme === "dark" ? "light" : "dark");
+      }
+
+      function setPageRequiredRole(role) {
+        const allowedRoles = new Set(["user", "admin", "owner", "developer"]);
+        const nextRole = allowedRoles.has(role) ? role : "user";
+        document.body.classList.remove(
+          "page-role-user",
+          "page-role-admin",
+          "page-role-owner",
+          "page-role-developer"
+        );
+        document.body.classList.add(`page-role-${nextRole}`);
       }
 
       applyTheme(document.documentElement.dataset.theme);
