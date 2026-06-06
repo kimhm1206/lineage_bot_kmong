@@ -415,7 +415,7 @@
                         data-bid-alliance-id="{{ row.alliance_id }}"
                         {% if not auth.selected_server.can_bookkeep %}disabled{% endif %}
                       >
-                        <span data-bid-status-label>{{ "입찰완료" if cell.is_completed else "" }}</span>
+                        <span data-bid-status-label>{% if cell.is_completed %}✓{% endif %}</span>
                       </button>
                     </form>
                   </td>
@@ -2269,7 +2269,7 @@
         cell.classList.toggle("is-complete", Boolean(status.is_completed));
         const label = cell.querySelector("[data-bid-status-label]");
         if (label) {
-          label.textContent = status.is_completed ? "입찰완료" : "";
+          label.textContent = status.is_completed ? "✓" : "";
         }
         const form = cell.closest("[data-bid-status-form]");
         const nextValue = form?.querySelector("[data-bid-next-value]");

@@ -2787,13 +2787,14 @@ button:disabled {
   background: transparent;
   color: var(--muted);
   cursor: pointer;
-  font-size: 12px;
+  font-size: 18px;
   font-weight: 1000;
+  line-height: 1;
 }
 
 .bid-table-cell.is-complete {
   border-color: rgba(68, 148, 113, 0.38);
-  background: rgba(68, 148, 113, 0.12);
+  background: rgba(68, 148, 113, 0.14);
   color: #1f7a55;
 }
 
