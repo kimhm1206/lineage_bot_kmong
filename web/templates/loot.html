@@ -1261,14 +1261,46 @@
       return payload;
     }
 
-    let lootRefreshTimer = null;
-    function scheduleLootRefresh() {
-      if (lootRefreshTimer) {
-        window.clearTimeout(lootRefreshTimer);
+    const lootOpenCardStorageKey = `loot-open-card:${location.pathname}:${new URLSearchParams(location.search).get("guild_id") || ""}`;
+
+    function lootCardKey(card) {
+      if (!card) {
+        return "";
       }
-      lootRefreshTimer = window.setTimeout(() => {
-        window.location.reload();
-      }, 3000);
+      const panel = card.closest("[data-loot-panel]");
+      const tab = panel?.dataset.lootPanel || "";
+      const id = card.dataset.distributionId || card.dataset.lootEventId || "";
+      return tab && id ? `${tab}:${id}` : "";
+    }
+
+    function rememberOpenLootCard(card) {
+      const key = lootCardKey(card);
+      if (!key) {
+        return;
+      }
+      sessionStorage.setItem(lootOpenCardStorageKey, key);
+    }
+
+    function restoreOpenLootCard() {
+      const key = sessionStorage.getItem(lootOpenCardStorageKey);
+      if (!key) {
+        return;
+      }
+      sessionStorage.removeItem(lootOpenCardStorageKey);
+      const [tab, id] = key.split(":");
+      if (!tab || !id) {
+        return;
+      }
+      activateLootTab(tab);
+      const panel = document.querySelector(`[data-loot-panel="${tab}"]`);
+      const card = panel?.querySelector(
+        `[data-loot-event-card][data-distribution-id="${id}"], [data-loot-event-card][data-loot-event-id="${id}"]`,
+      );
+      if (!card) {
+        return;
+      }
+      card.open = true;
+      requestAnimationFrame(() => card.scrollIntoView({ block: "center", behavior: "auto" }));
     }
 
     document.querySelectorAll("[data-payout-form], [data-payout-all-form]").forEach((form) => {
@@ -1285,7 +1317,8 @@
         try {
           const payload = await submitJsonForm(form);
           updatePayoutCard(card, payload);
-          scheduleLootRefresh();
+          rememberOpenLootCard(card);
+          window.location.reload();
         } catch (error) {
           alert(error.message);
         } finally {
