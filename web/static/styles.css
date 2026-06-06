@@ -2349,6 +2349,14 @@ button:disabled {
   font-weight: 1000;
 }
 
+.bid-free-toggle input[type="checkbox"] {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
 .bid-item-edit-list {
   display: grid;
   gap: 8px;
@@ -2802,6 +2810,10 @@ button:disabled {
 }
 
 .bid-table-cell:disabled {
+  cursor: default;
+}
+
+.bid-table-cell.is-static {
   cursor: default;
 }
 

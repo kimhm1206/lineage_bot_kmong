@@ -429,21 +429,26 @@
                 <th>{{ row.alliance_name }}</th>
                 {% for cell in row.cells %}
                   <td class="{% if cell.is_free %}is-free{% endif %}" data-bid-table-column data-bid-item-id="{{ cell.bid_item_id }}" data-bid-item-name="{{ cell.item_name|lower }}">
-                    <form method="post" action="/loot/bids/status?guild_id={{ auth.selected_guild_id }}" data-bid-status-form>
-                      <input type="hidden" name="bid_item_id" value="{{ cell.bid_item_id }}">
-                      <input type="hidden" name="alliance_id" value="{{ row.alliance_id }}">
-                      <input type="hidden" name="is_completed" value="{{ 1 if cell.next_is_completed else 0 }}" data-bid-next-value>
-                      <button
-                        class="bid-table-cell {% if cell.is_completed %}is-complete{% endif %}"
-                        type="submit"
-                        data-bid-table-cell
-                        data-bid-item-id="{{ cell.bid_item_id }}"
-                        data-bid-alliance-id="{{ row.alliance_id }}"
-                        {% if not auth.selected_server.can_bookkeep %}disabled{% endif %}
-                      >
+                    {% if auth.selected_server.can_bookkeep %}
+                      <form method="post" action="/loot/bids/status?guild_id={{ auth.selected_guild_id }}" data-bid-status-form>
+                        <input type="hidden" name="bid_item_id" value="{{ cell.bid_item_id }}">
+                        <input type="hidden" name="alliance_id" value="{{ row.alliance_id }}">
+                        <input type="hidden" name="is_completed" value="{{ 1 if cell.next_is_completed else 0 }}" data-bid-next-value>
+                        <button
+                          class="bid-table-cell {% if cell.is_completed %}is-complete{% endif %}"
+                          type="submit"
+                          data-bid-table-cell
+                          data-bid-item-id="{{ cell.bid_item_id }}"
+                          data-bid-alliance-id="{{ row.alliance_id }}"
+                        >
+                          <span data-bid-status-label>{% if cell.is_completed %}✓{% endif %}</span>
+                        </button>
+                      </form>
+                    {% else %}
+                      <span class="bid-table-cell is-static {% if cell.is_completed %}is-complete{% endif %}">
                         <span data-bid-status-label>{% if cell.is_completed %}✓{% endif %}</span>
-                      </button>
-                    </form>
+                      </span>
+                    {% endif %}
                   </td>
                 {% endfor %}
               </tr>
