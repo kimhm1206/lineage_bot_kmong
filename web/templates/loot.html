@@ -1309,6 +1309,9 @@
     }
 
     function normalizeLootTab(tabName) {
+      if (tabName === "item-bids") {
+        return "item-bids";
+      }
       if (tabName === "create" || tabName === "item-settings") {
         return canBookkeepLoot ? tabName : "distribution";
       }
