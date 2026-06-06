@@ -257,41 +257,51 @@
         <button class="quick-filter" type="button" data-bid-view-tab="table">테이블로 보기</button>
       </div>
       <span>정렬은 유료 아이템 다음 무료나눔 아이템 순서로 고정됩니다.</span>
+      {% if auth.selected_server.can_bookkeep %}
+        <button class="secondary-button bid-item-admin-open" type="button" data-bid-item-modal-open>
+          입찰 아이템 관리
+        </button>
+      {% endif %}
     </section>
 
     {% if auth.selected_server.can_bookkeep %}
-      <section class="panel bid-item-admin-panel">
-        <header class="panel-header">
-          <div>
-            <h2>입찰 아이템 관리</h2>
-            <span class="panel-caption">무료나눔 아이템은 노란색으로 표시됩니다.</span>
-          </div>
-        </header>
-        <form class="bid-item-create-form" method="post" action="/loot/bids/items?guild_id={{ auth.selected_guild_id }}">
-          <label>
-            <span>아이템 이름</span>
-            <input type="text" name="item_name" placeholder="아이템 이름" required>
-          </label>
-          <label class="toggle-row bid-free-toggle">
-            <input type="checkbox" name="is_free" value="1">
-            <span>무료나눔</span>
-          </label>
-          <button class="primary-button" type="submit">추가</button>
-        </form>
-        <div class="bid-item-edit-list">
-          {% for item in bid_dashboard["items"] %}
-            <form method="post" action="/loot/bids/items?guild_id={{ auth.selected_guild_id }}">
-              <input type="hidden" name="bid_item_id" value="{{ item.bid_item_id }}">
-              <input type="text" name="item_name" value="{{ item.item_name }}" aria-label="입찰 아이템 이름">
-              <label class="toggle-row bid-free-toggle">
-                <input type="checkbox" name="is_free" value="1" {% if item.is_free %}checked{% endif %}>
-                <span>무료</span>
+      <div class="modal-backdrop" data-bid-item-modal hidden>
+        <div class="modal-card bid-item-modal-card" role="dialog" aria-modal="true" aria-labelledby="bid-item-modal-title">
+          <header class="panel-header">
+            <div>
+              <h2 id="bid-item-modal-title">입찰 아이템 관리</h2>
+              <span class="panel-caption">무료나눔 아이템은 노란색으로 표시됩니다.</span>
+            </div>
+            <button class="icon-button" type="button" aria-label="닫기" data-bid-item-modal-close>&times;</button>
+          </header>
+          <section class="bid-item-admin-panel">
+            <form class="bid-item-create-form" method="post" action="/loot/bids/items?guild_id={{ auth.selected_guild_id }}">
+              <label>
+                <span>아이템 이름</span>
+                <input type="text" name="item_name" placeholder="아이템 이름" required>
               </label>
-              <button class="secondary-button" type="submit">수정</button>
+              <label class="toggle-row bid-free-toggle">
+                <input type="checkbox" name="is_free" value="1">
+                <span>무료나눔</span>
+              </label>
+              <button class="primary-button" type="submit">추가</button>
             </form>
-          {% endfor %}
+            <div class="bid-item-edit-list">
+              {% for item in bid_dashboard["items"] %}
+                <form method="post" action="/loot/bids/items?guild_id={{ auth.selected_guild_id }}">
+                  <input type="hidden" name="bid_item_id" value="{{ item.bid_item_id }}">
+                  <input type="text" name="item_name" value="{{ item.item_name }}" aria-label="입찰 아이템 이름">
+                  <label class="toggle-row bid-free-toggle">
+                    <input type="checkbox" name="is_free" value="1" {% if item.is_free %}checked{% endif %}>
+                    <span>무료</span>
+                  </label>
+                  <button class="secondary-button" type="submit">수정</button>
+                </form>
+              {% endfor %}
+            </div>
+          </section>
         </div>
-      </section>
+      </div>
     {% endif %}
 
     <section class="bid-item-grid" data-bid-view-panel="cards">
@@ -2108,10 +2118,23 @@
     const bidItemGrid = document.querySelector(".bid-item-grid");
     const bidViewTabs = Array.from(document.querySelectorAll("[data-bid-view-tab]"));
     const bidViewPanels = Array.from(document.querySelectorAll("[data-bid-view-panel]"));
+    const bidItemModal = document.querySelector("[data-bid-item-modal]");
+    const openBidItemModalButton = document.querySelector("[data-bid-item-modal-open]");
+    const closeBidItemModalButton = document.querySelector("[data-bid-item-modal-close]");
     const bidDetailPanel = document.createElement("article");
     bidDetailPanel.className = "panel bid-row-detail-panel";
     bidDetailPanel.hidden = true;
     let openBidItemId = "";
+
+    function setBidItemModalOpen(isOpen) {
+      if (!bidItemModal) {
+        return;
+      }
+      bidItemModal.hidden = !isOpen;
+      if (isOpen) {
+        bidItemModal.querySelector("input[name='item_name']")?.focus();
+      }
+    }
 
     function activateBidView(viewName) {
       const normalized = viewName === "table" ? "table" : "cards";
@@ -2324,6 +2347,13 @@
     bidViewTabs.forEach((button) => {
       button.addEventListener("click", () => activateBidView(button.dataset.bidViewTab));
     });
+    openBidItemModalButton?.addEventListener("click", () => setBidItemModalOpen(true));
+    closeBidItemModalButton?.addEventListener("click", () => setBidItemModalOpen(false));
+    bidItemModal?.addEventListener("click", (event) => {
+      if (event.target === bidItemModal) {
+        setBidItemModalOpen(false);
+      }
+    });
 
     document.addEventListener("submit", async (event) => {
       const form = event.target.closest("[data-bid-status-form]");
@@ -2365,6 +2395,9 @@
       }
       if (event.key === "Escape" && !bidDetailPanel.hidden) {
         closeBidDetailPanel();
+      }
+      if (event.key === "Escape" && bidItemModal && !bidItemModal.hidden) {
+        setBidItemModalOpen(false);
       }
       if (event.key === "Escape" && feeRuleModal && !feeRuleModal.hidden) {
         setFeeRuleModalOpen(false);

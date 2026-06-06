@@ -2326,10 +2326,9 @@ button:disabled {
 }
 
 .bid-view-toolbar {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: auto minmax(180px, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
   margin-bottom: 14px;
   padding: 12px 14px;
@@ -2347,10 +2346,23 @@ button:disabled {
   font-weight: 900;
 }
 
+.bid-item-admin-open {
+  justify-self: end;
+  min-height: 38px;
+}
+
+.bid-item-modal-card {
+  width: min(980px, 100%);
+  max-height: min(820px, calc(100vh - 36px));
+  overflow: hidden;
+}
+
 .bid-item-admin-panel {
   display: grid;
   gap: 14px;
-  margin-bottom: 14px;
+  max-height: calc(100vh - 170px);
+  overflow: auto;
+  padding-right: 4px;
 }
 
 .bid-item-create-form {
@@ -2379,9 +2391,6 @@ button:disabled {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
-  max-height: 270px;
-  overflow: auto;
-  padding-right: 4px;
 }
 
 .bid-item-edit-list form {
@@ -2817,6 +2826,14 @@ button:disabled {
 }
 
 @media (max-width: 860px) {
+  .bid-view-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .bid-item-admin-open {
+    justify-self: stretch;
+  }
+
   .bid-overview-grid,
   .bid-item-grid,
   .bid-status-grid {
