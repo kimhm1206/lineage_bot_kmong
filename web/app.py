@@ -3594,12 +3594,18 @@ def _allowed_loot_alliance_id(
     if alliance_id is not None:
         allowed_ids: set[int] = set()
         for option in options:
-            option_id = _parse_optional_int(option.get("alliance_id"))
+            option_id = (
+                int(option["alliance_id"])
+                if str(option.get("alliance_id") or "").isdigit()
+                else None
+            )
             if option_id is not None:
                 allowed_ids.add(option_id)
             if option.get("is_other"):
                 allowed_ids.update(
-                    int(other_id) for other_id in option.get("alliance_ids", [])
+                    int(other_id)
+                    for other_id in option.get("alliance_ids", [])
+                    if str(other_id).isdigit()
                 )
         if int(alliance_id) not in allowed_ids:
             return None
