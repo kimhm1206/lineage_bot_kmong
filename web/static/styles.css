@@ -3428,11 +3428,15 @@ button:disabled {
 }
 
 .alliance-payout-summary-item.is-paid {
-  border-left-color: rgba(18, 128, 92, 0.78);
+  border-color: rgba(18, 128, 92, 0.3);
+  border-left-color: rgba(18, 128, 92, 0.86);
+  background: rgba(18, 128, 92, 0.08);
 }
 
 .alliance-payout-summary-item.is-unpaid {
-  border-left-color: rgba(204, 80, 64, 0.78);
+  border-color: var(--line);
+  border-left-color: rgba(98, 127, 152, 0.42);
+  background: rgba(246, 247, 249, 0.78);
 }
 
 .alliance-payout-summary-item span,
@@ -4522,6 +4526,18 @@ button:disabled {
 :root[data-theme="dark"] .recipient-detail-card.is-unpaid {
   border-color: rgba(248, 113, 113, 0.28);
   background: rgba(127, 29, 29, 0.18);
+}
+
+:root[data-theme="dark"] .alliance-payout-summary-item.is-paid {
+  border-color: rgba(52, 211, 153, 0.3);
+  border-left-color: rgba(52, 211, 153, 0.86);
+  background: rgba(6, 78, 59, 0.2);
+}
+
+:root[data-theme="dark"] .alliance-payout-summary-item.is-unpaid {
+  border-color: var(--glass-border);
+  border-left-color: rgba(148, 163, 184, 0.42);
+  background: var(--glass-bg-soft);
 }
 
 :root[data-theme="dark"] .recipient-detail-card.is-paid {
