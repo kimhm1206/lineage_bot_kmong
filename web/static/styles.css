@@ -3302,9 +3302,9 @@ button:disabled {
 }
 
 .loot-event-card.payout-card summary {
-  grid-template-columns: minmax(240px, 0.78fr) minmax(320px, 1.25fr) minmax(144px, 0.36fr) auto;
-  min-height: 118px;
-  padding: 20px 22px;
+  grid-template-columns: minmax(220px, 0.56fr) minmax(420px, 1.3fr) minmax(128px, 0.28fr) auto;
+  min-height: 92px;
+  padding: 14px 18px;
 }
 
 .loot-event-card summary::-webkit-details-marker {
@@ -3404,6 +3404,56 @@ button:disabled {
   font-size: 20px;
 }
 
+.alliance-payout-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+  grid-auto-rows: minmax(34px, auto);
+  gap: 6px;
+  align-self: stretch;
+  max-height: 78px;
+  overflow: hidden;
+}
+
+.alliance-payout-summary-item {
+  display: grid;
+  min-width: 0;
+  align-content: center;
+  gap: 2px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-left: 4px solid rgba(98, 127, 152, 0.42);
+  border-radius: 8px;
+  background: rgba(246, 247, 249, 0.78);
+}
+
+.alliance-payout-summary-item.is-paid {
+  border-left-color: rgba(18, 128, 92, 0.78);
+}
+
+.alliance-payout-summary-item.is-unpaid {
+  border-left-color: rgba(204, 80, 64, 0.78);
+}
+
+.alliance-payout-summary-item span,
+.alliance-payout-summary-item strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.alliance-payout-summary-item span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 1000;
+}
+
+.alliance-payout-summary-item strong {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 1000;
+  line-height: 1.1;
+}
+
 .loot-summary-status {
   display: grid;
   align-content: center;
@@ -3436,8 +3486,8 @@ button:disabled {
 }
 
 .payout-card .loot-summary-status {
-  min-height: 76px;
-  padding: 12px 14px;
+  min-height: 64px;
+  padding: 10px 12px;
 }
 
 .payout-card .loot-summary-status strong {
@@ -4448,6 +4498,7 @@ button:disabled {
 :root[data-theme="dark"] .loot-preview-group,
 :root[data-theme="dark"] .loot-member-group,
 :root[data-theme="dark"] .loot-event-metrics div,
+:root[data-theme="dark"] .alliance-payout-summary-item,
 :root[data-theme="dark"] .loot-summary-status,
 :root[data-theme="dark"] .loot-update-form,
 :root[data-theme="dark"] .loot-delete-form,
@@ -4904,7 +4955,9 @@ button:disabled {
   .loot-layout,
   .loot-create-grid,
   .loot-event-card summary,
+  .loot-event-card.payout-card summary,
   .loot-event-metrics,
+  .alliance-payout-summary-grid,
   .loot-edit-row,
   .loot-update-form,
   .loot-fee-summary,

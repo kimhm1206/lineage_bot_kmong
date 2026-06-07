@@ -626,19 +626,21 @@
                 <strong>{{ event.item_name }}</strong>
                 <span>출석 #{{ event.attendance_id }} · {{ event.attendance_started_at or event.event_date }}</span>
               </div>
-              <div class="loot-event-metrics">
-                <div>
-                  <span data-currency-label data-adena-label="분배 아데나" data-cash-label="분배 현금">분배 아데나</span>
-                  <strong data-money-value data-adena-text="{{ event.sale_price_text }}" data-cash-text="{{ event.total_sale_cash_text }}">{{ event.sale_price_text }}</strong>
-                </div>
-                <div>
-                  <span>수수료</span>
-                  <strong data-money-value data-adena-text="{{ event.fee_amount_text }}" data-cash-text="{{ event.fee_amount_cash_text }}">{{ event.fee_amount_text }}</strong>
-                </div>
-                <div>
-                  <span data-currency-label data-adena-label="1인당" data-cash-label="1인당">1인당</span>
-                  <strong data-money-value data-adena-text="{{ event.per_member_text }}" data-cash-text="{{ event.per_member_cash_text }}">{{ event.per_member_text }}</strong>
-                </div>
+              <div class="alliance-payout-summary-grid" aria-label="혈맹별 분배금">
+                {% for payout in event.alliance_payouts %}
+                  <div
+                    class="alliance-payout-summary-item {% if payout.payout_status == 'paid' %}is-paid{% else %}is-unpaid{% endif %}"
+                    data-summary-alliance-id="{{ payout.alliance_id }}"
+                  >
+                    <span>{{ payout.alliance_name }}</span>
+                    <strong data-money-value data-adena-text="{{ payout.net_amount_text }}" data-cash-text="{{ payout.net_amount_cash_text }}">{{ payout.net_amount_text }}</strong>
+                  </div>
+                {% else %}
+                  <div class="alliance-payout-summary-item is-empty">
+                    <span>분배 없음</span>
+                    <strong>0</strong>
+                  </div>
+                {% endfor %}
               </div>
               <div class="loot-summary-status {{ event.payout_summary_class }}" data-payout-summary>
                 <strong data-payout-summary-label>{{ event.payout_summary_label }}</strong>
