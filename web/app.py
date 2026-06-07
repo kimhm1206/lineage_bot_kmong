@@ -3334,6 +3334,117 @@ def _my_alliance_payout_context(
     }
 
 
+def _mapped_loot_alliances(guild_id: int) -> list[dict[str, Any]]:
+    seen: set[int] = set()
+    alliances = []
+    for mapping in database.get_guild_alliance_role_mappings(guild_id):
+        alliance_id = _parse_optional_int(mapping.get("alliance_id"))
+        if alliance_id is None or alliance_id in seen:
+            continue
+        seen.add(alliance_id)
+        alliances.append(
+            {
+                "alliance_id": alliance_id,
+                "alliance_name": str(mapping.get("alliance_name") or ""),
+            }
+        )
+    alliances.sort(key=lambda item: str(item["alliance_name"]))
+    return alliances
+
+
+def _alliance_payout_group_context(
+    guild_id: int,
+    events: list[dict[str, Any]],
+) -> dict[str, Any]:
+    mapped_alliances = _mapped_loot_alliances(guild_id)
+    alliance_rows = {
+        int(alliance["alliance_id"]): {
+            "alliance_id": int(alliance["alliance_id"]),
+            "alliance_name": str(alliance["alliance_name"]),
+            "total_amount": Decimal("0"),
+            "unpaid_amount": Decimal("0"),
+            "total_count": 0,
+            "paid_count": 0,
+            "unpaid_count": 0,
+            "unpaid_distribution_ids": [],
+            "items": [],
+        }
+        for alliance in mapped_alliances
+    }
+
+    for event in events:
+        adena_rate = Decimal(str(event.get("adena_rate") or "0"))
+        for payout in event.get("alliance_payouts", []):
+            alliance_id = _parse_optional_int(payout.get("alliance_id"))
+            if alliance_id is None or alliance_id not in alliance_rows:
+                continue
+            amount = _rounded_integer(payout.get("net_amount"))
+            is_paid = payout.get("payout_status") == "paid"
+            distribution_id = int(event.get("distribution_id") or 0)
+            row = alliance_rows[alliance_id]
+            row["total_amount"] += amount
+            row["total_count"] += 1
+            if is_paid:
+                row["paid_count"] += 1
+            else:
+                row["unpaid_amount"] += amount
+                row["unpaid_count"] += 1
+                if distribution_id > 0:
+                    row["unpaid_distribution_ids"].append(distribution_id)
+            row["items"].append(
+                {
+                    "alliance_id": alliance_id,
+                    "distribution_id": distribution_id,
+                    "loot_event_id": int(event.get("loot_event_id") or 0),
+                    "attendance_id": int(event.get("attendance_id") or 0),
+                    "item_name": str(event.get("item_name") or ""),
+                    "attendance_started_at": event.get("attendance_started_at")
+                    or event.get("event_date")
+                    or "",
+                    "participant_count": int(payout.get("participant_count") or 0),
+                    "amount": amount,
+                    "amount_text": _money_text(amount),
+                    "amount_cash_text": _cash_text(_cash_from_adena(amount, adena_rate)),
+                    "per_member_text": payout.get("per_member_text") or "0",
+                    "status": "paid" if is_paid else "unpaid",
+                    "status_label": "분배완료" if is_paid else "미완료",
+                    "status_class": "is-paid" if is_paid else "is-unpaid",
+                    "next_status": "unpaid" if is_paid else "paid",
+                    "next_status_label": "미완료로 변경" if is_paid else "완료 처리",
+                }
+            )
+
+    rows = []
+    for row in alliance_rows.values():
+        total_amount = Decimal(str(row["total_amount"]))
+        unpaid_amount = Decimal(str(row["unpaid_amount"]))
+        rows.append(
+            {
+                **row,
+                "total_amount_text": _money_text(total_amount),
+                "unpaid_amount_text": _money_text(unpaid_amount),
+                "status": "unpaid" if unpaid_amount > 0 else "paid",
+                "status_label": "미완료 있음" if unpaid_amount > 0 else "전체 완료",
+                "status_class": "is-unpaid" if unpaid_amount > 0 else "is-paid",
+                "unpaid_distribution_ids_text": ",".join(
+                    str(distribution_id)
+                    for distribution_id in row["unpaid_distribution_ids"]
+                ),
+            }
+        )
+    rows.sort(
+        key=lambda item: (
+            -Decimal(str(item["unpaid_amount"] or "0")),
+            -int(item["unpaid_count"] or 0),
+            str(item["alliance_name"]),
+        )
+    )
+    return {
+        "alliances": rows,
+        "mapped_alliances": mapped_alliances,
+    }
+
+
 def _loot_url(
     guild_id: int,
     *,
@@ -3811,6 +3922,10 @@ def _loot_template_context(
         "distribution_events": distribution_events,
         "loot_summary": _loot_distribution_summary(distribution_events),
         "bid_dashboard": database.get_bid_item_dashboard(guild_id),
+        "alliance_payout_groups": _alliance_payout_group_context(
+            guild_id,
+            loot_events,
+        ),
         "my_alliance_payouts": _my_alliance_payout_context(
             guild_id,
             selected_alliance,
@@ -5378,6 +5493,90 @@ async def update_all_loot_payout_status(
         )
     if _wants_json(request):
         return JSONResponse({"ok": True, **payload})
+    return RedirectResponse(
+        f"/loot?guild_id={selected_guild_id}&saved=payout#alliance-payouts",
+        status_code=303,
+    )
+
+
+@app.post("/loot/payouts/alliance-settle-all")
+async def settle_alliance_payout_group(
+    request: Request,
+    guild_id: str | None = None,
+):
+    auth = _auth_context(request, guild_id)
+    if not auth:
+        if _wants_json(request):
+            return JSONResponse({"ok": False, "message": "로그인이 필요합니다."}, status_code=401)
+        return _auth_redirect(request)
+
+    selected_guild_id = int(auth["selected_guild_id"])
+    if not _can_manage_selected_server(auth):
+        if _wants_json(request):
+            return JSONResponse({"ok": False, "message": "관리자 권한이 필요합니다."}, status_code=403)
+        return RedirectResponse(
+            f"/loot?guild_id={selected_guild_id}&saved=forbidden#alliance-payouts",
+            status_code=303,
+        )
+
+    form_data = await _urlencoded_form_data(request)
+    try:
+        alliance_id = int(form_data.get("alliance_id") or "")
+    except ValueError:
+        alliance_id = 0
+    mapped_alliance_ids = {
+        int(alliance["alliance_id"])
+        for alliance in _mapped_loot_alliances(selected_guild_id)
+    }
+    distribution_ids = []
+    for raw_id in str(form_data.get("distribution_ids") or "").split(","):
+        try:
+            distribution_id = int(raw_id.strip())
+        except ValueError:
+            continue
+        if distribution_id > 0:
+            distribution_ids.append(distribution_id)
+    if alliance_id <= 0 or alliance_id not in mapped_alliance_ids or not distribution_ids:
+        if _wants_json(request):
+            return JSONResponse(
+                {"ok": False, "message": "완료 처리할 혈맹 분배 항목이 없습니다."},
+                status_code=400,
+            )
+        return RedirectResponse(
+            f"/loot?guild_id={selected_guild_id}&saved=error#alliance-payouts",
+            status_code=303,
+        )
+
+    updated_ids = []
+    try:
+        for distribution_id in sorted(set(distribution_ids)):
+            database.update_distribution_alliance_payout_status(
+                selected_guild_id,
+                distribution_id,
+                alliance_id,
+                "paid",
+            )
+            updated_ids.append(distribution_id)
+    except ValueError:
+        if _wants_json(request):
+            return JSONResponse(
+                {"ok": False, "message": "혈맹별 분배를 완료 처리하지 못했습니다."},
+                status_code=400,
+            )
+        return RedirectResponse(
+            f"/loot?guild_id={selected_guild_id}&saved=error#alliance-payouts",
+            status_code=303,
+        )
+
+    if _wants_json(request):
+        return JSONResponse(
+            {
+                "ok": True,
+                "alliance_id": alliance_id,
+                "distribution_ids": updated_ids,
+                "payout_status": "paid",
+            }
+        )
     return RedirectResponse(
         f"/loot?guild_id={selected_guild_id}&saved=payout#alliance-payouts",
         status_code=303,

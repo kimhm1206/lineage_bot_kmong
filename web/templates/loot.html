@@ -253,8 +253,8 @@
 
     <section class="bid-view-toolbar panel">
       <div class="bid-view-tabs" role="tablist" aria-label="아이템 입찰 보기 방식">
-        <button class="quick-filter is-active" type="button" data-bid-view-tab="cards">카드로 보기</button>
-        <button class="quick-filter" type="button" data-bid-view-tab="table">테이블로 보기</button>
+        <button class="quick-filter" type="button" data-bid-view-tab="cards">카드로 보기</button>
+        <button class="quick-filter is-active" type="button" data-bid-view-tab="table">테이블로 보기</button>
       </div>
       <label class="bid-search-field">
         <span>검색</span>
@@ -332,7 +332,7 @@
       </div>
     {% endif %}
 
-    <section class="bid-item-grid" data-bid-view-panel="cards">
+    <section class="bid-item-grid" data-bid-view-panel="cards" hidden>
       {% for item in bid_dashboard["items"] %}
         <article class="panel bid-item-card {% if item.is_free %}is-free{% endif %}" data-bid-item-card data-bid-item-id="{{ item.bid_item_id }}" data-bid-item-name="{{ item.item_name|lower }}">
           <button class="bid-card-button" type="button" data-bid-card-toggle aria-expanded="false">
@@ -409,7 +409,7 @@
       {% endfor %}
     </section>
 
-    <section class="panel bid-table-panel" data-bid-view-panel="table" hidden>
+    <section class="panel bid-table-panel" data-bid-view-panel="table">
       {% set bid_table_chunk_size = 8 %}
       <div class="bid-table-stack">
         {% for item_batch in bid_dashboard["items"]|batch(bid_table_chunk_size, false) %}
@@ -607,7 +607,12 @@
 
   {% if auth.selected_server.can_manage %}
     <section class="loot-tab-panel" data-loot-panel="alliance-payouts" hidden>
-      <section class="loot-event-list" aria-label="각혈 분배 현황">
+      <div class="inner-tab-row" data-alliance-payout-tabs>
+        <button class="inner-tab-button is-active" type="button" data-alliance-payout-tab="events">아이템 건별</button>
+        <button class="inner-tab-button" type="button" data-alliance-payout-tab="alliances">혈맹별</button>
+      </div>
+
+      <section class="loot-event-list" aria-label="각혈 분배 현황" data-alliance-payout-panel="events">
         {% for event in loot_events %}
           <details
             class="panel loot-event-card payout-card"
@@ -832,6 +837,137 @@
             <div class="empty report-empty">등록된 드랍 기록이 없습니다.</div>
           </article>
         {% endfor %}
+      </section>
+
+      <section class="panel my-recipient-payout-panel" data-alliance-payout-panel="alliances" hidden>
+        <header class="panel-header">
+          <div>
+            <h2>혈맹별 분배 현황</h2>
+            <span class="panel-caption">역할 매핑에 등록된 혈맹 기준으로 미완료 금액과 드랍 건수를 확인합니다</span>
+          </div>
+        </header>
+
+        <div class="recipient-payout-controls">
+          <label class="field">
+            <span>혈맹 검색</span>
+            <input type="search" placeholder="혈맹 이름 검색" data-alliance-payout-search>
+          </label>
+          <label class="field">
+            <span>필터</span>
+            <select data-alliance-payout-filter>
+              <option value="all">전체</option>
+              <option value="unpaid">미완료 있는 혈맹만</option>
+              <option value="paid">전체 완료만</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>정렬</span>
+            <select data-alliance-payout-sort>
+              <option value="unpaid_desc">미분배 잔액 높은순</option>
+              <option value="name_asc">혈맹 가나다순</option>
+              <option value="count_desc">미완료 건수 많은순</option>
+              <option value="total_desc">총 분배금 높은순</option>
+            </select>
+          </label>
+        </div>
+
+        <section class="recipient-payout-card-list" data-alliance-payout-list>
+          {% for alliance in alliance_payout_groups.alliances %}
+            <details
+              class="panel loot-event-card recipient-payout-card alliance-payout-group-card"
+              data-alliance-payout-row
+              data-alliance-id="{{ alliance.alliance_id }}"
+              data-search-text="{{ alliance.alliance_name|lower }}"
+              data-status="{{ alliance.status }}"
+              data-unpaid-amount="{{ alliance.unpaid_amount }}"
+              data-total-amount="{{ alliance.total_amount }}"
+              data-unpaid-count="{{ alliance.unpaid_count }}"
+            >
+              <summary class="loot-event-summary recipient-payout-summary">
+                <div class="loot-event-main">
+                  <strong>{{ alliance.alliance_name }}</strong>
+                  <span class="panel-caption">{{ alliance["items"]|length }}건 분배</span>
+                </div>
+                <div class="recipient-payout-metrics">
+                  <div>
+                    <span>총 분배</span>
+                    <strong>{{ alliance.total_amount_text }}</strong>
+                  </div>
+                  <div>
+                    <span>미분배</span>
+                    <strong data-alliance-unpaid-text>{{ alliance.unpaid_amount_text }}</strong>
+                  </div>
+                  <div class="{% if alliance.unpaid_count == 0 %}is-paid{% else %}is-unpaid{% endif %}" data-alliance-status-card>
+                    <span>분배 상태</span>
+                    <strong data-alliance-count-text>{% if alliance.unpaid_count == 0 %}완료{% else %}미완료 {{ alliance.unpaid_count }}건{% endif %}</strong>
+                  </div>
+                </div>
+                <div class="recipient-payout-actions" data-alliance-payout-actions>
+                  <form
+                    class="inline-actions"
+                    method="post"
+                    action="/loot/payouts/alliance-settle-all?guild_id={{ auth.selected_guild_id }}"
+                    data-alliance-settle-all-form
+                    {% if alliance.unpaid_count == 0 %}hidden{% endif %}
+                  >
+                    <input type="hidden" name="alliance_id" value="{{ alliance.alliance_id }}">
+                    <input type="hidden" name="distribution_ids" value="{{ alliance.unpaid_distribution_ids_text }}" data-alliance-distribution-ids>
+                    <button class="tiny-button" type="submit" data-alliance-settle-button>전체완료</button>
+                  </form>
+                </div>
+              </summary>
+              <div class="loot-event-body recipient-payout-body">
+                <div class="recipient-detail-list">
+                  {% for item in alliance["items"] %}
+                    <article
+                      class="recipient-detail-card {{ item.status_class }}"
+                      data-alliance-detail-item
+                      data-alliance-id="{{ alliance.alliance_id }}"
+                      data-distribution-id="{{ item.distribution_id }}"
+                      data-alliance-detail-status="{{ item.status }}"
+                      data-payout-amount="{{ item.amount }}"
+                    >
+                      <div>
+                        <strong>#{{ item.loot_event_id }} {{ item.item_name }}</strong>
+                        <span class="panel-caption">출석 #{{ item.attendance_id }} · {{ item.attendance_started_at }}</span>
+                      </div>
+                      <div>
+                        <span>혈맹 분배</span>
+                        <strong>{{ item.amount_text }}</strong>
+                      </div>
+                      <div>
+                        <span>인원</span>
+                        <strong>{{ item.participant_count }}명</strong>
+                      </div>
+                      <div>
+                        <span class="payout-status-badge {{ item.status_class }}" data-alliance-detail-badge>
+                          {{ item.status_label }}
+                        </span>
+                      </div>
+                      <form
+                        class="inline-actions"
+                        method="post"
+                        action="/loot/payout-status?guild_id={{ auth.selected_guild_id }}"
+                        data-alliance-payout-form
+                      >
+                        <input type="hidden" name="distribution_id" value="{{ item.distribution_id }}">
+                        <input type="hidden" name="alliance_id" value="{{ alliance.alliance_id }}">
+                        <input type="hidden" name="payout_status" value="{{ item.next_status }}" data-alliance-detail-status-input>
+                        <button class="tiny-button" type="submit" data-alliance-detail-button>{{ item.next_status_label }}</button>
+                      </form>
+                    </article>
+                  {% else %}
+                    <div class="empty report-empty">분배 기록이 없습니다.</div>
+                  {% endfor %}
+                </div>
+              </div>
+            </details>
+          {% else %}
+            <article class="panel">
+              <div class="empty report-empty">혈맹별 분배 기록이 없습니다.</div>
+            </article>
+          {% endfor %}
+        </section>
       </section>
     </section>
   {% endif %}
@@ -1787,12 +1923,185 @@
       });
     }
 
+    function activateAlliancePayoutInnerTab(tabName) {
+      const normalized = tabName === "alliances" ? "alliances" : "events";
+      document.querySelectorAll("[data-alliance-payout-tab]").forEach((button) => {
+        button.classList.toggle("is-active", button.dataset.alliancePayoutTab === normalized);
+      });
+      document.querySelectorAll("[data-alliance-payout-panel]").forEach((panel) => {
+        panel.hidden = panel.dataset.alliancePayoutPanel !== normalized;
+      });
+      if (normalized === "alliances") {
+        applyAlliancePayoutFilters();
+      }
+    }
+
     function recipientNumber(row, key) {
       return Number(row.dataset[key] || "0");
     }
 
     function formatAdenaNumber(value) {
       return Math.round(Number(value || 0)).toLocaleString("ko-KR");
+    }
+
+    function payoutStatusText(status) {
+      return status === "paid" ? "분배완료" : "미완료";
+    }
+
+    function payoutNextStatusText(status) {
+      return status === "paid" ? "미완료로 변경" : "완료 처리";
+    }
+
+    function alliancePayoutNumber(row, key) {
+      return Number(row.dataset[key] || "0");
+    }
+
+    function applyAlliancePayoutFilters() {
+      const searchInput = document.querySelector("[data-alliance-payout-search]");
+      const filterSelect = document.querySelector("[data-alliance-payout-filter]");
+      const sortSelect = document.querySelector("[data-alliance-payout-sort]");
+      const list = document.querySelector("[data-alliance-payout-list]");
+      if (!list) {
+        return;
+      }
+      const query = (searchInput?.value || "").trim().toLowerCase();
+      const filter = filterSelect?.value || "all";
+      const rows = Array.from(list.querySelectorAll("[data-alliance-payout-row]"));
+      rows.forEach((row) => {
+        const matchesSearch = !query || (row.dataset.searchText || "").includes(query);
+        const matchesFilter = filter === "all" || row.dataset.status === filter;
+        row.hidden = !(matchesSearch && matchesFilter);
+      });
+
+      const sort = sortSelect?.value || "unpaid_desc";
+      rows.sort((a, b) => {
+        if (sort === "name_asc") {
+          return (a.dataset.searchText || "").localeCompare(b.dataset.searchText || "", "ko");
+        }
+        if (sort === "count_desc") {
+          return alliancePayoutNumber(b, "unpaidCount") - alliancePayoutNumber(a, "unpaidCount");
+        }
+        if (sort === "total_desc") {
+          return alliancePayoutNumber(b, "totalAmount") - alliancePayoutNumber(a, "totalAmount");
+        }
+        return alliancePayoutNumber(b, "unpaidAmount") - alliancePayoutNumber(a, "unpaidAmount");
+      });
+      rows.forEach((row) => list.appendChild(row));
+    }
+
+    function updateEventPayoutRows(distributionId, allianceId, status) {
+      const normalized = status === "paid" ? "paid" : "unpaid";
+      document
+        .querySelectorAll(`[data-loot-event-card][data-distribution-id="${distributionId}"] [data-payout-row][data-alliance-id="${allianceId}"]`)
+        .forEach((row) => {
+          const badge = row.querySelector("[data-payout-badge]");
+          const input = row.querySelector("[data-payout-status-input]");
+          const button = row.querySelector("[data-payout-button]");
+          if (badge) {
+            badge.textContent = payoutStatusText(normalized);
+            badge.classList.toggle("is-paid", normalized === "paid");
+            badge.classList.toggle("is-unpaid", normalized !== "paid");
+          }
+          if (input) {
+            input.value = normalized === "paid" ? "unpaid" : "paid";
+          }
+          if (button) {
+            button.textContent = payoutNextStatusText(normalized);
+          }
+          const card = row.closest("[data-loot-event-card]");
+          if (!card) {
+            return;
+          }
+          const rows = Array.from(card.querySelectorAll("[data-payout-row]"));
+          const unpaidCount = rows.filter((item) => {
+            return item.querySelector("[data-payout-badge]")?.classList.contains("is-unpaid");
+          }).length;
+          const summary = card.querySelector("[data-payout-summary]");
+          if (summary) {
+            const total = rows.length;
+            const label = summary.querySelector("[data-payout-summary-label]");
+            const meta = summary.querySelector("[data-payout-summary-meta]");
+            summary.classList.toggle("is-paid", total > 0 && unpaidCount === 0);
+            summary.classList.toggle("is-unpaid", unpaidCount > 0);
+            summary.classList.toggle("is-empty", total === 0);
+            if (label) {
+              label.textContent = total === 0 ? "분배 없음" : unpaidCount === 0 ? "분배완료" : "미완료";
+            }
+            if (meta) {
+              meta.textContent = total === 0 ? "혈맹 0개" : unpaidCount === 0 ? `${total}/${total} 혈맹` : `${unpaidCount}개 미완료`;
+            }
+          }
+        });
+    }
+
+    function setAllianceDetailPill(allianceId, distributionId, status) {
+      const normalized = status === "paid" ? "paid" : "unpaid";
+      document
+        .querySelectorAll(`[data-alliance-detail-item][data-alliance-id="${allianceId}"][data-distribution-id="${distributionId}"]`)
+        .forEach((item) => {
+          item.dataset.allianceDetailStatus = normalized;
+          item.classList.toggle("is-paid", normalized === "paid");
+          item.classList.toggle("is-unpaid", normalized !== "paid");
+          const badge = item.querySelector("[data-alliance-detail-badge]");
+          const input = item.querySelector("[data-alliance-detail-status-input]");
+          const button = item.querySelector("[data-alliance-detail-button]");
+          if (badge) {
+            badge.textContent = payoutStatusText(normalized);
+            badge.classList.toggle("is-paid", normalized === "paid");
+            badge.classList.toggle("is-unpaid", normalized !== "paid");
+          }
+          if (input) {
+            input.value = normalized === "paid" ? "unpaid" : "paid";
+          }
+          if (button) {
+            button.textContent = payoutNextStatusText(normalized);
+          }
+        });
+      updateEventPayoutRows(distributionId, allianceId, normalized);
+    }
+
+    function updateAllianceSummaryFromDetails(allianceId) {
+      const row = document.querySelector(`[data-alliance-payout-row][data-alliance-id="${allianceId}"]`);
+      if (!row) {
+        return;
+      }
+      const detailItems = Array.from(
+        document.querySelectorAll(`[data-alliance-detail-item][data-alliance-id="${allianceId}"]`),
+      );
+      let unpaidAmount = 0;
+      let unpaidCount = 0;
+      const unpaidDistributionIds = [];
+      detailItems.forEach((item) => {
+        if (item.dataset.allianceDetailStatus !== "paid") {
+          unpaidAmount += alliancePayoutNumber(item, "payoutAmount");
+          unpaidCount += 1;
+          unpaidDistributionIds.push(item.dataset.distributionId);
+        }
+      });
+      row.dataset.status = unpaidCount > 0 ? "unpaid" : "paid";
+      row.dataset.unpaidAmount = String(unpaidAmount);
+      row.dataset.unpaidCount = String(unpaidCount);
+      const unpaidText = row.querySelector("[data-alliance-unpaid-text]");
+      if (unpaidText) {
+        unpaidText.textContent = formatAdenaNumber(unpaidAmount);
+      }
+      const countText = row.querySelector("[data-alliance-count-text]");
+      if (countText) {
+        countText.textContent = unpaidCount === 0 ? "완료" : `미완료 ${unpaidCount}건`;
+      }
+      const statusCard = row.querySelector("[data-alliance-status-card]");
+      if (statusCard) {
+        statusCard.classList.toggle("is-paid", unpaidCount === 0);
+        statusCard.classList.toggle("is-unpaid", unpaidCount > 0);
+      }
+      const form = row.querySelector("[data-alliance-settle-all-form]");
+      if (form) {
+        form.hidden = unpaidCount === 0;
+        const distributionInput = form.querySelector("[data-alliance-distribution-ids]");
+        if (distributionInput) {
+          distributionInput.value = unpaidDistributionIds.join(",");
+        }
+      }
     }
 
     function updateMyAllianceUnsettledTotal() {
@@ -2125,10 +2434,80 @@
     document.querySelectorAll("[data-my-payout-tab]").forEach((button) => {
       button.addEventListener("click", () => activateMyPayoutInnerTab(button.dataset.myPayoutTab));
     });
+    document.querySelectorAll("[data-alliance-payout-tab]").forEach((button) => {
+      button.addEventListener("click", () => activateAlliancePayoutInnerTab(button.dataset.alliancePayoutTab));
+    });
     document.querySelector("[data-recipient-payout-search]")?.addEventListener("input", applyRecipientPayoutFilters);
     document.querySelector("[data-recipient-payout-filter]")?.addEventListener("change", applyRecipientPayoutFilters);
     document.querySelector("[data-recipient-payout-sort]")?.addEventListener("change", applyRecipientPayoutFilters);
+    document.querySelector("[data-alliance-payout-search]")?.addEventListener("input", applyAlliancePayoutFilters);
+    document.querySelector("[data-alliance-payout-filter]")?.addEventListener("change", applyAlliancePayoutFilters);
+    document.querySelector("[data-alliance-payout-sort]")?.addEventListener("change", applyAlliancePayoutFilters);
     applyRecipientPayoutFilters();
+    applyAlliancePayoutFilters();
+
+    document.querySelectorAll("[data-alliance-payout-form]").forEach((form) => {
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const detailItem = form.closest("[data-alliance-detail-item]");
+        const button = form.querySelector("[data-alliance-detail-button]");
+        const statusInput = form.querySelector("[data-alliance-detail-status-input]");
+        if (!detailItem || !button || button.disabled || !statusInput) {
+          return;
+        }
+        const allianceId = detailItem.dataset.allianceId;
+        const distributionId = detailItem.dataset.distributionId;
+        const nextStatus = statusInput.value === "paid" ? "paid" : "unpaid";
+        const originalText = button.textContent;
+        button.disabled = true;
+        button.textContent = "처리중";
+        try {
+          await submitJsonForm(form);
+          setAllianceDetailPill(allianceId, distributionId, nextStatus);
+          updateAllianceSummaryFromDetails(allianceId);
+          applyAlliancePayoutFilters();
+        } catch (error) {
+          alert(error.message);
+          button.textContent = originalText;
+        } finally {
+          button.disabled = false;
+        }
+      });
+    });
+
+    document.querySelectorAll("[data-alliance-settle-all-form]").forEach((form) => {
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const row = form.closest("[data-alliance-payout-row]");
+        const button = form.querySelector("[data-alliance-settle-button]");
+        const distributionInput = form.querySelector("[data-alliance-distribution-ids]");
+        if (!row || !button || button.disabled || !distributionInput?.value) {
+          return;
+        }
+        const originalText = button.textContent;
+        button.disabled = true;
+        button.textContent = "처리중";
+        try {
+          const payload = await submitJsonForm(form);
+          const updatedIds = new Set((payload.distribution_ids || []).map((id) => String(id)));
+          document
+            .querySelectorAll(`[data-alliance-detail-item][data-alliance-id="${row.dataset.allianceId}"]`)
+            .forEach((item) => {
+              if (!updatedIds.has(String(item.dataset.distributionId))) {
+                return;
+              }
+              setAllianceDetailPill(row.dataset.allianceId, item.dataset.distributionId, "paid");
+            });
+          updateAllianceSummaryFromDetails(row.dataset.allianceId);
+          applyAlliancePayoutFilters();
+        } catch (error) {
+          alert(error.message);
+          button.textContent = originalText;
+        } finally {
+          button.disabled = false;
+        }
+      });
+    });
 
     const feeRuleModal = document.querySelector("[data-fee-rule-modal]");
     const openFeeRuleModalButton = document.querySelector("[data-fee-rule-modal-open]");
@@ -2397,7 +2776,7 @@
     }
 
     function activeBidViewName() {
-      return bidViewTabs.find((button) => button.classList.contains("is-active"))?.dataset.bidViewTab || "cards";
+      return bidViewTabs.find((button) => button.classList.contains("is-active"))?.dataset.bidViewTab || "table";
     }
 
     function applyBidSearch() {

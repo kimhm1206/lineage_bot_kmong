@@ -3801,6 +3801,10 @@ button:disabled {
   background: rgba(255, 255, 255, 0.72);
 }
 
+.alliance-payout-group-card .recipient-detail-card {
+  grid-template-columns: minmax(220px, 1fr) minmax(130px, 0.45fr) minmax(80px, 0.25fr) auto auto;
+}
+
 .recipient-detail-card.is-unpaid {
   border-color: rgba(180, 35, 24, 0.22);
   background: rgba(180, 35, 24, 0.06);
@@ -4824,7 +4828,8 @@ button:disabled {
   }
 
   .loot-event-card.recipient-payout-card summary.recipient-payout-summary,
-  .recipient-detail-card {
+  .recipient-detail-card,
+  .alliance-payout-group-card .recipient-detail-card {
     grid-template-columns: 1fr;
   }
 
