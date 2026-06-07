@@ -5815,8 +5815,9 @@ async def settle_member_payout_recipient_all(
         return _loot_redirect(selected_guild_id, saved="error", alliance_id=alliance_id)
 
     updated_ids = []
-    try:
-        for distribution_id in sorted(set(distribution_ids)):
+    skipped_ids = []
+    for distribution_id in sorted(set(distribution_ids)):
+        try:
             database.update_member_payout_recipient_status(
                 selected_guild_id,
                 distribution_id,
@@ -5826,7 +5827,10 @@ async def settle_member_payout_recipient_all(
                 updated_by_discord_id=int(auth["user"]["id"]),
             )
             updated_ids.append(distribution_id)
-    except ValueError:
+        except ValueError:
+            skipped_ids.append(distribution_id)
+
+    if not updated_ids:
         if _wants_json(request):
             return JSONResponse(
                 {"ok": False, "message": "유저별 분배를 완료 처리하지 못했습니다."},
@@ -5840,6 +5844,7 @@ async def settle_member_payout_recipient_all(
                 "ok": True,
                 "user_id": user_id,
                 "distribution_ids": updated_ids,
+                "skipped_distribution_ids": skipped_ids,
                 "payout_status": "paid",
             }
         )
