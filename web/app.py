@@ -2535,6 +2535,7 @@ def _decorate_loot_events(
     events: list[dict[str, Any]],
     viewer_discord_id: int | None = None,
     guild_id: int | None = None,
+    viewer_current_alliance_ids: set[int] | None = None,
 ) -> list[dict[str, Any]]:
     decorated_events = []
     member_group_cache: dict[int, dict[int, dict[str, Any]]] = {}
@@ -2617,6 +2618,7 @@ def _decorate_loot_events(
         viewer_release_visible = False
         viewer_alliance_ids: set[int] = set()
         viewer_alliance_names: set[str] = set()
+        viewer_user_id = 0
         viewer_user_ids_by_alliance: dict[int, int] = {}
         members_by_alliance: dict[int, list[dict[str, Any]]] = {}
         for alliance in event.get("alliances", []):
@@ -2630,6 +2632,7 @@ def _decorate_loot_events(
                     and int(member_row.get("discord_id") or 0) == viewer_discord_id
                 ):
                     viewer_participated = True
+                    viewer_user_id = int(member_row.get("user_id") or 0)
                     if alliance_id is not None:
                         viewer_alliance_ids.add(alliance_id)
                         viewer_user_ids_by_alliance[alliance_id] = int(
@@ -2654,6 +2657,11 @@ def _decorate_loot_events(
         viewer_alliance_amount = Decimal("0")
         viewer_gross_per_member_amount = Decimal("0")
         viewer_per_member_amount = Decimal("0")
+        viewer_payout_alliance_ids = (
+            set(viewer_current_alliance_ids or set())
+            if viewer_current_alliance_ids
+            else set(viewer_alliance_ids)
+        )
         for payout in event.get("alliance_payouts", []):
             payout_row = dict(payout)
             payout_alliance_id = _parse_optional_int(payout.get("alliance_id"))
@@ -2683,7 +2691,7 @@ def _decorate_loot_events(
                 released_payout_alliance_ids.add(payout_alliance_id)
             if (
                 payout_alliance_id is not None
-                and payout_alliance_id in viewer_alliance_ids
+                and payout_alliance_id in viewer_payout_alliance_ids
                 and payout.get("payout_status") == "paid"
             ):
                 viewer_release_visible = True
@@ -2707,13 +2715,16 @@ def _decorate_loot_events(
                 alliance_fee_share = _rounded_integer(gross_share * fee_rate)
                 internal_fee_share = _rounded_divide(internal_fee_amount, alliance_member_count)
                 viewer_share = _rounded_divide(distributable_amount, alliance_member_count)
-                viewer_user_id = viewer_user_ids_by_alliance.get(payout_alliance_id, 0)
+                viewer_payout_user_id = viewer_user_ids_by_alliance.get(
+                    payout_alliance_id,
+                    viewer_user_id,
+                )
                 paid_statuses = (
                     member_record.get("statuses", {})
                     if member_record is not None
                     else {}
                 )
-                is_viewer_paid = bool(paid_statuses.get(viewer_user_id, False))
+                is_viewer_paid = bool(paid_statuses.get(viewer_payout_user_id, False))
 
                 viewer_alliance_amount += payout_net
                 viewer_internal_fee_amount += internal_fee_amount
@@ -3905,10 +3916,20 @@ def _loot_template_context(
         viewer_discord_id = int(auth["user"]["id"])
     except (KeyError, TypeError, ValueError):
         viewer_discord_id = None
+    viewer_current_alliance_ids = (
+        {
+            int(option["alliance_id"])
+            for option in _member_alliance_options(guild_id, str(viewer_discord_id))
+            if str(option.get("alliance_id") or "").isdigit()
+        }
+        if viewer_discord_id is not None
+        else set()
+    )
     all_events = _decorate_loot_events(
         database.get_loot_drop_events(guild_id, limit=5000),
         viewer_discord_id,
         guild_id,
+        viewer_current_alliance_ids,
     )
     loot_events = _filter_loot_events_by_period(all_events, period_start)
     distribution_events = _filter_loot_events_by_status(
