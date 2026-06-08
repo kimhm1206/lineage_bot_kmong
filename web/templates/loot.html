@@ -1060,11 +1060,11 @@
         {% endif %}
 
         <div class="inner-tab-row" data-my-payout-tabs>
-          <button class="inner-tab-button is-active" type="button" data-my-payout-tab="events">아이템 건별</button>
-          <button class="inner-tab-button" type="button" data-my-payout-tab="recipients">인원별</button>
+          <button class="inner-tab-button is-active" type="button" data-my-payout-tab="recipients">인원별</button>
+          <button class="inner-tab-button" type="button" data-my-payout-tab="events">아이템 건별</button>
         </div>
 
-        <section class="my-payout-layout" data-my-payout-panel="events">
+        <section class="my-payout-layout" data-my-payout-panel="events" hidden>
           <section class="loot-event-list" aria-label="내 혈맹 분배 현황">
             {% for payout in my_alliance_payouts.events %}
               <details class="panel loot-event-card payout-card my-payout-card" data-loot-event-card data-member-payout-card>
@@ -1200,7 +1200,7 @@
           </section>
         </section>
 
-        <section class="panel my-recipient-payout-panel" data-my-payout-panel="recipients" hidden>
+        <section class="panel my-recipient-payout-panel" data-my-payout-panel="recipients">
           <header class="panel-header">
             <div>
               <h2>인원별 분배 현황</h2>
@@ -1916,7 +1916,7 @@
     }
 
     function activateMyPayoutInnerTab(tabName) {
-      const normalized = tabName === "recipients" ? "recipients" : "events";
+      const normalized = tabName === "events" ? "events" : "recipients";
       document.querySelectorAll("[data-my-payout-tab]").forEach((button) => {
         button.classList.toggle("is-active", button.dataset.myPayoutTab === normalized);
       });
