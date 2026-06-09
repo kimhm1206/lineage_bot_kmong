@@ -3742,7 +3742,7 @@ button:disabled {
 }
 
 .loot-event-card.recipient-payout-card summary.recipient-payout-summary {
-  grid-template-columns: minmax(210px, 0.78fr) repeat(4, minmax(0, 1fr)) 42px;
+  grid-template-columns: minmax(230px, 1fr) minmax(190px, 0.58fr) minmax(126px, 0.32fr) 42px;
   gap: 8px;
   min-height: 88px;
   padding: 10px 12px;
@@ -3758,7 +3758,7 @@ button:disabled {
 }
 
 .loot-event-card.recipient-payout-card summary.recipient-payout-summary::after {
-  grid-column: 6;
+  grid-column: 4;
   grid-row: 1;
   align-self: center;
   justify-self: end;
@@ -3806,6 +3806,14 @@ button:disabled {
   overflow-wrap: anywhere;
 }
 
+.recipient-payout-metrics small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+}
+
 .recipient-payout-actions {
   display: flex;
   flex-direction: column;
@@ -3838,6 +3846,37 @@ button:disabled {
 
 .recipient-payout-body {
   padding: 16px 18px;
+}
+
+.recipient-payout-detail-summary {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.recipient-payout-detail-summary div {
+  min-width: 0;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.66);
+}
+
+.recipient-payout-detail-summary span {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.recipient-payout-detail-summary strong {
+  display: block;
+  margin-top: 4px;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 900;
+  overflow-wrap: anywhere;
 }
 
 .recipient-detail-list {
@@ -4512,6 +4551,7 @@ button:disabled {
 :root[data-theme="dark"] .my-recipient-payout-panel,
 :root[data-theme="dark"] .recipient-payout-metrics div,
 :root[data-theme="dark"] .recipient-payout-actions,
+:root[data-theme="dark"] .recipient-payout-detail-summary div,
 :root[data-theme="dark"] .recipient-detail-card,
 :root[data-theme="dark"] .rank-strip,
 :root[data-theme="dark"] .mini-rank-row,
@@ -4908,6 +4948,10 @@ button:disabled {
 
   .recipient-payout-metrics {
     grid-column: auto;
+    grid-template-columns: 1fr;
+  }
+
+  .recipient-payout-detail-summary {
     grid-template-columns: 1fr;
   }
 
