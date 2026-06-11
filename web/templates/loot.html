@@ -1911,14 +1911,27 @@
     }
 
     async function submitJsonForm(form) {
-      const response = await fetch(form.action, {
-        method: "POST",
-        body: new URLSearchParams(new FormData(form)),
-        headers: {
-          "Accept": "application/json",
-          "X-Requested-With": "fetch",
-        },
-      });
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), 20000);
+      let response;
+      try {
+        response = await fetch(form.action, {
+          method: "POST",
+          body: new URLSearchParams(new FormData(form)),
+          headers: {
+            "Accept": "application/json",
+            "X-Requested-With": "fetch",
+          },
+          signal: controller.signal,
+        });
+      } catch (error) {
+        if (error.name === "AbortError") {
+          throw new Error("요청 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.");
+        }
+        throw error;
+      } finally {
+        window.clearTimeout(timeoutId);
+      }
       let payload = {};
       try {
         payload = await response.json();
@@ -2557,6 +2570,9 @@
           button.textContent = originalText;
         } finally {
           button.disabled = false;
+          if (button.textContent === "처리중") {
+            button.textContent = originalText;
+          }
         }
       });
     });
@@ -2589,6 +2605,9 @@
           button.textContent = originalText;
         } finally {
           button.disabled = false;
+          if (button.textContent === "처리중") {
+            button.textContent = originalText;
+          }
         }
       });
     });
@@ -2636,6 +2655,9 @@
           button.textContent = originalText;
         } finally {
           button.disabled = false;
+          if (button.textContent === "처리중") {
+            button.textContent = originalText;
+          }
         }
       });
     });
@@ -2675,6 +2697,9 @@
           button.textContent = originalText;
         } finally {
           button.disabled = false;
+          if (button.textContent === "처리중") {
+            button.textContent = originalText;
+          }
         }
       });
     });
@@ -2737,6 +2762,9 @@
           button.textContent = originalText;
         } finally {
           button.disabled = false;
+          if (button.textContent === "처리중") {
+            button.textContent = originalText;
+          }
         }
       });
     });
@@ -2771,6 +2799,9 @@
           button.textContent = originalText;
         } finally {
           button.disabled = false;
+          if (button.textContent === "처리중") {
+            button.textContent = originalText;
+          }
         }
       });
     });

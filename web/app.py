@@ -6048,9 +6048,18 @@ async def settle_member_payout_recipient_all(
             )
         return _loot_redirect(selected_guild_id, saved="error", alliance_id=alliance_id)
 
+    current_groups = database.get_member_payout_groups(selected_guild_id, alliance_id)
     updated_ids = []
     skipped_ids = []
     for distribution_id in sorted(set(distribution_ids)):
+        current_status = _normalize_member_payout_status(
+            (current_groups.get(distribution_id) or {})
+            .get("statuses", {})
+            .get(user_id, "unpaid")
+        )
+        if current_status != "unpaid":
+            skipped_ids.append(distribution_id)
+            continue
         try:
             database.update_member_payout_recipient_status(
                 selected_guild_id,
