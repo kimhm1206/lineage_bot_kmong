@@ -3006,7 +3006,7 @@ button:disabled {
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: 10px;
-  background: var(--panel);
+  background: #ffffff;
   box-shadow: var(--shadow);
 }
 
@@ -3027,7 +3027,7 @@ button:disabled {
   padding: 8px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: var(--panel-soft);
+  background: #f7fafc;
   text-align: left;
 }
 
@@ -4726,6 +4726,16 @@ button:disabled {
 :root[data-theme="dark"] .log-tab {
   border-color: var(--glass-border);
   background: var(--glass-bg-soft);
+}
+
+:root[data-theme="dark"] .fee-info-popover {
+  border-color: #304156;
+  background: #101821;
+}
+
+:root[data-theme="dark"] .fee-info-row {
+  border-color: #304156;
+  background: #172333;
 }
 
 :root[data-theme="dark"] .recipient-detail-card.is-unpaid {
