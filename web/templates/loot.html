@@ -884,6 +884,7 @@
               data-unpaid-amount="{{ alliance.unpaid_amount }}"
               data-total-amount="{{ alliance.total_amount }}"
               data-unpaid-count="{{ alliance.unpaid_count }}"
+              data-total-count="{{ alliance.total_count }}"
             >
               <summary class="loot-event-summary recipient-payout-summary">
                 <div class="loot-event-main">
@@ -891,17 +892,10 @@
                   <span class="panel-caption">{{ alliance["items"]|length }}건 분배</span>
                 </div>
                 <div class="recipient-payout-metrics">
-                  <div>
-                    <span>총 분배</span>
-                    <strong>{{ alliance.total_amount_text }}</strong>
-                  </div>
-                  <div>
-                    <span>미분배</span>
-                    <strong data-alliance-unpaid-text>{{ alliance.unpaid_amount_text }}</strong>
-                  </div>
                   <div class="{% if alliance.unpaid_count == 0 %}is-paid{% else %}is-unpaid{% endif %}" data-alliance-status-card>
-                    <span>분배 상태</span>
-                    <strong data-alliance-count-text>{% if alliance.unpaid_count == 0 %}완료{% else %}미완료 {{ alliance.unpaid_count }}건{% endif %}</strong>
+                    <span>분배해야 할 금액</span>
+                    <strong data-alliance-unpaid-text>{{ alliance.unpaid_amount_text }}</strong>
+                    <small data-alliance-count-text>{% if alliance.unpaid_count == 0 %}완료{% else %}미완료 {{ alliance.unpaid_count }}건{% endif %}</small>
                   </div>
                 </div>
                 <div class="recipient-payout-actions" data-alliance-payout-actions>
@@ -919,6 +913,28 @@
                 </div>
               </summary>
               <div class="loot-event-body recipient-payout-body">
+                <div class="recipient-payout-detail-summary">
+                  <div>
+                    <span>총 분배</span>
+                    <strong>{{ alliance.total_amount_text }}</strong>
+                  </div>
+                  <div>
+                    <span>미분배</span>
+                    <strong data-alliance-detail-unpaid-text>{{ alliance.unpaid_amount_text }}</strong>
+                  </div>
+                  <div>
+                    <span>완료 건수</span>
+                    <strong data-alliance-detail-paid-count>{{ alliance.paid_count }}건</strong>
+                  </div>
+                  <div>
+                    <span>미완료 건수</span>
+                    <strong data-alliance-detail-unpaid-count>{{ alliance.unpaid_count }}건</strong>
+                  </div>
+                  <div>
+                    <span>전체 건수</span>
+                    <strong data-alliance-detail-total-count>{{ alliance.total_count }}건</strong>
+                  </div>
+                </div>
                 <div class="recipient-detail-list">
                   {% for item in alliance["items"] %}
                     <article
@@ -2393,6 +2409,7 @@
       const detailItems = Array.from(
         document.querySelectorAll(`[data-alliance-detail-item][data-alliance-id="${allianceId}"]`),
       );
+      const totalCount = detailItems.length;
       let unpaidAmount = 0;
       let unpaidCount = 0;
       const unpaidDistributionIds = [];
@@ -2413,6 +2430,22 @@
       const countText = row.querySelector("[data-alliance-count-text]");
       if (countText) {
         countText.textContent = unpaidCount === 0 ? "완료" : `미완료 ${unpaidCount}건`;
+      }
+      const detailUnpaidText = row.querySelector("[data-alliance-detail-unpaid-text]");
+      if (detailUnpaidText) {
+        detailUnpaidText.textContent = formatAdenaNumber(unpaidAmount);
+      }
+      const detailPaidCount = row.querySelector("[data-alliance-detail-paid-count]");
+      if (detailPaidCount) {
+        detailPaidCount.textContent = `${totalCount - unpaidCount}건`;
+      }
+      const detailUnpaidCount = row.querySelector("[data-alliance-detail-unpaid-count]");
+      if (detailUnpaidCount) {
+        detailUnpaidCount.textContent = `${unpaidCount}건`;
+      }
+      const detailTotalCount = row.querySelector("[data-alliance-detail-total-count]");
+      if (detailTotalCount) {
+        detailTotalCount.textContent = `${totalCount}건`;
       }
       const statusCard = row.querySelector("[data-alliance-status-card]");
       if (statusCard) {
