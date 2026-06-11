@@ -2651,6 +2651,7 @@ def _decorate_loot_events(
         viewer_event_amount = Decimal("0")
         viewer_paid_amount = Decimal("0")
         viewer_unpaid_amount = Decimal("0")
+        viewer_forfeited_amount = Decimal("0")
         viewer_internal_fee_amount = Decimal("0")
         viewer_alliance_fee_amount = Decimal("0")
         viewer_internal_fee_share_amount = Decimal("0")
@@ -2718,12 +2719,14 @@ def _decorate_loot_events(
                     payout_alliance_id,
                     viewer_user_id,
                 )
-                paid_statuses = (
+                payout_statuses = (
                     member_record.get("statuses", {})
                     if member_record is not None
                     else {}
                 )
-                is_viewer_paid = bool(paid_statuses.get(viewer_payout_user_id, False))
+                viewer_payout_status = _normalize_member_payout_status(
+                    payout_statuses.get(viewer_payout_user_id, "unpaid")
+                )
 
                 viewer_alliance_amount += payout_net
                 viewer_internal_fee_amount += internal_fee_amount
@@ -2732,8 +2735,10 @@ def _decorate_loot_events(
                 viewer_gross_per_member_amount = gross_share
                 viewer_event_amount += viewer_share
                 viewer_per_member_amount = viewer_share
-                if is_viewer_paid:
+                if viewer_payout_status == "paid":
                     viewer_paid_amount += viewer_share
+                elif viewer_payout_status == "forfeited":
+                    viewer_forfeited_amount += viewer_share
                 else:
                     viewer_unpaid_amount += viewer_share
             payouts.append(payout_row)
@@ -2805,6 +2810,13 @@ def _decorate_loot_events(
         row["viewer_unpaid_amount_text"] = _money_text(viewer_unpaid_amount)
         row["viewer_unpaid_cash_amount"] = _cash_from_adena(viewer_unpaid_amount, adena_rate)
         row["viewer_unpaid_cash_text"] = _cash_text(row["viewer_unpaid_cash_amount"])
+        row["viewer_forfeited_amount"] = viewer_forfeited_amount
+        row["viewer_forfeited_amount_text"] = _money_text(viewer_forfeited_amount)
+        row["viewer_forfeited_cash_amount"] = _cash_from_adena(
+            viewer_forfeited_amount,
+            adena_rate,
+        )
+        row["viewer_forfeited_cash_text"] = _cash_text(row["viewer_forfeited_cash_amount"])
         if not viewer_participated:
             row["viewer_payout_label"] = "미참여"
             row["viewer_payout_card_label"] = "미참여"
@@ -2815,6 +2827,11 @@ def _decorate_loot_events(
             row["viewer_payout_card_label"] = "미수령"
             row["viewer_payout_meta"] = f"받은 {_money_text(viewer_paid_amount)} · 미수령 {_money_text(viewer_unpaid_amount)}"
             row["viewer_payout_class"] = "is-unpaid"
+        elif viewer_forfeited_amount > 0:
+            row["viewer_payout_label"] = "혈비귀속"
+            row["viewer_payout_card_label"] = "귀속"
+            row["viewer_payout_meta"] = f"귀속 {_money_text(viewer_forfeited_amount)}"
+            row["viewer_payout_class"] = "is-forfeited"
         else:
             row["viewer_payout_label"] = "수령완료"
             row["viewer_payout_card_label"] = "수령"
@@ -2900,6 +2917,8 @@ def _normalize_loot_status_filter(status: str | None) -> str:
         return "paid"
     if normalized in {"unpaid", "pending", "미수령"}:
         return "unpaid"
+    if normalized in {"forfeited", "forfeit", "귀속", "혈비귀속"}:
+        return "forfeited"
     return "unpaid"
 
 
@@ -2913,6 +2932,8 @@ def _filter_loot_events_by_status(
             for event in events
             if event.get("viewer_participated")
             and Decimal(str(event.get("viewer_unpaid_amount") or "0")) <= 0
+            and Decimal(str(event.get("viewer_forfeited_amount") or "0")) <= 0
+            and Decimal(str(event.get("viewer_paid_amount") or "0")) > 0
         ]
     if status == "unpaid":
         return [
@@ -2920,6 +2941,13 @@ def _filter_loot_events_by_status(
             for event in events
             if event.get("viewer_participated")
             and Decimal(str(event.get("viewer_unpaid_amount") or "0")) > 0
+        ]
+    if status == "forfeited":
+        return [
+            event
+            for event in events
+            if event.get("viewer_participated")
+            and Decimal(str(event.get("viewer_forfeited_amount") or "0")) > 0
         ]
     return events
 
@@ -2937,6 +2965,10 @@ def _loot_distribution_summary(events: list[dict[str, Any]]) -> dict[str, str]:
         (Decimal(str(event.get("viewer_unpaid_amount") or "0")) for event in events),
         Decimal("0"),
     )
+    forfeited = sum(
+        (Decimal(str(event.get("viewer_forfeited_amount") or "0")) for event in events),
+        Decimal("0"),
+    )
     total_cash = sum(
         (Decimal(str(event.get("viewer_event_cash_amount") or "0")) for event in events),
         Decimal("0"),
@@ -2947,6 +2979,13 @@ def _loot_distribution_summary(events: list[dict[str, Any]]) -> dict[str, str]:
     )
     unpaid_cash = sum(
         (Decimal(str(event.get("viewer_unpaid_cash_amount") or "0")) for event in events),
+        Decimal("0"),
+    )
+    forfeited_cash = sum(
+        (
+            Decimal(str(event.get("viewer_forfeited_cash_amount") or "0"))
+            for event in events
+        ),
         Decimal("0"),
     )
     participated_count = sum(1 for event in events if event.get("viewer_participated"))
@@ -2962,6 +3001,12 @@ def _loot_distribution_summary(events: list[dict[str, Any]]) -> dict[str, str]:
         if event.get("viewer_participated")
         and Decimal(str(event.get("viewer_unpaid_amount") or "0")) > 0
     )
+    forfeited_count = sum(
+        1
+        for event in events
+        if event.get("viewer_participated")
+        and Decimal(str(event.get("viewer_forfeited_amount") or "0")) > 0
+    )
     return {
         "total_amount_text": _money_text(total),
         "total_cash_text": _cash_text(total_cash),
@@ -2969,9 +3014,12 @@ def _loot_distribution_summary(events: list[dict[str, Any]]) -> dict[str, str]:
         "paid_cash_text": _cash_text(paid_cash),
         "unpaid_amount_text": _money_text(unpaid),
         "unpaid_cash_text": _cash_text(unpaid_cash),
+        "forfeited_amount_text": _money_text(forfeited),
+        "forfeited_cash_text": _cash_text(forfeited_cash),
         "participated_count": str(participated_count),
         "paid_count": str(paid_count),
         "unpaid_count": str(unpaid_count),
+        "forfeited_count": str(forfeited_count),
         "event_count": str(len(events)),
     }
 
@@ -3006,10 +3054,60 @@ def _decorate_alliance_fee_rules(
     return decorated
 
 
+_MEMBER_PAYOUT_STATUSES = {"paid", "unpaid", "forfeited"}
+
+
+def _normalize_member_payout_status(value: Any) -> str:
+    if isinstance(value, bool):
+        return "paid" if value else "unpaid"
+    normalized = str(value or "").lower()
+    return normalized if normalized in _MEMBER_PAYOUT_STATUSES else "unpaid"
+
+
+def _member_payout_status_label(status: Any) -> str:
+    normalized = _normalize_member_payout_status(status)
+    if normalized == "paid":
+        return "지급 완료"
+    if normalized == "forfeited":
+        return "혈비 귀속"
+    return "미완료"
+
+
+def _member_payout_status_class(status: Any) -> str:
+    return f"is-{_normalize_member_payout_status(status)}"
+
+
+def _member_payout_next_status(status: Any) -> str:
+    return "unpaid" if _normalize_member_payout_status(status) == "paid" else "paid"
+
+
+def _member_payout_next_status_label(status: Any) -> str:
+    return (
+        "미완료로 변경"
+        if _normalize_member_payout_status(status) == "paid"
+        else "완료 처리"
+    )
+
+
+def _format_optional_datetime(value: Any) -> str:
+    if not value:
+        return ""
+    if isinstance(value, datetime):
+        local_value = value
+        if local_value.tzinfo is not None:
+            local_value = local_value.astimezone(KST).replace(tzinfo=None)
+        return local_value.strftime("%Y-%m-%d %H:%M:%S")
+    text = str(value)
+    return text[:19] if len(text) >= 19 else text
+
+
 def _member_record_has_completed_status(member_record: dict[str, Any] | None) -> bool:
     if not member_record:
         return False
-    return any(bool(value) for value in (member_record.get("statuses") or {}).values())
+    return any(
+        _normalize_member_payout_status(value) != "unpaid"
+        for value in (member_record.get("statuses") or {}).values()
+    )
 
 
 def _member_record_fee_rules(
@@ -3081,8 +3179,12 @@ def _my_alliance_payout_context(
                 "fee_cash_text": "0원",
                 "unsettled_text": "0",
                 "unsettled_cash_text": "0원",
+                "forfeited_text": "0",
+                "forfeited_cash_text": "0원",
                 "settled_count": 0,
                 "unsettled_count": 0,
+                "forfeited_count": 0,
+                "forfeiture_logs": [],
             },
         }
 
@@ -3119,8 +3221,11 @@ def _my_alliance_payout_context(
     fee_cash_sum = Decimal("0")
     unsettled_amount_sum = Decimal("0")
     unsettled_cash_sum = Decimal("0")
+    forfeited_amount_sum = Decimal("0")
+    forfeited_cash_sum = Decimal("0")
     settled_count = 0
     unsettled_count = 0
+    forfeiture_logs: list[dict[str, Any]] = []
 
     for event in events:
         for alliance_id in selected_alliance_ids:
@@ -3159,8 +3264,13 @@ def _my_alliance_payout_context(
                 member_record,
                 fee_rules_for(alliance_id),
             )
-            paid_statuses = (
+            payout_statuses = (
                 member_record.get("statuses", {})
+                if member_record is not None
+                else {}
+            )
+            status_updated_at = (
+                member_record.get("status_updated_at", {})
                 if member_record is not None
                 else {}
             )
@@ -3182,7 +3292,9 @@ def _my_alliance_payout_context(
             fee_lines = _decorate_member_fee_lines(fee_lines_raw, adena_rate)
             recipients = []
             paid_recipient_count = 0
+            forfeited_recipient_count = 0
             unpaid_amount = Decimal("0")
+            forfeited_amount = Decimal("0")
             for index, member in enumerate(participants):
                 member_user_id = int(member.get("user_id") or 0)
                 member_amount = (
@@ -3190,10 +3302,18 @@ def _my_alliance_payout_context(
                     if index < len(member_amounts)
                     else fallback_member_amount
                 )
-                is_paid = bool(paid_statuses.get(member_user_id, False))
+                payout_status = _normalize_member_payout_status(
+                    payout_statuses.get(member_user_id, "unpaid")
+                )
+                is_paid = payout_status == "paid"
+                is_forfeited = payout_status == "forfeited"
                 if is_paid:
                     paid_recipient_count += 1
-                payout_status = "paid" if is_paid else "unpaid"
+                if is_forfeited:
+                    forfeited_recipient_count += 1
+                status_updated_text = _format_optional_datetime(
+                    status_updated_at.get(member_user_id)
+                )
                 recipients.append(
                     {
                         "alliance_id": alliance_id,
@@ -3210,12 +3330,13 @@ def _my_alliance_payout_context(
                             _cash_from_adena(member_amount, adena_rate)
                         ),
                         "payout_status": payout_status,
-                        "status_label": "지급 완료" if is_paid else "미완료",
-                        "status_class": "is-paid" if is_paid else "is-unpaid",
-                        "next_status": "unpaid" if is_paid else "paid",
-                        "next_status_label": "미완료로 변경"
-                        if is_paid
-                        else "완료 처리",
+                        "status_label": _member_payout_status_label(payout_status),
+                        "status_class": _member_payout_status_class(payout_status),
+                        "next_status": _member_payout_next_status(payout_status),
+                        "next_status_label": _member_payout_next_status_label(
+                            payout_status
+                        ),
+                        "forfeited_at": status_updated_text if is_forfeited else "",
                     }
                 )
                 summary = recipient_summaries.setdefault(
@@ -3227,9 +3348,11 @@ def _my_alliance_payout_context(
                         "total_amount": Decimal("0"),
                         "paid_amount": Decimal("0"),
                         "unpaid_amount": Decimal("0"),
+                        "forfeited_amount": Decimal("0"),
                         "total_count": 0,
                         "paid_count": 0,
                         "unpaid_count": 0,
+                        "forfeited_count": 0,
                         "unpaid_distribution_ids": [],
                         "items": [],
                     },
@@ -3245,19 +3368,43 @@ def _my_alliance_payout_context(
                         "item_name": event["item_name"],
                         "attendance_started_at": event["attendance_started_at"]
                         or event["event_date"],
+                        "amount": member_amount,
                         "amount_text": _money_text(member_amount),
+                        "amount_cash_text": _cash_text(
+                            _cash_from_adena(member_amount, adena_rate)
+                        ),
                         "status": payout_status,
-                        "status_label": "지급 완료" if is_paid else "미완료",
-                        "status_class": "is-paid" if is_paid else "is-unpaid",
-                        "next_status": "unpaid" if is_paid else "paid",
-                        "next_status_label": "미완료로 변경"
-                        if is_paid
-                        else "완료 처리",
+                        "status_label": _member_payout_status_label(payout_status),
+                        "status_class": _member_payout_status_class(payout_status),
+                        "next_status": _member_payout_next_status(payout_status),
+                        "next_status_label": _member_payout_next_status_label(
+                            payout_status
+                        ),
+                        "forfeited_at": status_updated_text if is_forfeited else "",
                     }
                 )
                 if is_paid:
                     summary["paid_amount"] += member_amount
                     summary["paid_count"] += 1
+                elif is_forfeited:
+                    summary["forfeited_amount"] += member_amount
+                    summary["forfeited_count"] += 1
+                    forfeited_amount += member_amount
+                    forfeiture_logs.append(
+                        {
+                            "user_id": member_user_id,
+                            "display_name": str(member.get("discord_nickname") or ""),
+                            "item_name": event["item_name"],
+                            "attendance_started_at": event["attendance_started_at"]
+                            or event["event_date"],
+                            "forfeited_at": status_updated_text,
+                            "amount": member_amount,
+                            "amount_text": _money_text(member_amount),
+                            "amount_cash_text": _cash_text(
+                                _cash_from_adena(member_amount, adena_rate)
+                            ),
+                        }
+                    )
                 else:
                     summary["unpaid_amount"] += member_amount
                     summary["unpaid_count"] += 1
@@ -3267,18 +3414,16 @@ def _my_alliance_payout_context(
                     unpaid_amount += member_amount
 
             recipient_total_count = len(recipients)
-            status = (
-                "paid"
-                if recipient_total_count > 0
-                and paid_recipient_count == recipient_total_count
-                else "unpaid"
-            )
+            completed_recipient_count = paid_recipient_count + forfeited_recipient_count
+            status = "paid" if recipient_total_count > 0 and completed_recipient_count == recipient_total_count else "unpaid"
             if status == "paid":
                 settled_count += 1
             else:
                 unsettled_count += 1
                 unsettled_amount_sum += unpaid_amount
                 unsettled_cash_sum += _cash_from_adena(unpaid_amount, adena_rate)
+            forfeited_amount_sum += forfeited_amount
+            forfeited_cash_sum += _cash_from_adena(forfeited_amount, adena_rate)
 
             total_amount_sum += total_amount
             total_cash_sum += _cash_from_adena(total_amount, adena_rate)
@@ -3305,6 +3450,10 @@ def _my_alliance_payout_context(
                     "distributable_amount_cash_text": _cash_text(
                         _cash_from_adena(distributable_amount, adena_rate)
                     ),
+                    "unpaid_amount": unpaid_amount,
+                    "unpaid_amount_text": _money_text(unpaid_amount),
+                    "forfeited_amount": forfeited_amount,
+                    "forfeited_amount_text": _money_text(forfeited_amount),
                     "per_member_text": _rounded_allocation_text(member_amounts),
                     "per_member_cash_text": _rounded_allocation_cash_text(
                         member_amounts,
@@ -3322,16 +3471,33 @@ def _my_alliance_payout_context(
     for summary in recipient_summaries.values():
         unpaid_amount = Decimal(str(summary["unpaid_amount"]))
         paid_amount = Decimal(str(summary["paid_amount"]))
+        forfeited_amount = Decimal(str(summary["forfeited_amount"]))
         total_amount = Decimal(str(summary["total_amount"]))
+        if unpaid_amount > 0:
+            status = "unpaid"
+            status_label = "미완료 있음"
+        elif forfeited_amount > 0:
+            status = "forfeited"
+            status_label = "귀속 있음"
+        else:
+            status = "paid"
+            status_label = "전체 완료"
         recipient_rows.append(
             {
                 **summary,
                 "total_amount_text": _money_text(total_amount),
                 "paid_amount_text": _money_text(paid_amount),
                 "unpaid_amount_text": _money_text(unpaid_amount),
-                "status": "unpaid" if unpaid_amount > 0 else "paid",
-                "status_label": "미완료 있음" if unpaid_amount > 0 else "전체 완료",
-                "status_class": "is-unpaid" if unpaid_amount > 0 else "is-paid",
+                "forfeited_amount_text": _money_text(forfeited_amount),
+                "forfeited_cash_text": _cash_text(
+                    _cash_from_adena(
+                        forfeited_amount,
+                        Decimal("0"),
+                    )
+                ),
+                "status": status,
+                "status_label": status_label,
+                "status_class": _member_payout_status_class(status),
                 "unpaid_distribution_ids_text": ",".join(
                     str(distribution_id)
                     for distribution_id in summary["unpaid_distribution_ids"]
@@ -3341,9 +3507,14 @@ def _my_alliance_payout_context(
     recipient_rows.sort(
         key=lambda item: (
             -Decimal(str(item["unpaid_amount"] or "0")),
+            -Decimal(str(item["forfeited_amount"] or "0")),
             -int(item["unpaid_count"] or 0),
             str(item["display_name"]),
         )
+    )
+    forfeiture_logs.sort(
+        key=lambda item: str(item.get("forfeited_at") or ""),
+        reverse=True,
     )
 
     return {
@@ -3358,8 +3529,12 @@ def _my_alliance_payout_context(
             "fee_cash_text": _cash_text(fee_cash_sum),
             "unsettled_text": _money_text(unsettled_amount_sum),
             "unsettled_cash_text": _cash_text(unsettled_cash_sum),
+            "forfeited_text": _money_text(forfeited_amount_sum),
+            "forfeited_cash_text": _cash_text(forfeited_cash_sum),
             "settled_count": settled_count,
             "unsettled_count": unsettled_count,
+            "forfeited_count": len(forfeiture_logs),
+            "forfeiture_logs": forfeiture_logs,
         },
     }
 
@@ -3569,6 +3744,16 @@ def _loot_status_filters(
                 status="unpaid",
             ),
             "active": status == "unpaid",
+        },
+        {
+            "label": "귀속",
+            "href": _loot_url(
+                guild_id,
+                period=active_period,
+                mine=mine_only,
+                status="forfeited",
+            ),
+            "active": status == "forfeited",
         },
     ]
 
@@ -5793,7 +5978,7 @@ async def update_member_payout_recipient_status(
         if _wants_json(request):
             return JSONResponse({"ok": False, "message": "혈맹 권한이 없습니다."}, status_code=403)
         return _loot_redirect(selected_guild_id, saved="forbidden")
-    payout_status = str(form_data.get("payout_status") or "")
+    payout_status = _normalize_member_payout_status(form_data.get("payout_status"))
     try:
         database.update_member_payout_recipient_status(
             selected_guild_id,
@@ -5843,6 +6028,9 @@ async def settle_member_payout_recipient_all(
         if _wants_json(request):
             return JSONResponse({"ok": False, "message": "혈맹 권한이 없습니다."}, status_code=403)
         return _loot_redirect(selected_guild_id, saved="forbidden")
+    payout_status = _normalize_member_payout_status(form_data.get("payout_status") or "paid")
+    if payout_status == "unpaid":
+        payout_status = "paid"
 
     distribution_ids = []
     for raw_id in str(form_data.get("distribution_ids") or "").split(","):
@@ -5855,7 +6043,7 @@ async def settle_member_payout_recipient_all(
     if user_id <= 0 or not distribution_ids:
         if _wants_json(request):
             return JSONResponse(
-                {"ok": False, "message": "완료 처리할 미분배 항목이 없습니다."},
+                {"ok": False, "message": "처리할 미분배 항목이 없습니다."},
                 status_code=400,
             )
         return _loot_redirect(selected_guild_id, saved="error", alliance_id=alliance_id)
@@ -5869,7 +6057,7 @@ async def settle_member_payout_recipient_all(
                 distribution_id,
                 alliance_id,
                 user_id,
-                "paid",
+                payout_status,
                 updated_by_discord_id=int(auth["user"]["id"]),
             )
             updated_ids.append(distribution_id)
@@ -5879,7 +6067,7 @@ async def settle_member_payout_recipient_all(
     if not updated_ids:
         if _wants_json(request):
             return JSONResponse(
-                {"ok": False, "message": "유저별 분배를 완료 처리하지 못했습니다."},
+                {"ok": False, "message": "유저별 분배를 처리하지 못했습니다."},
                 status_code=400,
             )
         return _loot_redirect(selected_guild_id, saved="error", alliance_id=alliance_id)
@@ -5891,7 +6079,7 @@ async def settle_member_payout_recipient_all(
                 "user_id": user_id,
                 "distribution_ids": updated_ids,
                 "skipped_distribution_ids": skipped_ids,
-                "payout_status": "paid",
+                "payout_status": payout_status,
             }
         )
     return _loot_redirect(selected_guild_id, saved="member_payout", alliance_id=alliance_id)

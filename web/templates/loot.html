@@ -33,7 +33,7 @@
   {% elif saved == "bid_error" %}
     <div class="alert error">아이템 입찰 상태 변경에 실패했습니다.</div>
   {% elif saved == "member_payout" %}
-    <div class="alert success">혈맹원 분배를 완료 처리했습니다.</div>
+    <div class="alert success">혈맹원 분배 상태를 변경했습니다.</div>
   {% elif saved == "fee_rule" %}
     <div class="alert success">혈맹 내부 수수료 설정을 저장했습니다.</div>
   {% elif saved == "item_price" %}
@@ -998,6 +998,15 @@
             <span data-currency-label data-adena-label="혈맹 실분배 합계" data-cash-label="혈맹 실분배 현금">혈맹 실분배 합계</span>
             <strong data-money-value data-adena-text="{{ my_alliance_payouts.summary.total_text }}" data-cash-text="{{ my_alliance_payouts.summary.total_cash_text }}">{{ my_alliance_payouts.summary.total_text }}</strong>
             <small>수수료 차감 전 · {{ my_alliance_payouts.selected_alliance.alliance_name }}</small>
+            <small class="my-alliance-sub-amount">
+              미분배 총액
+              <span
+                data-money-value
+                data-my-alliance-unsettled-total
+                data-adena-text="{{ my_alliance_payouts.summary.unsettled_text }}"
+                data-cash-text="{{ my_alliance_payouts.summary.unsettled_cash_text }}"
+              >{{ my_alliance_payouts.summary.unsettled_text }}</span>
+            </small>
           </article>
           <article class="panel loot-total-card is-muted my-alliance-fee-total-card">
             <span>수수료 전체</span>
@@ -1011,13 +1020,16 @@
                 >{{ my_alliance_payouts.summary.fee_text }}</strong>
               </div>
               <div>
-                <small>미분배 총액</small>
+                <small class="forfeit-metric-label">
+                  총 귀속 혈비
+                  <button class="icon-button forfeit-info-button" type="button" aria-label="귀속 혈비 내역 보기" data-forfeiture-log-open>i</button>
+                </small>
                 <strong
                   data-money-value
-                  data-my-alliance-unsettled-total
-                  data-adena-text="{{ my_alliance_payouts.summary.unsettled_text }}"
-                  data-cash-text="{{ my_alliance_payouts.summary.unsettled_cash_text }}"
-                >{{ my_alliance_payouts.summary.unsettled_text }}</strong>
+                  data-my-alliance-forfeited-total
+                  data-adena-text="{{ my_alliance_payouts.summary.forfeited_text }}"
+                  data-cash-text="{{ my_alliance_payouts.summary.forfeited_cash_text }}"
+                >{{ my_alliance_payouts.summary.forfeited_text }}</strong>
               </div>
             </div>
             <small>미정산 {{ my_alliance_payouts.summary.unsettled_count }}건 · 완료 {{ my_alliance_payouts.summary.settled_count }}건</small>
@@ -1047,6 +1059,39 @@
             </article>
           {% endif %}
         </section>
+
+        <div class="modal-backdrop" data-forfeiture-log-modal hidden>
+          <div class="modal-card forfeiture-log-modal-card" role="dialog" aria-modal="true" aria-labelledby="forfeiture-log-modal-title">
+            <header class="panel-header">
+              <div>
+                <h2 id="forfeiture-log-modal-title">귀속 혈비 내역</h2>
+                <span class="panel-caption">유저가 받지 않아 혈비로 귀속된 분배 기록입니다.</span>
+              </div>
+              <button class="icon-button" type="button" aria-label="닫기" data-forfeiture-log-close>&times;</button>
+            </header>
+            <section class="forfeiture-log-list">
+              {% for log in my_alliance_payouts.summary.forfeiture_logs %}
+                <article class="forfeiture-log-row">
+                  <div>
+                    <strong>{{ log.display_name }}</strong>
+                    <span>{{ log.item_name }}</span>
+                  </div>
+                  <div>
+                    <small>드랍 시간</small>
+                    <span>{{ log.attendance_started_at }}</span>
+                  </div>
+                  <div>
+                    <small>귀속 시간</small>
+                    <span>{{ log.forfeited_at or "-" }}</span>
+                  </div>
+                  <strong>{{ log.amount_text }}</strong>
+                </article>
+              {% else %}
+                <div class="empty report-empty">귀속된 혈비 기록이 없습니다.</div>
+              {% endfor %}
+            </section>
+          </div>
+        </div>
 
         {% if auth.selected_server.can_manage and not my_alliance_payouts.selected_alliance.is_other %}
           <div class="modal-backdrop" data-fee-rule-modal hidden>
@@ -1142,6 +1187,7 @@
                             <button class="quick-filter is-active" type="button" data-member-payout-filter="all">전체</button>
                             <button class="quick-filter" type="button" data-member-payout-filter="paid">지급 완료</button>
                             <button class="quick-filter" type="button" data-member-payout-filter="unpaid">미완료</button>
+                            <button class="quick-filter" type="button" data-member-payout-filter="forfeited">귀속</button>
                           </div>
                           {% if auth.selected_server.can_manage %}
                             <form
@@ -1233,6 +1279,7 @@
               <select data-recipient-payout-filter>
                 <option value="all">전체</option>
                 <option value="unpaid">미완료 있는 사람만</option>
+                <option value="forfeited">귀속 있는 사람만</option>
                 <option value="paid">전체 완료만</option>
               </select>
             </label>
@@ -1256,8 +1303,10 @@
                 data-search-text="{{ recipient.display_name|lower }}"
                 data-status="{{ recipient.status }}"
                 data-unpaid-amount="{{ recipient.unpaid_amount }}"
+                data-forfeited-amount="{{ recipient.forfeited_amount }}"
                 data-total-amount="{{ recipient.total_amount }}"
                 data-unpaid-count="{{ recipient.unpaid_count }}"
+                data-forfeited-count="{{ recipient.forfeited_count }}"
                 data-total-count="{{ recipient.total_count }}"
               >
                 <summary class="loot-event-summary recipient-payout-summary">
@@ -1266,10 +1315,18 @@
                     <span class="panel-caption">{{ recipient["items"]|length }}건 참여</span>
                   </div>
                   <div class="recipient-payout-metrics">
-                    <div class="{% if recipient.unpaid_count == 0 %}is-paid{% else %}is-unpaid{% endif %}" data-recipient-status-card>
+                    <div class="{{ recipient.status_class }}" data-recipient-status-card>
                       <span>분배해야 할 금액</span>
                       <strong data-recipient-unpaid-text>{{ recipient.unpaid_amount_text }}</strong>
-                      <small data-recipient-count-text>{% if recipient.unpaid_count == 0 %}완료{% else %}미완료 {{ recipient.unpaid_count }}건{% endif %}</small>
+                      <small data-recipient-count-text>
+                        {% if recipient.unpaid_count > 0 %}
+                          미완료 {{ recipient.unpaid_count }}건
+                        {% elif recipient.forfeited_count > 0 %}
+                          귀속 {{ recipient.forfeited_count }}건
+                        {% else %}
+                          완료
+                        {% endif %}
+                      </small>
                     </div>
                   </div>
                   <div class="recipient-payout-actions" data-recipient-payout-actions>
@@ -1284,7 +1341,21 @@
                         <input type="hidden" name="alliance_id" value="{{ my_alliance_payouts.selected_alliance.alliance_id }}">
                         <input type="hidden" name="user_id" value="{{ recipient.user_id }}">
                         <input type="hidden" name="distribution_ids" value="{{ recipient.unpaid_distribution_ids_text }}" data-recipient-distribution-ids>
+                        <input type="hidden" name="payout_status" value="paid" data-recipient-target-status>
                         <button class="tiny-button" type="submit" data-recipient-settle-button>전체완료</button>
+                      </form>
+                      <form
+                        class="inline-actions"
+                        method="post"
+                        action="/loot/member-payouts/recipient-settle-all?guild_id={{ auth.selected_guild_id }}"
+                        data-recipient-settle-all-form
+                        {% if recipient.unpaid_count == 0 %}hidden{% endif %}
+                      >
+                        <input type="hidden" name="alliance_id" value="{{ my_alliance_payouts.selected_alliance.alliance_id }}">
+                        <input type="hidden" name="user_id" value="{{ recipient.user_id }}">
+                        <input type="hidden" name="distribution_ids" value="{{ recipient.unpaid_distribution_ids_text }}" data-recipient-distribution-ids>
+                        <input type="hidden" name="payout_status" value="forfeited" data-recipient-target-status>
+                        <button class="tiny-button warning-button" type="submit" data-recipient-settle-button>전체귀속</button>
                       </form>
                     {% endif %}
                   </div>
@@ -1300,12 +1371,20 @@
                       <strong data-recipient-detail-unpaid-text>{{ recipient.unpaid_amount_text }}</strong>
                     </div>
                     <div>
+                      <span>귀속 혈비</span>
+                      <strong data-recipient-detail-forfeited-text>{{ recipient.forfeited_amount_text }}</strong>
+                    </div>
+                    <div>
                       <span>완료 건수</span>
                       <strong data-recipient-detail-paid-count>{{ recipient.paid_count }}건</strong>
                     </div>
                     <div>
                       <span>미완료 건수</span>
                       <strong data-recipient-detail-unpaid-count>{{ recipient.unpaid_count }}건</strong>
+                    </div>
+                    <div>
+                      <span>귀속 건수</span>
+                      <strong data-recipient-detail-forfeited-count>{{ recipient.forfeited_count }}건</strong>
                     </div>
                     <div>
                       <span>전체 건수</span>
@@ -1320,6 +1399,7 @@
                         data-user-id="{{ recipient.user_id }}"
                         data-distribution-id="{{ item.distribution_id }}"
                         data-recipient-detail-status="{{ item.status }}"
+                        data-recipient-detail-amount="{{ item.amount }}"
                       >
                         <div>
                           <strong>#{{ item.loot_event_id }} {{ item.item_name }}</strong>
@@ -1335,18 +1415,50 @@
                           </span>
                         </div>
                         {% if auth.selected_server.can_manage %}
-                          <form
-                            class="inline-actions"
-                            method="post"
-                            action="/loot/member-payouts/recipient-status?guild_id={{ auth.selected_guild_id }}"
-                            data-recipient-detail-form
-                          >
-                            <input type="hidden" name="alliance_id" value="{{ item.alliance_id }}">
-                            <input type="hidden" name="distribution_id" value="{{ item.distribution_id }}">
-                            <input type="hidden" name="user_id" value="{{ recipient.user_id }}">
-                            <input type="hidden" name="payout_status" value="{{ item.next_status }}" data-recipient-detail-status-input>
-                            <button class="tiny-button" type="submit" data-recipient-detail-button>{{ item.next_status_label }}</button>
-                          </form>
+                          <div class="recipient-detail-actions">
+                            <form
+                              class="inline-actions"
+                              method="post"
+                              action="/loot/member-payouts/recipient-status?guild_id={{ auth.selected_guild_id }}"
+                              data-recipient-detail-form
+                              data-recipient-target-status="paid"
+                              {% if item.status == "paid" %}hidden{% endif %}
+                            >
+                              <input type="hidden" name="alliance_id" value="{{ item.alliance_id }}">
+                              <input type="hidden" name="distribution_id" value="{{ item.distribution_id }}">
+                              <input type="hidden" name="user_id" value="{{ recipient.user_id }}">
+                              <input type="hidden" name="payout_status" value="paid" data-recipient-detail-status-input>
+                              <button class="tiny-button" type="submit" data-recipient-detail-button>완료</button>
+                            </form>
+                            <form
+                              class="inline-actions"
+                              method="post"
+                              action="/loot/member-payouts/recipient-status?guild_id={{ auth.selected_guild_id }}"
+                              data-recipient-detail-form
+                              data-recipient-target-status="forfeited"
+                              {% if item.status == "forfeited" %}hidden{% endif %}
+                            >
+                              <input type="hidden" name="alliance_id" value="{{ item.alliance_id }}">
+                              <input type="hidden" name="distribution_id" value="{{ item.distribution_id }}">
+                              <input type="hidden" name="user_id" value="{{ recipient.user_id }}">
+                              <input type="hidden" name="payout_status" value="forfeited" data-recipient-detail-status-input>
+                              <button class="tiny-button warning-button" type="submit" data-recipient-detail-button>귀속</button>
+                            </form>
+                            <form
+                              class="inline-actions"
+                              method="post"
+                              action="/loot/member-payouts/recipient-status?guild_id={{ auth.selected_guild_id }}"
+                              data-recipient-detail-form
+                              data-recipient-target-status="unpaid"
+                              {% if item.status == "unpaid" %}hidden{% endif %}
+                            >
+                              <input type="hidden" name="alliance_id" value="{{ item.alliance_id }}">
+                              <input type="hidden" name="distribution_id" value="{{ item.distribution_id }}">
+                              <input type="hidden" name="user_id" value="{{ recipient.user_id }}">
+                              <input type="hidden" name="payout_status" value="unpaid" data-recipient-detail-status-input>
+                              <button class="tiny-button ghost-button" type="submit" data-recipient-detail-button>미완료</button>
+                            </form>
+                          </div>
                         {% endif %}
                       </article>
                     {% endfor %}
@@ -1889,23 +2001,46 @@
     });
 
     function memberStatusText(status) {
-      return status === "paid" ? "지급 완료" : "미완료";
+      if (status === "paid") {
+        return "지급 완료";
+      }
+      if (status === "forfeited") {
+        return "혈비 귀속";
+      }
+      return "미완료";
     }
 
     function memberNextStatusText(status) {
       return status === "paid" ? "미완료로 변경" : "완료 처리";
     }
 
+    function normalizeMemberStatus(status) {
+      return status === "paid" || status === "forfeited" ? status : "unpaid";
+    }
+
+    function toggleStatusClasses(element, status) {
+      if (!element) {
+        return;
+      }
+      const normalized = normalizeMemberStatus(status);
+      element.classList.toggle("is-paid", normalized === "paid");
+      element.classList.toggle("is-unpaid", normalized === "unpaid");
+      element.classList.toggle("is-forfeited", normalized === "forfeited");
+    }
+
+    function statusButtonHidden(targetStatus, currentStatus) {
+      return normalizeMemberStatus(targetStatus) === normalizeMemberStatus(currentStatus);
+    }
+
     function setMemberPayoutRow(row, status) {
-      const normalized = status === "paid" ? "paid" : "unpaid";
+      const normalized = normalizeMemberStatus(status);
       const badge = row.querySelector("[data-member-payout-badge]");
       const input = row.querySelector("[data-member-payout-status-input]");
       const button = row.querySelector("[data-member-payout-button]");
       row.dataset.memberStatus = normalized;
       if (badge) {
         badge.textContent = memberStatusText(normalized);
-        badge.classList.toggle("is-paid", normalized === "paid");
-        badge.classList.toggle("is-unpaid", normalized !== "paid");
+        toggleStatusClasses(badge, normalized);
       }
       if (input) {
         input.value = normalized === "paid" ? "unpaid" : "paid";
@@ -1929,19 +2064,19 @@
     function updateMemberPayoutCard(card) {
       const rows = Array.from(card.querySelectorAll("[data-member-payout-row]"));
       const hasRows = rows.length > 0;
-      const allPaid = hasRows && rows.every((row) => row.dataset.memberStatus === "paid");
+      const allClosed = hasRows && rows.every((row) => row.dataset.memberStatus !== "unpaid");
       const summary = card.querySelector("[data-member-payout-summary]");
       if (summary) {
-        summary.classList.toggle("is-paid", allPaid);
-        summary.classList.toggle("is-unpaid", !allPaid);
+        summary.classList.toggle("is-paid", allClosed);
+        summary.classList.toggle("is-unpaid", !allClosed);
         const label = summary.querySelector("[data-member-payout-summary-label]");
         if (label) {
-          label.textContent = allPaid ? "정산완료" : "미정산";
+          label.textContent = allClosed ? "정산완료" : "미정산";
         }
       }
       const settleForm = card.querySelector("[data-member-payout-settle-form]");
       if (settleForm) {
-        settleForm.hidden = allPaid;
+        settleForm.hidden = allClosed;
       }
       applyMemberPayoutFilter(card);
     }
@@ -2168,6 +2303,20 @@
       totalElement.dataset.adenaText = text;
     }
 
+    function updateMyAllianceForfeitedTotal() {
+      const totalElement = document.querySelector("[data-my-alliance-forfeited-total]");
+      if (!totalElement) {
+        return;
+      }
+      const total = Array.from(document.querySelectorAll("[data-recipient-payout-row]")).reduce(
+        (sum, row) => sum + recipientNumber(row, "forfeitedAmount"),
+        0,
+      );
+      const text = formatAdenaNumber(total);
+      totalElement.textContent = text;
+      totalElement.dataset.adenaText = text;
+    }
+
     function applyRecipientPayoutFilters() {
       const searchInput = document.querySelector("[data-recipient-payout-search]");
       const filterSelect = document.querySelector("[data-recipient-payout-filter]");
@@ -2203,24 +2352,39 @@
       });
     }
 
-    function markRecipientSummaryPaid(row) {
-      row.dataset.status = "paid";
+    function markRecipientSummaryStatus(row, status) {
+      const normalized = normalizeMemberStatus(status);
+      const totalAmount = recipientNumber(row, "totalAmount");
+      const totalCount = Number.parseInt(row.dataset.totalCount || "0", 10) || 0;
       row.dataset.unpaidAmount = "0";
       row.dataset.unpaidCount = "0";
-      const totalCount = Number.parseInt(row.dataset.totalCount || "0", 10) || 0;
+      row.dataset.forfeitedAmount = normalized === "forfeited" ? String(totalAmount) : "0";
+      row.dataset.forfeitedCount = normalized === "forfeited" ? String(totalCount) : "0";
+      row.dataset.status = normalized === "forfeited" ? "forfeited" : "paid";
       row.querySelector("[data-recipient-unpaid-text]").textContent = "0";
-      row.querySelector("[data-recipient-count-text]").textContent = "완료";
+      row.querySelector("[data-recipient-count-text]").textContent =
+        normalized === "forfeited" ? `귀속 ${totalCount}건` : "완료";
       const detailUnpaidText = row.querySelector("[data-recipient-detail-unpaid-text]");
       if (detailUnpaidText) {
         detailUnpaidText.textContent = "0";
       }
+      const detailForfeitedText = row.querySelector("[data-recipient-detail-forfeited-text]");
+      if (detailForfeitedText) {
+        detailForfeitedText.textContent =
+          normalized === "forfeited" ? formatAdenaNumber(totalAmount) : "0";
+      }
       const detailPaidCount = row.querySelector("[data-recipient-detail-paid-count]");
       if (detailPaidCount) {
-        detailPaidCount.textContent = `${totalCount}건`;
+        detailPaidCount.textContent = normalized === "paid" ? `${totalCount}건` : "0건";
       }
       const detailUnpaidCount = row.querySelector("[data-recipient-detail-unpaid-count]");
       if (detailUnpaidCount) {
         detailUnpaidCount.textContent = "0건";
+      }
+      const detailForfeitedCount = row.querySelector("[data-recipient-detail-forfeited-count]");
+      if (detailForfeitedCount) {
+        detailForfeitedCount.textContent =
+          normalized === "forfeited" ? `${totalCount}건` : "0건";
       }
       const detailTotalCount = row.querySelector("[data-recipient-detail-total-count]");
       if (detailTotalCount) {
@@ -2228,42 +2392,38 @@
       }
       const statusCard = row.querySelector("[data-recipient-status-card]");
       if (statusCard) {
-        statusCard.classList.add("is-paid");
-        statusCard.classList.remove("is-unpaid");
+        toggleStatusClasses(statusCard, normalized);
       }
       const badge = row.querySelector("[data-recipient-status-badge]");
       if (badge) {
-        badge.textContent = "전체 완료";
-        badge.classList.add("is-paid");
-        badge.classList.remove("is-unpaid");
+        badge.textContent = normalized === "forfeited" ? "귀속 있음" : "전체 완료";
+        toggleStatusClasses(badge, normalized);
       }
-      const form = row.querySelector("[data-recipient-settle-all-form]");
-      if (form) {
+      row.querySelectorAll("[data-recipient-settle-all-form]").forEach((form) => {
         form.hidden = true;
-      }
+      });
       document
         .querySelectorAll(`[data-recipient-detail-item][data-user-id="${row.dataset.userId}"]`)
-        .forEach((item) => setRecipientDetailPill(row.dataset.userId, item.dataset.distributionId, "paid"));
+        .forEach((item) => setRecipientDetailPill(row.dataset.userId, item.dataset.distributionId, normalized));
       updateMyAllianceUnsettledTotal();
+      updateMyAllianceForfeitedTotal();
     }
 
     function setRecipientDetailPill(userId, distributionId, status) {
-      const normalized = status === "paid" ? "paid" : "unpaid";
+      const normalized = normalizeMemberStatus(status);
       document
         .querySelectorAll(
           `[data-recipient-detail-item][data-user-id="${userId}"][data-distribution-id="${distributionId}"]`,
         )
         .forEach((item) => {
           item.dataset.recipientDetailStatus = normalized;
-          item.classList.toggle("is-paid", normalized === "paid");
-          item.classList.toggle("is-unpaid", normalized !== "paid");
+          toggleStatusClasses(item, normalized);
           const badge = item.querySelector("[data-recipient-detail-badge]");
           const input = item.querySelector("[data-recipient-detail-status-input]");
           const button = item.querySelector("[data-recipient-detail-button]");
           if (badge) {
             badge.textContent = memberStatusText(normalized);
-            badge.classList.toggle("is-paid", normalized === "paid");
-            badge.classList.toggle("is-unpaid", normalized !== "paid");
+            toggleStatusClasses(badge, normalized);
           }
           if (input) {
             input.value = normalized === "paid" ? "unpaid" : "paid";
@@ -2271,6 +2431,9 @@
           if (button) {
             button.textContent = memberNextStatusText(normalized);
           }
+          item.querySelectorAll("[data-recipient-detail-form]").forEach((form) => {
+            form.hidden = statusButtonHidden(form.dataset.recipientTargetStatus, normalized);
+          });
         });
     }
 
@@ -2290,19 +2453,31 @@
       summaryRow.dataset.totalCount = String(totalCount);
       let unpaidAmount = 0;
       let unpaidCount = 0;
+      let paidCount = 0;
+      let forfeitedAmount = 0;
+      let forfeitedCount = 0;
       const unpaidDistributionIds = [];
       memberRows.forEach((row) => {
-        const isPaid = row.dataset.memberStatus === "paid";
-        setRecipientDetailPill(userId, row.dataset.memberDistributionId, isPaid ? "paid" : "unpaid");
-        if (!isPaid) {
+        const status = normalizeMemberStatus(row.dataset.memberStatus);
+        const amount = recipientNumber(row, "memberPayoutAmount");
+        setRecipientDetailPill(userId, row.dataset.memberDistributionId, status);
+        if (status === "paid") {
+          paidCount += 1;
+        } else if (status === "forfeited") {
+          forfeitedAmount += amount;
+          forfeitedCount += 1;
+        } else {
           unpaidAmount += recipientNumber(row, "memberPayoutAmount");
           unpaidCount += 1;
           unpaidDistributionIds.push(row.dataset.memberDistributionId);
         }
       });
-      summaryRow.dataset.status = unpaidCount > 0 ? "unpaid" : "paid";
+      const summaryStatus = unpaidCount > 0 ? "unpaid" : forfeitedCount > 0 ? "forfeited" : "paid";
+      summaryRow.dataset.status = summaryStatus;
       summaryRow.dataset.unpaidAmount = String(unpaidAmount);
       summaryRow.dataset.unpaidCount = String(unpaidCount);
+      summaryRow.dataset.forfeitedAmount = String(forfeitedAmount);
+      summaryRow.dataset.forfeitedCount = String(forfeitedCount);
       const unpaidText = summaryRow.querySelector("[data-recipient-unpaid-text]");
       if (unpaidText) {
         unpaidText.textContent = formatAdenaNumber(unpaidAmount);
@@ -2311,17 +2486,26 @@
       if (detailUnpaidText) {
         detailUnpaidText.textContent = formatAdenaNumber(unpaidAmount);
       }
+      const detailForfeitedText = summaryRow.querySelector("[data-recipient-detail-forfeited-text]");
+      if (detailForfeitedText) {
+        detailForfeitedText.textContent = formatAdenaNumber(forfeitedAmount);
+      }
       const countText = summaryRow.querySelector("[data-recipient-count-text]");
       if (countText) {
-        countText.textContent = unpaidCount === 0 ? "완료" : `미완료 ${unpaidCount}건`;
+        countText.textContent =
+          unpaidCount > 0 ? `미완료 ${unpaidCount}건` : forfeitedCount > 0 ? `귀속 ${forfeitedCount}건` : "완료";
       }
       const detailPaidCount = summaryRow.querySelector("[data-recipient-detail-paid-count]");
       if (detailPaidCount) {
-        detailPaidCount.textContent = `${totalCount - unpaidCount}건`;
+        detailPaidCount.textContent = `${paidCount}건`;
       }
       const detailUnpaidCount = summaryRow.querySelector("[data-recipient-detail-unpaid-count]");
       if (detailUnpaidCount) {
         detailUnpaidCount.textContent = `${unpaidCount}건`;
+      }
+      const detailForfeitedCount = summaryRow.querySelector("[data-recipient-detail-forfeited-count]");
+      if (detailForfeitedCount) {
+        detailForfeitedCount.textContent = `${forfeitedCount}건`;
       }
       const detailTotalCount = summaryRow.querySelector("[data-recipient-detail-total-count]");
       if (detailTotalCount) {
@@ -2329,26 +2513,23 @@
       }
       const statusCard = summaryRow.querySelector("[data-recipient-status-card]");
       if (statusCard) {
-        const isPaid = unpaidCount === 0;
-        statusCard.classList.toggle("is-paid", isPaid);
-        statusCard.classList.toggle("is-unpaid", !isPaid);
+        toggleStatusClasses(statusCard, summaryStatus);
       }
       const badge = summaryRow.querySelector("[data-recipient-status-badge]");
       if (badge) {
-        const isPaid = unpaidCount === 0;
-        badge.textContent = isPaid ? "전체 완료" : "미완료 있음";
-        badge.classList.toggle("is-paid", isPaid);
-        badge.classList.toggle("is-unpaid", !isPaid);
+        badge.textContent =
+          summaryStatus === "paid" ? "전체 완료" : summaryStatus === "forfeited" ? "귀속 있음" : "미완료 있음";
+        toggleStatusClasses(badge, summaryStatus);
       }
-      const form = summaryRow.querySelector("[data-recipient-settle-all-form]");
-      if (form) {
+      summaryRow.querySelectorAll("[data-recipient-settle-all-form]").forEach((form) => {
         form.hidden = unpaidCount === 0;
         const distributionInput = form.querySelector("[data-recipient-distribution-ids]");
         if (distributionInput) {
           distributionInput.value = unpaidDistributionIds.join(",");
         }
-      }
+      });
       updateMyAllianceUnsettledTotal();
+      updateMyAllianceForfeitedTotal();
     }
 
     document.querySelectorAll("[data-member-payout-form]").forEach((form) => {
@@ -2361,7 +2542,7 @@
         if (!row || !card || !button || button.disabled || !statusInput) {
           return;
         }
-        const nextStatus = statusInput.value === "paid" ? "paid" : "unpaid";
+        const nextStatus = normalizeMemberStatus(statusInput.value);
         const originalText = button.textContent;
         button.disabled = true;
         button.textContent = "처리중";
@@ -2418,9 +2599,11 @@
         const row = form.closest("[data-recipient-payout-row]");
         const button = form.querySelector("[data-recipient-settle-button]");
         const distributionInput = form.querySelector("[data-recipient-distribution-ids]");
+        const statusInput = form.querySelector("[data-recipient-target-status]");
         if (!row || !button || button.disabled || !distributionInput?.value) {
           return;
         }
+        const targetStatus = normalizeMemberStatus(statusInput?.value || "paid");
         const originalText = button.textContent;
         button.disabled = true;
         button.textContent = "처리중";
@@ -2433,7 +2616,7 @@
               if (!updatedIds.has(String(memberRow.dataset.memberDistributionId))) {
                 return;
               }
-              setMemberPayoutRow(memberRow, "paid");
+              setMemberPayoutRow(memberRow, targetStatus);
               const card = memberRow.closest("[data-member-payout-card]");
               if (card) {
                 updateMemberPayoutCard(card);
@@ -2445,9 +2628,8 @@
           if (syncedRow) {
             updateRecipientSummaryFromMemberRow(syncedRow);
           } else {
-            markRecipientSummaryPaid(row);
+            markRecipientSummaryStatus(row, targetStatus);
           }
-          distributionInput.value = "";
           applyRecipientPayoutFilters();
         } catch (error) {
           alert(error.message);
@@ -2467,7 +2649,7 @@
         if (!detailItem || !button || button.disabled || !statusInput) {
           return;
         }
-        const nextStatus = statusInput.value === "paid" ? "paid" : "unpaid";
+        const nextStatus = normalizeMemberStatus(statusInput.value);
         const originalText = button.textContent;
         button.disabled = true;
         button.textContent = "처리중";
@@ -2599,6 +2781,9 @@
     const lootPeriodModal = document.querySelector("[data-loot-period-modal]");
     const openLootPeriodModalButton = document.querySelector("[data-loot-period-modal-open]");
     const closeLootPeriodModalButton = document.querySelector("[data-loot-period-modal-close]");
+    const forfeitureLogModal = document.querySelector("[data-forfeiture-log-modal]");
+    const openForfeitureLogButton = document.querySelector("[data-forfeiture-log-open]");
+    const closeForfeitureLogButton = document.querySelector("[data-forfeiture-log-close]");
     function setLootPeriodModalOpen(isOpen) {
       if (!lootPeriodModal) {
         return;
@@ -2617,6 +2802,15 @@
         feeRuleModal.querySelector("input[name='rule_name']")?.focus();
       }
     }
+    function setForfeitureLogModalOpen(isOpen) {
+      if (!forfeitureLogModal) {
+        return;
+      }
+      forfeitureLogModal.hidden = !isOpen;
+      if (isOpen) {
+        forfeitureLogModal.querySelector("[data-forfeiture-log-close]")?.focus();
+      }
+    }
     openLootPeriodModalButton?.addEventListener("click", () => setLootPeriodModalOpen(true));
     closeLootPeriodModalButton?.addEventListener("click", () => setLootPeriodModalOpen(false));
     lootPeriodModal?.addEventListener("click", (event) => {
@@ -2629,6 +2823,13 @@
     feeRuleModal?.addEventListener("click", (event) => {
       if (event.target === feeRuleModal) {
         setFeeRuleModalOpen(false);
+      }
+    });
+    openForfeitureLogButton?.addEventListener("click", () => setForfeitureLogModalOpen(true));
+    closeForfeitureLogButton?.addEventListener("click", () => setForfeitureLogModalOpen(false));
+    forfeitureLogModal?.addEventListener("click", (event) => {
+      if (event.target === forfeitureLogModal) {
+        setForfeitureLogModalOpen(false);
       }
     });
     const bidItemGrid = document.querySelector(".bid-item-grid");

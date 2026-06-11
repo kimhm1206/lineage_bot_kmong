@@ -2956,6 +2956,18 @@ button:disabled {
   font-size: 26px;
 }
 
+.my-alliance-sub-amount {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.my-alliance-sub-amount span {
+  color: var(--text);
+  font-weight: 900;
+}
+
 .my-alliance-fee-total-card {
   gap: 10px;
   padding: 14px;
@@ -2978,6 +2990,10 @@ button:disabled {
 }
 
 .my-alliance-split-metrics small {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
   color: var(--muted);
   font-size: 11px;
   font-weight: 900;
@@ -2987,6 +3003,15 @@ button:disabled {
   color: var(--text);
   font-size: 18px;
   line-height: 1;
+}
+
+.forfeit-info-button {
+  width: 22px;
+  height: 22px;
+  min-height: 22px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 950;
 }
 
 .loot-layout {
@@ -3195,6 +3220,10 @@ button:disabled {
   background: var(--red);
 }
 
+.loot-event-card.distribution-card.is-forfeited::before {
+  background: #d89b22;
+}
+
 .loot-event-card.distribution-card.is-empty::before {
   background: rgba(101, 117, 138, 0.42);
 }
@@ -3226,6 +3255,14 @@ button:disabled {
 
 .loot-event-card.distribution-compact-card.is-unpaid summary.distribution-compact-summary {
   border-left-color: var(--red);
+}
+
+.loot-event-card.distribution-compact-card.is-forfeited summary.distribution-compact-summary {
+  border-left-color: #d89b22;
+}
+
+.loot-event-card.distribution-compact-card.is-forfeited .distribution-compact-amount {
+  color: #9a6500;
 }
 
 .loot-event-card.distribution-compact-card.is-empty summary.distribution-compact-summary {
@@ -3697,6 +3734,12 @@ button:disabled {
   color: var(--red);
 }
 
+.payout-status-badge.is-forfeited {
+  border-color: rgba(216, 155, 34, 0.36);
+  background: rgba(216, 155, 34, 0.14);
+  color: #9a6500;
+}
+
 .payout-status-badge.is-empty {
   background: rgba(101, 117, 138, 0.1);
   color: var(--muted);
@@ -3788,6 +3831,11 @@ button:disabled {
   background: rgba(204, 80, 64, 0.1);
 }
 
+.recipient-payout-metrics div.is-forfeited {
+  border-color: rgba(216, 155, 34, 0.4);
+  background: rgba(216, 155, 34, 0.1);
+}
+
 .recipient-payout-metrics span,
 .recipient-detail-card span {
   display: block;
@@ -3815,26 +3863,15 @@ button:disabled {
 }
 
 .recipient-payout-actions {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   align-self: stretch;
-  justify-content: flex-end;
+  align-content: end;
   gap: 6px;
-}
-
-.recipient-payout-actions::before {
-  margin-bottom: auto;
-  align-self: flex-start;
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 800;
-  content: "관리";
 }
 
 .recipient-payout-actions .inline-actions {
   width: 100%;
-  justify-content: flex-end;
 }
 
 .recipient-payout-actions .tiny-button {
@@ -3850,7 +3887,7 @@ button:disabled {
 
 .recipient-payout-detail-summary {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   gap: 8px;
   margin-bottom: 12px;
 }
@@ -3886,7 +3923,7 @@ button:disabled {
 
 .recipient-detail-card {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) minmax(130px, 0.45fr) auto auto;
+  grid-template-columns: minmax(220px, 1fr) minmax(130px, 0.42fr) auto minmax(170px, auto);
   gap: 12px;
   align-items: center;
   padding: 14px;
@@ -3909,9 +3946,46 @@ button:disabled {
   background: rgba(18, 128, 92, 0.06);
 }
 
+.recipient-detail-card.is-forfeited {
+  border-color: rgba(216, 155, 34, 0.26);
+  background: rgba(216, 155, 34, 0.07);
+}
+
 .recipient-detail-card strong {
   color: var(--text);
   font-weight: 900;
+}
+
+.recipient-detail-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(56px, 1fr));
+  gap: 6px;
+}
+
+.recipient-detail-actions .inline-actions,
+.recipient-detail-actions .tiny-button {
+  width: 100%;
+}
+
+.warning-button {
+  border-color: rgba(216, 155, 34, 0.36);
+  background: rgba(216, 155, 34, 0.14);
+  color: #8a5a00;
+}
+
+.warning-button:hover {
+  border-color: rgba(216, 155, 34, 0.54);
+  background: rgba(216, 155, 34, 0.22);
+}
+
+.ghost-button {
+  background: transparent;
+  color: var(--muted);
+}
+
+.ghost-button:hover {
+  background: rgba(101, 117, 138, 0.1);
+  color: var(--text);
 }
 
 .my-payout-rule-panel {
@@ -4012,6 +4086,50 @@ button:disabled {
 
 .modal-card .my-payout-rule-form {
   grid-template-columns: minmax(0, 1fr);
+}
+
+.forfeiture-log-modal-card {
+  width: min(760px, 100%);
+  max-height: min(720px, calc(100vh - 48px));
+  overflow: hidden;
+}
+
+.forfeiture-log-list {
+  display: grid;
+  gap: 8px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.forfeiture-log-row {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) minmax(150px, 0.8fr) minmax(150px, 0.8fr) minmax(100px, auto);
+  gap: 10px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-left: 4px solid #d89b22;
+  border-radius: 8px;
+  background: var(--panel-soft);
+}
+
+.forfeiture-log-row div {
+  min-width: 0;
+}
+
+.forfeiture-log-row span,
+.forfeiture-log-row small {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.forfeiture-log-row strong {
+  color: var(--text);
+  font-weight: 950;
+  overflow-wrap: anywhere;
 }
 
 .my-payout-card {
@@ -4573,6 +4691,12 @@ button:disabled {
   background: rgba(127, 29, 29, 0.18);
 }
 
+:root[data-theme="dark"] .recipient-detail-card.is-forfeited,
+:root[data-theme="dark"] .recipient-payout-metrics div.is-forfeited {
+  border-color: rgba(251, 191, 36, 0.32);
+  background: rgba(120, 83, 20, 0.22);
+}
+
 :root[data-theme="dark"] .alliance-payout-summary-item.is-paid {
   border-color: rgba(52, 211, 153, 0.3);
   border-left-color: rgba(52, 211, 153, 0.86);
@@ -4598,6 +4722,17 @@ button:disabled {
 :root[data-theme="dark"] .recipient-payout-metrics div.is-paid {
   border-color: rgba(52, 211, 153, 0.3);
   background: rgba(6, 78, 59, 0.2);
+}
+
+:root[data-theme="dark"] .payout-status-badge.is-forfeited,
+:root[data-theme="dark"] .warning-button {
+  border-color: rgba(251, 191, 36, 0.34);
+  background: rgba(120, 83, 20, 0.22);
+  color: #facc15;
+}
+
+:root[data-theme="dark"] .loot-event-card.distribution-compact-card.is-forfeited .distribution-compact-amount {
+  color: #facc15;
 }
 
 :root[data-theme="dark"] .filter-panel input,
@@ -4962,8 +5097,11 @@ button:disabled {
 
   .recipient-payout-actions {
     grid-column: auto;
-    align-items: flex-start;
-    justify-content: flex-start;
+    grid-template-columns: 1fr;
+  }
+
+  .recipient-detail-actions {
+    grid-template-columns: 1fr;
   }
 
   .inline-form-actions,

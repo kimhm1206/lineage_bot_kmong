@@ -3756,6 +3756,7 @@ def get_member_payout_groups(
             mps.alliance_id,
             mps.user_id,
             mps.is_paid,
+            mps.payout_status,
             mps.updated_at
         FROM member_payout_statuses mps
         INNER JOIN distribution_batches db
@@ -3777,6 +3778,7 @@ def get_member_payout_groups(
                 "alliance_id": int(row["alliance_id"]),
                 "fee_lines": [],
                 "statuses": {},
+                "status_updated_at": {},
             },
         )
         group["fee_lines"].append(
@@ -3796,9 +3798,15 @@ def get_member_payout_groups(
                 "alliance_id": int(row["alliance_id"]),
                 "fee_lines": [],
                 "statuses": {},
+                "status_updated_at": {},
             },
         )
-        group["statuses"][int(row["user_id"])] = bool(row["is_paid"])
+        payout_status = str(row.get("payout_status") or "").lower()
+        if payout_status not in {"paid", "unpaid", "forfeited"}:
+            payout_status = "paid" if bool(row["is_paid"]) else "unpaid"
+        user_id = int(row["user_id"])
+        group["statuses"][user_id] = payout_status
+        group["status_updated_at"][user_id] = row.get("updated_at")
     return groups
 
 
@@ -3839,12 +3847,14 @@ def settle_member_payout(
                         alliance_id,
                         user_id,
                         is_paid,
+                        payout_status,
                         updated_at
                     )
-                    VALUES (%s, %s, %s, TRUE, CURRENT_TIMESTAMP)
+                    VALUES (%s, %s, %s, TRUE, 'paid', CURRENT_TIMESTAMP)
                     ON CONFLICT (distribution_id, alliance_id, user_id)
                     DO UPDATE SET
                         is_paid = TRUE,
+                        payout_status = 'paid',
                         updated_at = CURRENT_TIMESTAMP
                     """,
                     (distribution_id, alliance_id, int(participant["user_id"])),
@@ -3862,8 +3872,8 @@ def update_member_payout_recipient_status(
     *,
     updated_by_discord_id: int | None,
 ) -> int:
-    if payout_status not in {"paid", "unpaid"}:
-        raise ValueError("Member payout status must be paid or unpaid.")
+    if payout_status not in {"paid", "unpaid", "forfeited"}:
+        raise ValueError("Member payout status must be paid, unpaid, or forfeited.")
 
     with _connect() as connection:
         with connection.cursor() as cursor:
@@ -3899,15 +3909,23 @@ def update_member_payout_recipient_status(
                     alliance_id,
                     user_id,
                     is_paid,
+                    payout_status,
                     updated_at
                 )
-                VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
+                VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
                 ON CONFLICT (distribution_id, alliance_id, user_id)
                 DO UPDATE SET
                     is_paid = EXCLUDED.is_paid,
+                    payout_status = EXCLUDED.payout_status,
                     updated_at = CURRENT_TIMESTAMP
                 """,
-                (distribution_id, alliance_id, user_id, payout_status == "paid"),
+                (
+                    distribution_id,
+                    alliance_id,
+                    user_id,
+                    payout_status == "paid",
+                    payout_status,
+                ),
             )
         connection.commit()
     return distribution_id
@@ -3985,7 +4003,10 @@ def _member_payout_rule_snapshot_is_locked(
             FROM member_payout_statuses
             WHERE distribution_id = %s
               AND alliance_id = %s
-              AND is_paid = TRUE
+              AND (
+                  is_paid = TRUE
+                  OR COALESCE(payout_status, 'unpaid') <> 'unpaid'
+              )
         ) AS is_locked
         """,
         (distribution_id, alliance_id),
@@ -4025,7 +4046,10 @@ def settle_all_member_payouts(
                     WHERE mps.distribution_id = db.distribution_id
                       AND mps.alliance_id = p.alliance_id
                       AND mps.user_id = lep.user_id
-                      AND mps.is_paid = TRUE
+                      AND (
+                          mps.is_paid = TRUE
+                          OR COALESCE(mps.payout_status, 'unpaid') <> 'unpaid'
+                      )
                 )
           )
         ORDER BY db.distribution_id ASC
@@ -4628,6 +4652,7 @@ def _ensure_postgres_columns(cursor: psycopg2.extensions.cursor) -> None:
         "ALTER TABLE distribution_batches ADD COLUMN IF NOT EXISTS fee_rate NUMERIC(8, 6) NOT NULL DEFAULT 0",
         "ALTER TABLE distribution_batches ADD COLUMN IF NOT EXISTS fee_amount NUMERIC(18, 2) NOT NULL DEFAULT 0",
         "ALTER TABLE distribution_alliance_payouts ADD COLUMN IF NOT EXISTS payout_status TEXT NOT NULL DEFAULT 'unpaid'",
+        "ALTER TABLE member_payout_statuses ADD COLUMN IF NOT EXISTS payout_status TEXT NOT NULL DEFAULT 'unpaid'",
         "ALTER TABLE alliance_payout_fee_rules ADD COLUMN IF NOT EXISTS created_by_discord_id BIGINT",
         "ALTER TABLE alliance_payout_fee_rules ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP",
         "ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP",
@@ -4639,6 +4664,14 @@ def _ensure_postgres_columns(cursor: psycopg2.extensions.cursor) -> None:
     ]
     for sql in column_sql:
         cursor.execute(sql)
+    cursor.execute(
+        """
+        UPDATE member_payout_statuses
+        SET payout_status = CASE WHEN is_paid = TRUE THEN 'paid' ELSE 'unpaid' END
+        WHERE payout_status NOT IN ('paid', 'unpaid', 'forfeited')
+           OR (is_paid = TRUE AND payout_status = 'unpaid')
+        """
+    )
     cursor.execute("ALTER TABLE scheduled_report_settings DROP CONSTRAINT IF EXISTS chk_scheduled_report_frequency")
     cursor.execute("ALTER TABLE scheduled_report_settings DROP CONSTRAINT IF EXISTS chk_scheduled_report_period_type")
     cursor.execute("ALTER TABLE scheduled_report_settings DROP CONSTRAINT IF EXISTS chk_scheduled_report_subject_type")
@@ -4777,6 +4810,10 @@ def _ensure_postgres_columns(cursor: psycopg2.extensions.cursor) -> None:
     cursor.execute(
         "CREATE INDEX IF NOT EXISTS idx_member_payout_statuses_alliance_paid "
         "ON member_payout_statuses(alliance_id, is_paid)"
+    )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_member_payout_statuses_alliance_status "
+        "ON member_payout_statuses(alliance_id, payout_status)"
     )
     cursor.execute(
         "CREATE INDEX IF NOT EXISTS idx_alliance_payout_fee_rules_active "
@@ -5196,6 +5233,7 @@ CREATE TABLE IF NOT EXISTS member_payout_statuses (
     alliance_id BIGINT NOT NULL REFERENCES alliances(alliance_id) ON DELETE CASCADE,
     user_id BIGINT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
     is_paid BOOLEAN NOT NULL DEFAULT FALSE,
+    payout_status TEXT NOT NULL DEFAULT 'unpaid',
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (distribution_id, alliance_id, user_id)
 );
