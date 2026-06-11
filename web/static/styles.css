@@ -2956,91 +2956,9 @@ button:disabled {
   font-size: 26px;
 }
 
-.my-alliance-unsettled-subline {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-}
-
-.my-alliance-unsettled-subline strong {
-  color: var(--text);
-  font-size: 12px;
-}
-
 .my-alliance-fee-total-card {
   gap: 10px;
   padding: 14px;
-}
-
-.my-alliance-fee-heading {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.fee-info-button {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--panel-soft);
-  color: var(--muted);
-  font-size: 13px;
-  font-weight: 1000;
-}
-
-.fee-info-popover {
-  position: absolute;
-  z-index: 20;
-  top: 30px;
-  right: 0;
-  display: none;
-  width: min(320px, 72vw);
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: #ffffff;
-  box-shadow: var(--shadow);
-}
-
-.fee-info-button:hover .fee-info-popover,
-.fee-info-button:focus-visible .fee-info-popover {
-  display: grid;
-  gap: 8px;
-}
-
-.fee-info-popover > strong {
-  color: var(--text);
-  font-size: 13px;
-}
-
-.fee-info-row {
-  display: grid;
-  gap: 3px;
-  padding: 8px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #f7fafc;
-  text-align: left;
-}
-
-.fee-info-row b {
-  color: var(--text);
-  font-size: 12px;
-}
-
-.fee-info-row em {
-  color: var(--muted);
-  font-size: 11px;
-  font-style: normal;
-  font-weight: 800;
 }
 
 .my-alliance-split-metrics {
@@ -4018,63 +3936,9 @@ button:disabled {
   overflow: auto;
 }
 
-.fee-rule-split {
-  display: grid;
-  grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
-  gap: 10px;
-  min-width: 0;
-}
-
-.blood-fee-card,
-.internal-fee-card {
-  display: grid;
-  gap: 10px;
-  align-content: start;
-  min-width: 0;
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--panel-soft);
-}
-
-.fee-rule-section-title {
+.fee-rule-actions {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  min-width: 0;
-}
-
-.fee-rule-section-title strong {
-  color: var(--text);
-  font-size: 14px;
-  font-weight: 900;
-}
-
-.fee-rule-section-title span {
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.blood-fee-form {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px;
-  align-items: end;
-}
-
-.blood-fee-form .field {
-  margin: 0;
-}
-
-.blood-fee-form .tiny-button {
-  min-height: 38px;
-}
-
-.blood-fee-form .tiny-button:disabled {
-  cursor: default;
-  opacity: 0.45;
+  justify-content: flex-end;
 }
 
 .my-payout-rule-form {
@@ -4162,12 +4026,7 @@ button:disabled {
 
 .my-payout-fee-card {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-areas:
-    "main status"
-    "main action";
-  gap: 8px 12px;
-  align-items: center;
+  gap: 5px;
   min-width: 0;
   padding: 12px;
   border: 1px solid var(--line);
@@ -4175,36 +4034,7 @@ button:disabled {
   background: var(--panel-soft);
 }
 
-.my-payout-fee-card.is-paid {
-  border-color: rgba(68, 148, 113, 0.45);
-}
-
-.my-payout-fee-card.is-unpaid {
-  border-color: rgba(100, 116, 139, 0.32);
-}
-
-.my-payout-fee-card .inline-actions {
-  grid-area: action;
-  margin-top: 2px;
-}
-
-.my-payout-fee-card .tiny-button {
-  width: 100%;
-}
-
-.my-payout-fee-main {
-  grid-area: main;
-  display: grid;
-  gap: 5px;
-  min-width: 0;
-}
-
-.my-payout-fee-card .payout-status-badge {
-  grid-area: status;
-  justify-self: end;
-}
-
-.my-payout-fee-main span,
+.my-payout-fee-card span,
 .my-payout-fee-card small {
   color: var(--muted);
   font-size: 11px;
@@ -4217,14 +4047,6 @@ button:disabled {
   font-size: 18px;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.my-payout-fee-card .payout-status-badge.is-paid {
-  color: #1f7a55;
-}
-
-.my-payout-fee-card .payout-status-badge.is-unpaid {
-  color: #9a3412;
 }
 
 .my-member-payout-table-card {
@@ -4746,16 +4568,6 @@ button:disabled {
   background: var(--glass-bg-soft);
 }
 
-:root[data-theme="dark"] .fee-info-popover {
-  border-color: #304156;
-  background: #101821;
-}
-
-:root[data-theme="dark"] .fee-info-row {
-  border-color: #304156;
-  background: #172333;
-}
-
 :root[data-theme="dark"] .recipient-detail-card.is-unpaid {
   border-color: rgba(248, 113, 113, 0.28);
   background: rgba(127, 29, 29, 0.18);
@@ -5217,7 +5029,6 @@ button:disabled {
   .loot-fee-summary,
   .distribution-detail-summary,
   .my-payout-layout,
-  .fee-rule-split,
   .my-payout-rule-form,
   .loot-breakdown-grid {
     grid-template-columns: 1fr;
