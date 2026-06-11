@@ -3007,6 +3007,27 @@ def _decorate_alliance_fee_rules(
     return decorated
 
 
+_BLOOD_FEE_RULE_NAME = "혈비"
+
+
+def _is_blood_fee_rule(rule: dict[str, Any]) -> bool:
+    return str(rule.get("rule_name") or "").strip() == _BLOOD_FEE_RULE_NAME
+
+
+def _blood_fee_rule_context(rules: list[dict[str, Any]]) -> dict[str, Any]:
+    for rule in rules:
+        if _is_blood_fee_rule(rule):
+            return {**rule, "exists": True}
+    return {
+        "exists": False,
+        "rule_id": "",
+        "rule_name": _BLOOD_FEE_RULE_NAME,
+        "fee_rate": Decimal("0"),
+        "fee_percent_input": "0",
+        "fee_percent_text": "0",
+    }
+
+
 def _member_payout_fee_lines_from_rules(
     total_amount: Decimal,
     rules: list[dict[str, Any]],
@@ -3051,6 +3072,7 @@ def _my_alliance_payout_context(
     if selected_alliance is None:
         return {
             "selected_alliance": None,
+            "blood_fee": _blood_fee_rule_context([]),
             "fee_rules": [],
             "events": [],
             "recipients": [],
@@ -3329,7 +3351,8 @@ def _my_alliance_payout_context(
 
     return {
         "selected_alliance": selected_alliance,
-        "fee_rules": fee_rules,
+        "blood_fee": _blood_fee_rule_context(fee_rules),
+        "fee_rules": [rule for rule in fee_rules if not _is_blood_fee_rule(rule)],
         "events": rows,
         "recipients": recipient_rows,
         "summary": {
@@ -5646,6 +5669,53 @@ async def create_alliance_fee_rule(
             rule_name=str(form_data.get("rule_name") or ""),
             fee_rate=fee_rate,
             created_by_discord_id=int(auth["user"]["id"]),
+        )
+    except ValueError:
+        return _loot_redirect(selected_guild_id, saved="error", alliance_id=alliance_id)
+    return _loot_redirect(selected_guild_id, saved="fee_rule", alliance_id=alliance_id)
+
+
+@app.post("/loot/alliance-fee-rules/blood")
+async def update_blood_fee_rule(
+    request: Request,
+    guild_id: str | None = None,
+):
+    auth = _auth_context(request, guild_id)
+    if not auth:
+        return _auth_redirect(request)
+    selected_guild_id = int(auth["selected_guild_id"])
+    if not _can_manage_selected_server(auth):
+        return _loot_redirect(selected_guild_id, saved="forbidden")
+
+    body = (await request.body()).decode("utf-8")
+    form_data = {
+        key: values[-1] if values else ""
+        for key, values in parse_qs(body, keep_blank_values=True).items()
+    }
+    try:
+        requested_alliance_id = int(form_data.get("alliance_id") or "")
+    except ValueError:
+        requested_alliance_id = None
+    alliance_id = _allowed_loot_alliance_id(auth, requested_alliance_id)
+    if alliance_id is None:
+        return _loot_redirect(selected_guild_id, saved="forbidden")
+
+    errors: list[str] = []
+    fee_percent = _decimal_from_form(
+        "혈비",
+        form_data.get("fee_percent"),
+        errors,
+        default=Decimal("0"),
+    )
+    if errors:
+        return _loot_redirect(selected_guild_id, saved="error", alliance_id=alliance_id)
+    try:
+        database.upsert_alliance_payout_fee_rule_by_name(
+            selected_guild_id,
+            alliance_id,
+            rule_name=_BLOOD_FEE_RULE_NAME,
+            fee_rate=fee_percent / Decimal("100"),
+            updated_by_discord_id=int(auth["user"]["id"]),
         )
     except ValueError:
         return _loot_redirect(selected_guild_id, saved="error", alliance_id=alliance_id)

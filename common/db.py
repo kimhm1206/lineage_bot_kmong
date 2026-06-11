@@ -632,6 +632,23 @@ class Database:
             created_by_discord_id=created_by_discord_id,
         )
 
+    def upsert_alliance_payout_fee_rule_by_name(
+        self,
+        guild_id: int,
+        alliance_id: int,
+        *,
+        rule_name: str,
+        fee_rate: Decimal,
+        updated_by_discord_id: int | None,
+    ) -> int:
+        return upsert_alliance_payout_fee_rule_by_name(
+            guild_id,
+            alliance_id,
+            rule_name=rule_name,
+            fee_rate=fee_rate,
+            updated_by_discord_id=updated_by_discord_id,
+        )
+
     def deactivate_alliance_payout_fee_rule(
         self,
         guild_id: int,
@@ -3700,6 +3717,109 @@ def create_alliance_payout_fee_rule(
                 ),
             )
             rule_id = int(cursor.fetchone()["rule_id"])
+        connection.commit()
+    return rule_id
+
+
+def upsert_alliance_payout_fee_rule_by_name(
+    guild_id: int,
+    alliance_id: int,
+    *,
+    rule_name: str,
+    fee_rate: Decimal,
+    updated_by_discord_id: int | None,
+) -> int:
+    normalized_name = rule_name.strip()
+    normalized_fee_rate = _decimal(fee_rate)
+    if not normalized_name:
+        raise ValueError("Fee rule name must not be empty.")
+    if normalized_fee_rate < 0:
+        raise ValueError("Fee rule rate must not be negative.")
+
+    with _connect() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT rule_id
+                FROM alliance_payout_fee_rules
+                WHERE guild_id = %s
+                  AND alliance_id = %s
+                  AND rule_name = %s
+                  AND is_active = TRUE
+                ORDER BY sort_order ASC, rule_id ASC
+                """,
+                (guild_id, alliance_id, normalized_name),
+            )
+            rows = cursor.fetchall()
+            if rows:
+                rule_id = int(rows[0]["rule_id"])
+                cursor.execute(
+                    """
+                    UPDATE alliance_payout_fee_rules
+                    SET fee_rate = %s,
+                        created_by_discord_id = COALESCE(created_by_discord_id, %s),
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE guild_id = %s
+                      AND alliance_id = %s
+                      AND rule_id = %s
+                    """,
+                    (
+                        normalized_fee_rate,
+                        updated_by_discord_id,
+                        guild_id,
+                        alliance_id,
+                        rule_id,
+                    ),
+                )
+                duplicate_rule_ids = [int(row["rule_id"]) for row in rows[1:]]
+                if duplicate_rule_ids:
+                    cursor.execute(
+                        """
+                        UPDATE alliance_payout_fee_rules
+                        SET is_active = FALSE,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE guild_id = %s
+                          AND alliance_id = %s
+                          AND rule_id = ANY(%s)
+                        """,
+                        (guild_id, alliance_id, duplicate_rule_ids),
+                    )
+            else:
+                cursor.execute(
+                    """
+                    SELECT COALESCE(MAX(sort_order), 0) + 1 AS next_order
+                    FROM alliance_payout_fee_rules
+                    WHERE guild_id = %s
+                      AND alliance_id = %s
+                    """,
+                    (guild_id, alliance_id),
+                )
+                next_order = int(cursor.fetchone()["next_order"] or 1)
+                cursor.execute(
+                    """
+                    INSERT INTO alliance_payout_fee_rules (
+                        guild_id,
+                        alliance_id,
+                        rule_name,
+                        fee_rate,
+                        sort_order,
+                        is_active,
+                        created_by_discord_id,
+                        updated_at
+                    )
+                    VALUES (%s, %s, %s, %s, %s, TRUE, %s, CURRENT_TIMESTAMP)
+                    RETURNING rule_id
+                    """,
+                    (
+                        guild_id,
+                        alliance_id,
+                        normalized_name,
+                        normalized_fee_rate,
+                        next_order,
+                        updated_by_discord_id,
+                    ),
+                )
+                rule_id = int(cursor.fetchone()["rule_id"])
         connection.commit()
     return rule_id
 

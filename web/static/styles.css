@@ -3936,6 +3936,65 @@ button:disabled {
   overflow: auto;
 }
 
+.fee-rule-split {
+  display: grid;
+  grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+  gap: 10px;
+  min-width: 0;
+}
+
+.blood-fee-card,
+.internal-fee-card {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-soft);
+}
+
+.fee-rule-section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.fee-rule-section-title strong {
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.fee-rule-section-title span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.blood-fee-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.blood-fee-form .field {
+  margin: 0;
+}
+
+.blood-fee-form .tiny-button {
+  min-height: 38px;
+}
+
+.blood-fee-form .tiny-button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
 .my-payout-rule-form {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(86px, 0.45fr);
@@ -5024,6 +5083,7 @@ button:disabled {
   .loot-fee-summary,
   .distribution-detail-summary,
   .my-payout-layout,
+  .fee-rule-split,
   .my-payout-rule-form,
   .loot-breakdown-grid {
     grid-template-columns: 1fr;

@@ -1009,25 +1009,55 @@
                   <h2>내부 수수료 설정</h2>
                   <span class="panel-caption">미정산 건에만 즉시 반영됩니다</span>
                 </div>
-                <button class="tiny-button" type="button" data-fee-rule-modal-open>수수료 추가</button>
               </header>
 
-              <div class="fee-rule-list">
-                {% for rule in my_alliance_payouts.fee_rules %}
-                  <div class="fee-rule-card">
-                    <div>
-                      <strong>{{ rule.rule_name }}</strong>
-                      <span>{{ rule.fee_percent_text }}%</span>
-                    </div>
-                    <form method="post" action="/loot/alliance-fee-rules/delete?guild_id={{ auth.selected_guild_id }}">
-                      <input type="hidden" name="alliance_id" value="{{ my_alliance_payouts.selected_alliance.alliance_id }}">
-                      <input type="hidden" name="rule_id" value="{{ rule.rule_id }}">
-                      <button class="tiny-button danger-text-button" type="submit">삭제</button>
-                    </form>
+              <div class="fee-rule-split">
+                <section class="blood-fee-card">
+                  <div class="fee-rule-section-title">
+                    <strong>혈비</strong>
+                    <span>혈맹 기본 수수료</span>
                   </div>
-                {% else %}
-                  <div class="empty report-empty">등록된 내부 수수료가 없습니다.</div>
-                {% endfor %}
+                  <form class="blood-fee-form" method="post" action="/loot/alliance-fee-rules/blood?guild_id={{ auth.selected_guild_id }}">
+                    <input type="hidden" name="alliance_id" value="{{ my_alliance_payouts.selected_alliance.alliance_id }}">
+                    <label class="field">
+                      <span>퍼센트</span>
+                      <input
+                        name="fee_percent"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value="{{ my_alliance_payouts.blood_fee.fee_percent_input }}"
+                        data-blood-fee-input
+                        data-initial-value="{{ my_alliance_payouts.blood_fee.fee_percent_input }}"
+                      >
+                    </label>
+                    <button class="tiny-button" type="submit" data-blood-fee-submit disabled>수정</button>
+                  </form>
+                </section>
+
+                <section class="internal-fee-card">
+                  <div class="fee-rule-section-title">
+                    <strong>내부 수수료</strong>
+                    <button class="tiny-button" type="button" data-fee-rule-modal-open>수수료 추가</button>
+                  </div>
+                  <div class="fee-rule-list">
+                    {% for rule in my_alliance_payouts.fee_rules %}
+                      <div class="fee-rule-card">
+                        <div>
+                          <strong>{{ rule.rule_name }}</strong>
+                          <span>{{ rule.fee_percent_text }}%</span>
+                        </div>
+                        <form method="post" action="/loot/alliance-fee-rules/delete?guild_id={{ auth.selected_guild_id }}">
+                          <input type="hidden" name="alliance_id" value="{{ my_alliance_payouts.selected_alliance.alliance_id }}">
+                          <input type="hidden" name="rule_id" value="{{ rule.rule_id }}">
+                          <button class="tiny-button danger-text-button" type="submit">삭제</button>
+                        </form>
+                      </div>
+                    {% else %}
+                      <div class="empty report-empty">등록된 내부 수수료가 없습니다.</div>
+                    {% endfor %}
+                  </div>
+                </section>
               </div>
             </article>
           {% endif %}
@@ -2564,6 +2594,8 @@
     const feeRuleModal = document.querySelector("[data-fee-rule-modal]");
     const openFeeRuleModalButton = document.querySelector("[data-fee-rule-modal-open]");
     const closeFeeRuleModalButton = document.querySelector("[data-fee-rule-modal-close]");
+    const bloodFeeInput = document.querySelector("[data-blood-fee-input]");
+    const bloodFeeSubmit = document.querySelector("[data-blood-fee-submit]");
     const lootPeriodModal = document.querySelector("[data-loot-period-modal]");
     const openLootPeriodModalButton = document.querySelector("[data-loot-period-modal-open]");
     const closeLootPeriodModalButton = document.querySelector("[data-loot-period-modal-close]");
@@ -2599,6 +2631,20 @@
         setFeeRuleModalOpen(false);
       }
     });
+    function normalizeBloodFeeValue(value) {
+      const numericValue = Number(String(value || "0").trim());
+      return Number.isFinite(numericValue) ? String(numericValue) : String(value || "").trim();
+    }
+    function syncBloodFeeSubmit() {
+      if (!bloodFeeInput || !bloodFeeSubmit) {
+        return;
+      }
+      const initialValue = normalizeBloodFeeValue(bloodFeeInput.dataset.initialValue);
+      const currentValue = normalizeBloodFeeValue(bloodFeeInput.value);
+      bloodFeeSubmit.disabled = initialValue === currentValue;
+    }
+    bloodFeeInput?.addEventListener("input", syncBloodFeeSubmit);
+    syncBloodFeeSubmit();
 
     const bidItemGrid = document.querySelector(".bid-item-grid");
     const bidViewTabs = Array.from(document.querySelectorAll("[data-bid-view-tab]"));
