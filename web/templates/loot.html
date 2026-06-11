@@ -982,22 +982,63 @@
             <span data-currency-label data-adena-label="혈맹 실분배 합계" data-cash-label="혈맹 실분배 현금">혈맹 실분배 합계</span>
             <strong data-money-value data-adena-text="{{ my_alliance_payouts.summary.total_text }}" data-cash-text="{{ my_alliance_payouts.summary.total_cash_text }}">{{ my_alliance_payouts.summary.total_text }}</strong>
             <small>수수료 차감 전 · {{ my_alliance_payouts.selected_alliance.alliance_name }}</small>
+            <small class="my-alliance-unsettled-subline">
+              미분배 총액
+              <strong
+                data-money-value
+                data-my-alliance-unsettled-total
+                data-adena-text="{{ my_alliance_payouts.summary.unsettled_text }}"
+                data-cash-text="{{ my_alliance_payouts.summary.unsettled_cash_text }}"
+              >{{ my_alliance_payouts.summary.unsettled_text }}</strong>
+            </small>
           </article>
           <article class="panel loot-total-card is-muted my-alliance-fee-total-card">
-            <span>수수료 전체</span>
+            <div class="my-alliance-fee-heading">
+              <span>수수료 전체</span>
+              {% if my_alliance_payouts.summary.has_extra_fee_rows %}
+                <button class="fee-info-button" type="button" aria-label="수수료 전체 내역">
+                  i
+                  <span class="fee-info-popover" role="tooltip">
+                    <strong>수수료 내역</strong>
+                    {% for fee in my_alliance_payouts.summary.fee_detail_rows %}
+                      <span
+                        class="fee-info-row"
+                        data-fee-info-row
+                        data-rule-name="{{ fee.rule_name }}"
+                        data-paid-amount="{{ fee.paid_amount }}"
+                        data-unpaid-amount="{{ fee.unpaid_amount }}"
+                      >
+                        <b>{{ fee.rule_name }}</b>
+                        <em>
+                          완료 <span data-fee-info-paid>{{ fee.paid_amount_text }}</span>
+                          · 미완료 <span data-fee-info-unpaid>{{ fee.unpaid_amount_text }}</span>
+                        </em>
+                      </span>
+                    {% endfor %}
+                  </span>
+                </button>
+              {% endif %}
+            </div>
             <div class="my-alliance-split-metrics">
               <div>
-                <small>수수료 총액</small>
-                <strong data-money-value data-adena-text="{{ my_alliance_payouts.summary.fee_text }}" data-cash-text="{{ my_alliance_payouts.summary.fee_cash_text }}">{{ my_alliance_payouts.summary.fee_text }}</strong>
-              </div>
-              <div>
-                <small>미분배 총액</small>
+                <small>정산 완료 혈비</small>
                 <strong
                   data-money-value
-                  data-my-alliance-unsettled-total
-                  data-adena-text="{{ my_alliance_payouts.summary.unsettled_text }}"
-                  data-cash-text="{{ my_alliance_payouts.summary.unsettled_cash_text }}"
-                >{{ my_alliance_payouts.summary.unsettled_text }}</strong>
+                  data-blood-fee-paid-total
+                  data-amount="{{ my_alliance_payouts.summary.blood_fee_paid_amount }}"
+                  data-adena-text="{{ my_alliance_payouts.summary.blood_fee_paid_text }}"
+                  data-cash-text="{{ my_alliance_payouts.summary.blood_fee_paid_cash_text }}"
+                >{{ my_alliance_payouts.summary.blood_fee_paid_text }}</strong>
+              </div>
+              <div>
+                <small>미완료 혈비</small>
+                <strong
+                  data-money-value
+                  data-blood-fee-unpaid-total
+                  data-amount="{{ my_alliance_payouts.summary.blood_fee_unpaid_amount }}"
+                  data-adena-text="{{ my_alliance_payouts.summary.blood_fee_unpaid_text }}"
+                  data-cash-text="{{ my_alliance_payouts.summary.blood_fee_unpaid_cash_text }}"
+                >{{ my_alliance_payouts.summary.blood_fee_unpaid_text }}</strong>
               </div>
             </div>
             <small>미정산 {{ my_alliance_payouts.summary.unsettled_count }}건 · 완료 {{ my_alliance_payouts.summary.settled_count }}건</small>
@@ -1132,10 +1173,28 @@
                   {% if payout.fee_lines %}
                     <div class="my-payout-fee-card-row">
                       {% for fee in payout.fee_lines %}
-                        <article class="my-payout-fee-card">
+                        <article
+                          class="my-payout-fee-card {{ fee.status_class }}"
+                          data-member-fee-row
+                          data-rule-name="{{ fee.rule_name }}"
+                          data-fee-status="{{ fee.payout_status }}"
+                          data-fee-amount="{{ fee.fee_amount }}"
+                          data-is-blood-fee="{% if fee.is_blood_fee %}true{% else %}false{% endif %}"
+                        >
                           <span>{{ fee.rule_name }}</span>
                           <strong data-money-value data-adena-text="{{ fee.fee_amount_text }}" data-cash-text="{{ fee.fee_amount_cash_text }}">{{ fee.fee_amount_text }}</strong>
                           <small>{{ fee.fee_percent_text }}%</small>
+                          <span class="payout-status-badge {{ fee.status_class }}" data-member-fee-badge>{{ fee.status_label }}</span>
+                          {% if auth.selected_server.can_manage %}
+                            <form class="inline-actions" method="post" action="/loot/member-payouts/fee-status?guild_id={{ auth.selected_guild_id }}" data-member-fee-form>
+                              <input type="hidden" name="alliance_id" value="{{ payout.alliance_id }}">
+                              <input type="hidden" name="distribution_id" value="{{ payout.distribution_id }}">
+                              <input type="hidden" name="rule_name" value="{{ fee.rule_name }}">
+                              <input type="hidden" name="sort_order" value="{{ fee.sort_order }}">
+                              <input type="hidden" name="payout_status" value="{{ fee.next_status }}" data-member-fee-status-input>
+                              <button class="tiny-button" type="submit" data-member-fee-button>{{ fee.next_status_label }}</button>
+                            </form>
+                          {% endif %}
                         </article>
                       {% endfor %}
                     </div>
@@ -1904,6 +1963,90 @@
       return status === "paid" ? "미완료로 변경" : "완료 처리";
     }
 
+    function feeStatusText(status) {
+      return status === "paid" ? "정산 완료" : "미완료";
+    }
+
+    function feeNextStatusText(status) {
+      return status === "paid" ? "미완료로 변경" : "완료 처리";
+    }
+
+    function setAdenaAmountElement(element, amount) {
+      if (!element) {
+        return;
+      }
+      const normalized = Math.max(0, Math.round(Number(amount || 0)));
+      const text = formatAdenaNumber(normalized);
+      element.textContent = text;
+      element.dataset.amount = String(normalized);
+      element.dataset.adenaText = text;
+    }
+
+    function adjustBloodFeeSummary(row, oldStatus, nextStatus) {
+      if (row.dataset.isBloodFee !== "true" || oldStatus === nextStatus) {
+        return;
+      }
+      const amount = Math.round(Number(row.dataset.feeAmount || 0));
+      const paidTotal = document.querySelector("[data-blood-fee-paid-total]");
+      const unpaidTotal = document.querySelector("[data-blood-fee-unpaid-total]");
+      const paidAmount = Number(paidTotal?.dataset.amount || 0);
+      const unpaidAmount = Number(unpaidTotal?.dataset.amount || 0);
+      if (nextStatus === "paid") {
+        setAdenaAmountElement(paidTotal, paidAmount + amount);
+        setAdenaAmountElement(unpaidTotal, unpaidAmount - amount);
+      } else {
+        setAdenaAmountElement(paidTotal, paidAmount - amount);
+        setAdenaAmountElement(unpaidTotal, unpaidAmount + amount);
+      }
+    }
+
+    function adjustFeeInfoSummary(row, oldStatus, nextStatus) {
+      if (oldStatus === nextStatus) {
+        return;
+      }
+      const amount = Math.round(Number(row.dataset.feeAmount || 0));
+      document.querySelectorAll("[data-fee-info-row]").forEach((infoRow) => {
+        if (infoRow.dataset.ruleName !== row.dataset.ruleName) {
+          return;
+        }
+        const paidAmount = Number(infoRow.dataset.paidAmount || 0);
+        const unpaidAmount = Number(infoRow.dataset.unpaidAmount || 0);
+        const nextPaidAmount = nextStatus === "paid" ? paidAmount + amount : paidAmount - amount;
+        const nextUnpaidAmount = nextStatus === "paid" ? unpaidAmount - amount : unpaidAmount + amount;
+        infoRow.dataset.paidAmount = String(Math.max(0, nextPaidAmount));
+        infoRow.dataset.unpaidAmount = String(Math.max(0, nextUnpaidAmount));
+        const paidText = infoRow.querySelector("[data-fee-info-paid]");
+        const unpaidText = infoRow.querySelector("[data-fee-info-unpaid]");
+        if (paidText) {
+          paidText.textContent = formatAdenaNumber(infoRow.dataset.paidAmount);
+        }
+        if (unpaidText) {
+          unpaidText.textContent = formatAdenaNumber(infoRow.dataset.unpaidAmount);
+        }
+      });
+    }
+
+    function setMemberFeeRow(row, status) {
+      const normalized = status === "paid" ? "paid" : "unpaid";
+      const badge = row.querySelector("[data-member-fee-badge]");
+      const input = row.querySelector("[data-member-fee-status-input]");
+      const button = row.querySelector("[data-member-fee-button]");
+      row.dataset.feeStatus = normalized;
+      row.classList.toggle("is-paid", normalized === "paid");
+      row.classList.toggle("is-unpaid", normalized !== "paid");
+      if (badge) {
+        badge.textContent = feeStatusText(normalized);
+        badge.classList.toggle("is-paid", normalized === "paid");
+        badge.classList.toggle("is-unpaid", normalized !== "paid");
+      }
+      if (input) {
+        input.value = normalized === "paid" ? "unpaid" : "paid";
+      }
+      if (button) {
+        button.textContent = feeNextStatusText(normalized);
+      }
+    }
+
     function setMemberPayoutRow(row, status) {
       const normalized = status === "paid" ? "paid" : "unpaid";
       const badge = row.querySelector("[data-member-payout-badge]");
@@ -2362,6 +2505,34 @@
           updateMemberPayoutCard(card);
           updateRecipientSummaryFromMemberRow(row);
           applyRecipientPayoutFilters();
+        } catch (error) {
+          alert(error.message);
+          button.textContent = originalText;
+        } finally {
+          button.disabled = false;
+        }
+      });
+    });
+
+    document.querySelectorAll("[data-member-fee-form]").forEach((form) => {
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const row = form.closest("[data-member-fee-row]");
+        const button = form.querySelector("[data-member-fee-button]");
+        const statusInput = form.querySelector("[data-member-fee-status-input]");
+        if (!row || !button || button.disabled || !statusInput) {
+          return;
+        }
+        const oldStatus = row.dataset.feeStatus === "paid" ? "paid" : "unpaid";
+        const nextStatus = statusInput.value === "paid" ? "paid" : "unpaid";
+        const originalText = button.textContent;
+        button.disabled = true;
+        button.textContent = "처리중";
+        try {
+          await submitJsonForm(form);
+          adjustBloodFeeSummary(row, oldStatus, nextStatus);
+          adjustFeeInfoSummary(row, oldStatus, nextStatus);
+          setMemberFeeRow(row, nextStatus);
         } catch (error) {
           alert(error.message);
           button.textContent = originalText;

@@ -2956,9 +2956,91 @@ button:disabled {
   font-size: 26px;
 }
 
+.my-alliance-unsettled-subline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.my-alliance-unsettled-subline strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
 .my-alliance-fee-total-card {
   gap: 10px;
   padding: 14px;
+}
+
+.my-alliance-fee-heading {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.fee-info-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel-soft);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 1000;
+}
+
+.fee-info-popover {
+  position: absolute;
+  z-index: 20;
+  top: 30px;
+  right: 0;
+  display: none;
+  width: min(320px, 72vw);
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.fee-info-button:hover .fee-info-popover,
+.fee-info-button:focus-visible .fee-info-popover {
+  display: grid;
+  gap: 8px;
+}
+
+.fee-info-popover > strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.fee-info-row {
+  display: grid;
+  gap: 3px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-soft);
+  text-align: left;
+}
+
+.fee-info-row b {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.fee-info-row em {
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 800;
 }
 
 .my-alliance-split-metrics {
@@ -4088,6 +4170,22 @@ button:disabled {
   background: var(--panel-soft);
 }
 
+.my-payout-fee-card.is-paid {
+  border-color: rgba(68, 148, 113, 0.45);
+}
+
+.my-payout-fee-card.is-unpaid {
+  border-color: rgba(100, 116, 139, 0.32);
+}
+
+.my-payout-fee-card .inline-actions {
+  margin-top: 2px;
+}
+
+.my-payout-fee-card .tiny-button {
+  width: 100%;
+}
+
 .my-payout-fee-card span,
 .my-payout-fee-card small {
   color: var(--muted);
@@ -4101,6 +4199,14 @@ button:disabled {
   font-size: 18px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.my-payout-fee-card .payout-status-badge.is-paid {
+  color: #1f7a55;
+}
+
+.my-payout-fee-card .payout-status-badge.is-unpaid {
+  color: #9a3412;
 }
 
 .my-member-payout-table-card {

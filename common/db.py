@@ -711,6 +711,27 @@ class Database:
             updated_by_discord_id=updated_by_discord_id,
         )
 
+    def update_member_payout_fee_status(
+        self,
+        guild_id: int,
+        distribution_id: int,
+        alliance_id: int,
+        rule_name: str,
+        sort_order: int,
+        payout_status: str,
+        *,
+        updated_by_discord_id: int | None,
+    ) -> int:
+        return update_member_payout_fee_status(
+            guild_id,
+            distribution_id,
+            alliance_id,
+            rule_name,
+            sort_order,
+            payout_status,
+            updated_by_discord_id=updated_by_discord_id,
+        )
+
 
 database = Database()
 
@@ -3854,12 +3875,32 @@ def get_member_payout_groups(
     snapshot_rows = _fetchall(
         """
         SELECT
+            mprs.snapshot_id,
             mprs.distribution_id,
             mprs.alliance_id,
             mprs.rule_name_snapshot,
             mprs.fee_rate_snapshot,
             mprs.sort_order
         FROM member_payout_rule_snapshots mprs
+        INNER JOIN distribution_batches db
+            ON db.distribution_id = mprs.distribution_id
+        WHERE db.guild_id = %s
+          AND mprs.alliance_id = %s
+        ORDER BY mprs.distribution_id DESC, mprs.sort_order ASC, mprs.snapshot_id ASC
+        """,
+        (guild_id, alliance_id),
+    )
+    fee_status_rows = _fetchall(
+        """
+        SELECT
+            mprs.distribution_id,
+            mprs.alliance_id,
+            mprs.snapshot_id,
+            mpfs.is_paid,
+            mpfs.updated_at
+        FROM member_payout_fee_statuses mpfs
+        INNER JOIN member_payout_rule_snapshots mprs
+            ON mprs.snapshot_id = mpfs.snapshot_id
         INNER JOIN distribution_batches db
             ON db.distribution_id = mprs.distribution_id
         WHERE db.guild_id = %s
@@ -3895,16 +3936,31 @@ def get_member_payout_groups(
                 "distribution_id": distribution_id,
                 "alliance_id": int(row["alliance_id"]),
                 "fee_lines": [],
+                "fee_statuses": {},
                 "statuses": {},
             },
         )
         group["fee_lines"].append(
             {
+                "snapshot_id": int(row["snapshot_id"]),
                 "rule_name": str(row["rule_name_snapshot"]),
                 "fee_rate": _decimal(row["fee_rate_snapshot"]),
                 "sort_order": int(row["sort_order"] or 0),
             }
         )
+    for row in fee_status_rows:
+        distribution_id = int(row["distribution_id"])
+        group = groups.setdefault(
+            distribution_id,
+            {
+                "distribution_id": distribution_id,
+                "alliance_id": int(row["alliance_id"]),
+                "fee_lines": [],
+                "fee_statuses": {},
+                "statuses": {},
+            },
+        )
+        group["fee_statuses"][int(row["snapshot_id"])] = bool(row["is_paid"])
     for row in status_rows:
         distribution_id = int(row["distribution_id"])
         group = groups.setdefault(
@@ -3913,6 +3969,7 @@ def get_member_payout_groups(
                 "distribution_id": distribution_id,
                 "alliance_id": int(row["alliance_id"]),
                 "fee_lines": [],
+                "fee_statuses": {},
                 "statuses": {},
             },
         )
@@ -4031,6 +4088,72 @@ def update_member_payout_recipient_status(
     return distribution_id
 
 
+def update_member_payout_fee_status(
+    guild_id: int,
+    distribution_id: int,
+    alliance_id: int,
+    rule_name: str,
+    sort_order: int,
+    payout_status: str,
+    *,
+    updated_by_discord_id: int | None,
+) -> int:
+    if payout_status not in {"paid", "unpaid"}:
+        raise ValueError("Member payout fee status must be paid or unpaid.")
+    normalized_rule_name = rule_name.strip()
+    if not normalized_rule_name:
+        raise ValueError("Fee rule name must not be empty.")
+
+    with _connect() as connection:
+        with connection.cursor() as cursor:
+            _get_distribution_alliance_payout_for_settlement(
+                cursor,
+                guild_id,
+                distribution_id,
+                alliance_id,
+            )
+            _ensure_member_payout_rule_snapshot(
+                cursor,
+                guild_id,
+                distribution_id,
+                alliance_id,
+            )
+            cursor.execute(
+                """
+                SELECT snapshot_id
+                FROM member_payout_rule_snapshots
+                WHERE distribution_id = %s
+                  AND alliance_id = %s
+                  AND rule_name_snapshot = %s
+                  AND sort_order = %s
+                ORDER BY snapshot_id ASC
+                LIMIT 1
+                """,
+                (distribution_id, alliance_id, normalized_rule_name, sort_order),
+            )
+            row = cursor.fetchone()
+            if row is None:
+                raise ValueError("Fee rule snapshot was not found.")
+            snapshot_id = int(row["snapshot_id"])
+            cursor.execute(
+                """
+                INSERT INTO member_payout_fee_statuses (
+                    snapshot_id,
+                    is_paid,
+                    updated_at
+                )
+                VALUES (%s, %s, CURRENT_TIMESTAMP)
+                ON CONFLICT (snapshot_id)
+                DO UPDATE SET
+                    is_paid = EXCLUDED.is_paid,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                (snapshot_id, payout_status == "paid"),
+            )
+        connection.commit()
+    return snapshot_id
+
+
 def _ensure_member_payout_rule_snapshot(
     cursor: psycopg2.extensions.cursor,
     guild_id: int,
@@ -4043,14 +4166,9 @@ def _ensure_member_payout_rule_snapshot(
         FROM member_payout_rule_snapshots
         WHERE distribution_id = %s
           AND alliance_id = %s
-        UNION ALL
-        SELECT 1
-        FROM member_payout_statuses
-        WHERE distribution_id = %s
-          AND alliance_id = %s
         LIMIT 1
         """,
-        (distribution_id, alliance_id, distribution_id, alliance_id),
+        (distribution_id, alliance_id),
     )
     if cursor.fetchone() is not None:
         return
@@ -4866,6 +4984,10 @@ def _ensure_postgres_columns(cursor: psycopg2.extensions.cursor) -> None:
         "ON member_payout_statuses(alliance_id, is_paid)"
     )
     cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_member_payout_fee_statuses_paid "
+        "ON member_payout_fee_statuses(is_paid)"
+    )
+    cursor.execute(
         "CREATE INDEX IF NOT EXISTS idx_alliance_payout_fee_rules_active "
         "ON alliance_payout_fee_rules(guild_id, alliance_id, is_active)"
     )
@@ -5284,6 +5406,12 @@ CREATE TABLE IF NOT EXISTS member_payout_statuses (
     is_paid BOOLEAN NOT NULL DEFAULT FALSE,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (distribution_id, alliance_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS member_payout_fee_statuses (
+    snapshot_id BIGINT PRIMARY KEY REFERENCES member_payout_rule_snapshots(snapshot_id) ON DELETE CASCADE,
+    is_paid BOOLEAN NOT NULL DEFAULT FALSE,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS websocket_events (

@@ -3034,8 +3034,10 @@ def _member_payout_fee_lines_from_rules(
 ) -> list[dict[str, Any]]:
     return [
         {
+            "snapshot_id": int(rule.get("snapshot_id") or 0),
             "rule_name": str(rule.get("rule_name") or ""),
             "fee_rate": Decimal(str(rule.get("fee_rate") or "0")),
+            "sort_order": int(rule.get("sort_order") or 0),
             "fee_percent_text": _money_text(
                 Decimal(str(rule.get("fee_rate") or "0")) * Decimal("100"),
                 places=2,
@@ -3060,6 +3062,15 @@ def _decorate_member_fee_lines(
         )
         row["fee_amount_text"] = _money_text(fee_amount)
         row["fee_amount_cash_text"] = _cash_text(_cash_from_adena(fee_amount, adena_rate))
+        payout_status = str(line.get("payout_status") or "unpaid")
+        row["payout_status"] = "paid" if payout_status == "paid" else "unpaid"
+        row["status_label"] = "정산 완료" if row["payout_status"] == "paid" else "미완료"
+        row["status_class"] = "is-paid" if row["payout_status"] == "paid" else "is-unpaid"
+        row["next_status"] = "unpaid" if row["payout_status"] == "paid" else "paid"
+        row["next_status_label"] = (
+            "미완료로 변경" if row["payout_status"] == "paid" else "완료 처리"
+        )
+        row["is_blood_fee"] = _is_blood_fee_rule(row)
         decorated.append(row)
     return decorated
 
@@ -3081,6 +3092,14 @@ def _my_alliance_payout_context(
                 "total_cash_text": "0원",
                 "fee_text": "0",
                 "fee_cash_text": "0원",
+                "blood_fee_paid_text": "0",
+                "blood_fee_paid_cash_text": "0원",
+                "blood_fee_unpaid_text": "0",
+                "blood_fee_unpaid_cash_text": "0원",
+                "blood_fee_paid_amount": "0",
+                "blood_fee_unpaid_amount": "0",
+                "fee_detail_rows": [],
+                "has_extra_fee_rows": False,
                 "unsettled_text": "0",
                 "unsettled_cash_text": "0원",
                 "settled_count": 0,
@@ -3119,6 +3138,11 @@ def _my_alliance_payout_context(
     total_cash_sum = Decimal("0")
     fee_amount_sum = Decimal("0")
     fee_cash_sum = Decimal("0")
+    blood_fee_paid_sum = Decimal("0")
+    blood_fee_paid_cash_sum = Decimal("0")
+    blood_fee_unpaid_sum = Decimal("0")
+    blood_fee_unpaid_cash_sum = Decimal("0")
+    fee_detail_summaries: dict[str, dict[str, Any]] = {}
     unsettled_amount_sum = Decimal("0")
     unsettled_cash_sum = Decimal("0")
     settled_count = 0
@@ -3159,8 +3183,13 @@ def _my_alliance_payout_context(
             total_amount = _rounded_integer(payout.get("net_amount"))
             selected_rules = (
                 member_record.get("fee_lines", [])
-                if member_record is not None
+                if member_record is not None and member_record.get("fee_lines")
                 else fee_rules_for(alliance_id)
+            )
+            fee_statuses = (
+                member_record.get("fee_statuses", {})
+                if member_record is not None
+                else {}
             )
             paid_statuses = (
                 member_record.get("statuses", {})
@@ -3171,6 +3200,55 @@ def _my_alliance_payout_context(
                 total_amount,
                 selected_rules,
             )
+            for line in fee_lines_raw:
+                snapshot_id = int(line.get("snapshot_id") or 0)
+                is_fee_paid = bool(snapshot_id and fee_statuses.get(snapshot_id, False))
+                line["payout_status"] = "paid" if is_fee_paid else "unpaid"
+                line["status_label"] = "정산 완료" if is_fee_paid else "미완료"
+                line["status_class"] = "is-paid" if is_fee_paid else "is-unpaid"
+                line["next_status"] = "unpaid" if is_fee_paid else "paid"
+                line["next_status_label"] = (
+                    "미완료로 변경" if is_fee_paid else "완료 처리"
+                )
+
+                rule_name = str(line.get("rule_name") or "수수료")
+                fee_line_amount = _rounded_integer(line.get("fee_amount"))
+                fee_line_cash = _cash_from_adena(fee_line_amount, adena_rate)
+                detail_summary = fee_detail_summaries.setdefault(
+                    rule_name,
+                    {
+                        "rule_name": rule_name,
+                        "total_amount": Decimal("0"),
+                        "total_cash_amount": Decimal("0"),
+                        "paid_amount": Decimal("0"),
+                        "paid_cash_amount": Decimal("0"),
+                        "unpaid_amount": Decimal("0"),
+                        "unpaid_cash_amount": Decimal("0"),
+                        "count": 0,
+                        "paid_count": 0,
+                        "unpaid_count": 0,
+                        "is_blood_fee": _is_blood_fee_rule(line),
+                    },
+                )
+                detail_summary["total_amount"] += fee_line_amount
+                detail_summary["total_cash_amount"] += fee_line_cash
+                detail_summary["count"] += 1
+                if is_fee_paid:
+                    detail_summary["paid_amount"] += fee_line_amount
+                    detail_summary["paid_cash_amount"] += fee_line_cash
+                    detail_summary["paid_count"] += 1
+                else:
+                    detail_summary["unpaid_amount"] += fee_line_amount
+                    detail_summary["unpaid_cash_amount"] += fee_line_cash
+                    detail_summary["unpaid_count"] += 1
+
+                if _is_blood_fee_rule(line):
+                    if is_fee_paid:
+                        blood_fee_paid_sum += fee_line_amount
+                        blood_fee_paid_cash_sum += fee_line_cash
+                    else:
+                        blood_fee_unpaid_sum += fee_line_amount
+                        blood_fee_unpaid_cash_sum += fee_line_cash
             fee_amount = sum(
                 (Decimal(str(line["fee_amount"])) for line in fee_lines_raw),
                 Decimal("0"),
@@ -3348,6 +3426,31 @@ def _my_alliance_payout_context(
             str(item["display_name"]),
         )
     )
+    fee_detail_rows = []
+    for detail in fee_detail_summaries.values():
+        total_amount = Decimal(str(detail["total_amount"]))
+        paid_amount = Decimal(str(detail["paid_amount"]))
+        unpaid_amount = Decimal(str(detail["unpaid_amount"]))
+        total_cash_amount = Decimal(str(detail["total_cash_amount"]))
+        paid_cash_amount = Decimal(str(detail["paid_cash_amount"]))
+        unpaid_cash_amount = Decimal(str(detail["unpaid_cash_amount"]))
+        fee_detail_rows.append(
+            {
+                **detail,
+                "total_amount_text": _money_text(total_amount),
+                "total_cash_text": _cash_text(total_cash_amount),
+                "paid_amount_text": _money_text(paid_amount),
+                "paid_cash_text": _cash_text(paid_cash_amount),
+                "unpaid_amount_text": _money_text(unpaid_amount),
+                "unpaid_cash_text": _cash_text(unpaid_cash_amount),
+            }
+        )
+    fee_detail_rows.sort(
+        key=lambda item: (
+            0 if item.get("is_blood_fee") else 1,
+            str(item.get("rule_name") or ""),
+        )
+    )
 
     return {
         "selected_alliance": selected_alliance,
@@ -3360,6 +3463,16 @@ def _my_alliance_payout_context(
             "total_cash_text": _cash_text(total_cash_sum),
             "fee_text": _money_text(fee_amount_sum),
             "fee_cash_text": _cash_text(fee_cash_sum),
+            "blood_fee_paid_text": _money_text(blood_fee_paid_sum),
+            "blood_fee_paid_cash_text": _cash_text(blood_fee_paid_cash_sum),
+            "blood_fee_unpaid_text": _money_text(blood_fee_unpaid_sum),
+            "blood_fee_unpaid_cash_text": _cash_text(blood_fee_unpaid_cash_sum),
+            "blood_fee_paid_amount": _decimal_input(blood_fee_paid_sum),
+            "blood_fee_unpaid_amount": _decimal_input(blood_fee_unpaid_sum),
+            "fee_detail_rows": fee_detail_rows,
+            "has_extra_fee_rows": any(
+                not bool(item.get("is_blood_fee")) for item in fee_detail_rows
+            ),
             "unsettled_text": _money_text(unsettled_amount_sum),
             "unsettled_cash_text": _cash_text(unsettled_cash_sum),
             "settled_count": settled_count,
@@ -5858,6 +5971,61 @@ async def update_member_payout_recipient_status(
         if _wants_json(request):
             return JSONResponse(
                 {"ok": False, "message": "혈맹원 분배 상태를 변경하지 못했습니다."},
+                status_code=400,
+            )
+        return _loot_redirect(selected_guild_id, saved="error", alliance_id=alliance_id)
+    if _wants_json(request):
+        return JSONResponse({"ok": True, "payout_status": payout_status})
+    return _loot_redirect(selected_guild_id, saved="member_payout", alliance_id=alliance_id)
+
+
+@app.post("/loot/member-payouts/fee-status")
+async def update_member_payout_fee_status(
+    request: Request,
+    guild_id: str | None = None,
+):
+    auth = _auth_context(request, guild_id)
+    if not auth:
+        if _wants_json(request):
+            return JSONResponse({"ok": False, "message": "로그인이 필요합니다."}, status_code=401)
+        return _auth_redirect(request)
+    selected_guild_id = int(auth["selected_guild_id"])
+    if not _can_manage_selected_server(auth):
+        if _wants_json(request):
+            return JSONResponse({"ok": False, "message": "관리자 권한이 필요합니다."}, status_code=403)
+        return _loot_redirect(selected_guild_id, saved="forbidden")
+
+    form_data = await _urlencoded_form_data(request)
+    try:
+        requested_alliance_id = int(form_data.get("alliance_id") or "")
+        distribution_id = int(form_data.get("distribution_id") or "")
+        sort_order = int(form_data.get("sort_order") or "0")
+    except ValueError:
+        requested_alliance_id = None
+        distribution_id = 0
+        sort_order = 0
+    alliance_id = _allowed_loot_alliance_id(auth, requested_alliance_id)
+    if alliance_id is None:
+        if _wants_json(request):
+            return JSONResponse({"ok": False, "message": "혈맹 권한이 없습니다."}, status_code=403)
+        return _loot_redirect(selected_guild_id, saved="forbidden")
+
+    rule_name = str(form_data.get("rule_name") or "").strip()
+    payout_status = str(form_data.get("payout_status") or "")
+    try:
+        database.update_member_payout_fee_status(
+            selected_guild_id,
+            distribution_id,
+            alliance_id,
+            rule_name,
+            sort_order,
+            payout_status,
+            updated_by_discord_id=int(auth["user"]["id"]),
+        )
+    except ValueError:
+        if _wants_json(request):
+            return JSONResponse(
+                {"ok": False, "message": "수수료 정산 상태를 변경하지 못했습니다."},
                 status_code=400,
             )
         return _loot_redirect(selected_guild_id, saved="error", alliance_id=alliance_id)
