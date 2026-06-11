@@ -4160,6 +4160,11 @@ def _ensure_member_payout_rule_snapshot(
     distribution_id: int,
     alliance_id: int,
 ) -> None:
+    snapshot_is_locked = _member_payout_rule_snapshot_is_locked(
+        cursor,
+        distribution_id,
+        alliance_id,
+    )
     cursor.execute(
         """
         SELECT 1
@@ -4170,8 +4175,18 @@ def _ensure_member_payout_rule_snapshot(
         """,
         (distribution_id, alliance_id),
     )
-    if cursor.fetchone() is not None:
+    snapshot_exists = cursor.fetchone() is not None
+    if snapshot_exists and snapshot_is_locked:
         return
+    if snapshot_exists:
+        cursor.execute(
+            """
+            DELETE FROM member_payout_rule_snapshots
+            WHERE distribution_id = %s
+              AND alliance_id = %s
+            """,
+            (distribution_id, alliance_id),
+        )
     cursor.execute(
         """
         INSERT INTO member_payout_rule_snapshots (
@@ -4197,6 +4212,35 @@ def _ensure_member_payout_rule_snapshot(
         """,
         (distribution_id, alliance_id, guild_id, alliance_id),
     )
+
+
+def _member_payout_rule_snapshot_is_locked(
+    cursor: psycopg2.extensions.cursor,
+    distribution_id: int,
+    alliance_id: int,
+) -> bool:
+    cursor.execute(
+        """
+        SELECT EXISTS (
+            SELECT 1
+            FROM member_payout_statuses
+            WHERE distribution_id = %s
+              AND alliance_id = %s
+              AND is_paid = TRUE
+        ) OR EXISTS (
+            SELECT 1
+            FROM member_payout_fee_statuses mpfs
+            INNER JOIN member_payout_rule_snapshots mprs
+                ON mprs.snapshot_id = mpfs.snapshot_id
+            WHERE mprs.distribution_id = %s
+              AND mprs.alliance_id = %s
+              AND mpfs.is_paid = TRUE
+        ) AS is_locked
+        """,
+        (distribution_id, alliance_id, distribution_id, alliance_id),
+    )
+    row = cursor.fetchone()
+    return bool(row and row["is_locked"])
 
 
 def settle_all_member_payouts(

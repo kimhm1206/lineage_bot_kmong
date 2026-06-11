@@ -2698,10 +2698,9 @@ def _decorate_loot_events(
                 member_record = member_groups_for(payout_alliance_id).get(
                     int(event.get("distribution_id") or 0)
                 )
-                selected_rules = (
-                    member_record.get("fee_lines", [])
-                    if member_record is not None
-                    else fee_rules_for(payout_alliance_id)
+                selected_rules = _member_record_fee_rules(
+                    member_record,
+                    fee_rules_for(payout_alliance_id),
                 )
                 fee_lines_raw = _member_payout_fee_lines_from_rules(payout_net, selected_rules)
                 internal_fee_amount = sum(
@@ -3028,6 +3027,27 @@ def _blood_fee_rule_context(rules: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _member_record_has_completed_status(member_record: dict[str, Any] | None) -> bool:
+    if not member_record:
+        return False
+    return any(bool(value) for value in (member_record.get("statuses") or {}).values()) or any(
+        bool(value) for value in (member_record.get("fee_statuses") or {}).values()
+    )
+
+
+def _member_record_fee_rules(
+    member_record: dict[str, Any] | None,
+    current_rules: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    if (
+        _member_record_has_completed_status(member_record)
+        and member_record is not None
+        and member_record.get("fee_lines")
+    ):
+        return member_record["fee_lines"]
+    return current_rules
+
+
 def _member_payout_fee_lines_from_rules(
     total_amount: Decimal,
     rules: list[dict[str, Any]],
@@ -3181,10 +3201,9 @@ def _my_alliance_payout_context(
                 payout.get("participant_count") or 0
             )
             total_amount = _rounded_integer(payout.get("net_amount"))
-            selected_rules = (
-                member_record.get("fee_lines", [])
-                if member_record is not None and member_record.get("fee_lines")
-                else fee_rules_for(alliance_id)
+            selected_rules = _member_record_fee_rules(
+                member_record,
+                fee_rules_for(alliance_id),
             )
             fee_statuses = (
                 member_record.get("fee_statuses", {})
