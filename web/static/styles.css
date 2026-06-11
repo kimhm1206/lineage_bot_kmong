@@ -4162,7 +4162,12 @@ button:disabled {
 
 .my-payout-fee-card {
   display: grid;
-  gap: 5px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "main status"
+    "main action";
+  gap: 8px 12px;
+  align-items: center;
   min-width: 0;
   padding: 12px;
   border: 1px solid var(--line);
@@ -4179,6 +4184,7 @@ button:disabled {
 }
 
 .my-payout-fee-card .inline-actions {
+  grid-area: action;
   margin-top: 2px;
 }
 
@@ -4186,7 +4192,19 @@ button:disabled {
   width: 100%;
 }
 
-.my-payout-fee-card span,
+.my-payout-fee-main {
+  grid-area: main;
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.my-payout-fee-card .payout-status-badge {
+  grid-area: status;
+  justify-self: end;
+}
+
+.my-payout-fee-main span,
 .my-payout-fee-card small {
   color: var(--muted);
   font-size: 11px;

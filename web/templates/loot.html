@@ -1179,11 +1179,16 @@
                           data-rule-name="{{ fee.rule_name }}"
                           data-fee-status="{{ fee.payout_status }}"
                           data-fee-amount="{{ fee.fee_amount }}"
+                          data-fee-recipient-key="{{ fee.fee_key }}"
+                          data-fee-distribution-id="{{ payout.distribution_id }}"
+                          data-fee-summary-source="event"
                           data-is-blood-fee="{% if fee.is_blood_fee %}true{% else %}false{% endif %}"
                         >
-                          <span>{{ fee.rule_name }}</span>
-                          <strong data-money-value data-adena-text="{{ fee.fee_amount_text }}" data-cash-text="{{ fee.fee_amount_cash_text }}">{{ fee.fee_amount_text }}</strong>
-                          <small>{{ fee.fee_percent_text }}%</small>
+                          <div class="my-payout-fee-main">
+                            <span>{{ fee.rule_name }}</span>
+                            <strong data-money-value data-adena-text="{{ fee.fee_amount_text }}" data-cash-text="{{ fee.fee_amount_cash_text }}">{{ fee.fee_amount_text }}</strong>
+                            <small>{{ fee.fee_percent_text }}%</small>
+                          </div>
                           <span class="payout-status-badge {{ fee.status_class }}" data-member-fee-badge>{{ fee.status_label }}</span>
                           {% if auth.selected_server.can_manage %}
                             <form class="inline-actions" method="post" action="/loot/member-payouts/fee-status?guild_id={{ auth.selected_guild_id }}" data-member-fee-form>
@@ -1292,8 +1297,8 @@
 
           <div class="recipient-payout-controls">
             <label class="field">
-              <span>닉네임 검색</span>
-              <input type="search" placeholder="닉네임 검색" data-recipient-payout-search>
+              <span>닉네임/수수료 검색</span>
+              <input type="search" placeholder="닉네임 또는 수수료 검색" data-recipient-payout-search>
             </label>
             <label class="field">
               <span>필터</span>
@@ -1319,7 +1324,8 @@
               <details
                 class="panel loot-event-card recipient-payout-card"
                 data-recipient-payout-row
-                data-user-id="{{ recipient.user_id }}"
+                data-user-id="{{ recipient.row_key }}"
+                data-recipient-kind="{% if recipient.is_fee_recipient %}fee{% else %}member{% endif %}"
                 data-search-text="{{ recipient.display_name|lower }}"
                 data-status="{{ recipient.status }}"
                 data-unpaid-amount="{{ recipient.unpaid_amount }}"
@@ -1330,7 +1336,10 @@
                 <summary class="loot-event-summary recipient-payout-summary">
                   <div class="loot-event-main">
                     <strong>{{ recipient.display_name }}</strong>
-                    <span class="panel-caption">{{ recipient["items"]|length }}건 참여</span>
+                    <span class="panel-caption">
+                      {{ recipient["items"]|length }}건
+                      {% if recipient.is_fee_recipient %}수수료{% else %}참여{% endif %}
+                    </span>
                   </div>
                   <div class="recipient-payout-metrics">
                     <div class="{% if recipient.unpaid_count == 0 %}is-paid{% else %}is-unpaid{% endif %}" data-recipient-status-card>
@@ -1341,18 +1350,34 @@
                   </div>
                   <div class="recipient-payout-actions" data-recipient-payout-actions>
                     {% if auth.selected_server.can_manage and not my_alliance_payouts.selected_alliance.is_other %}
-                      <form
-                        class="inline-actions"
-                        method="post"
-                        action="/loot/member-payouts/recipient-settle-all?guild_id={{ auth.selected_guild_id }}"
-                        data-recipient-settle-all-form
-                        {% if recipient.unpaid_count == 0 %}hidden{% endif %}
-                      >
-                        <input type="hidden" name="alliance_id" value="{{ my_alliance_payouts.selected_alliance.alliance_id }}">
-                        <input type="hidden" name="user_id" value="{{ recipient.user_id }}">
-                        <input type="hidden" name="distribution_ids" value="{{ recipient.unpaid_distribution_ids_text }}" data-recipient-distribution-ids>
-                        <button class="tiny-button" type="submit" data-recipient-settle-button>전체완료</button>
-                      </form>
+                      {% if recipient.is_fee_recipient %}
+                        <form
+                          class="inline-actions"
+                          method="post"
+                          action="/loot/member-payouts/fee-settle-all?guild_id={{ auth.selected_guild_id }}"
+                          data-fee-settle-all-form
+                          {% if recipient.unpaid_count == 0 %}hidden{% endif %}
+                        >
+                          <input type="hidden" name="alliance_id" value="{{ my_alliance_payouts.selected_alliance.alliance_id }}">
+                          <input type="hidden" name="rule_name" value="{{ recipient.rule_name }}">
+                          <input type="hidden" name="sort_order" value="{{ recipient.sort_order }}">
+                          <input type="hidden" name="distribution_ids" value="{{ recipient.unpaid_distribution_ids_text }}" data-recipient-distribution-ids>
+                          <button class="tiny-button" type="submit" data-recipient-settle-button>전체완료</button>
+                        </form>
+                      {% else %}
+                        <form
+                          class="inline-actions"
+                          method="post"
+                          action="/loot/member-payouts/recipient-settle-all?guild_id={{ auth.selected_guild_id }}"
+                          data-recipient-settle-all-form
+                          {% if recipient.unpaid_count == 0 %}hidden{% endif %}
+                        >
+                          <input type="hidden" name="alliance_id" value="{{ my_alliance_payouts.selected_alliance.alliance_id }}">
+                          <input type="hidden" name="user_id" value="{{ recipient.user_id }}">
+                          <input type="hidden" name="distribution_ids" value="{{ recipient.unpaid_distribution_ids_text }}" data-recipient-distribution-ids>
+                          <button class="tiny-button" type="submit" data-recipient-settle-button>전체완료</button>
+                        </form>
+                      {% endif %}
                     {% endif %}
                   </div>
                 </summary>
@@ -1384,36 +1409,62 @@
                       <article
                         class="recipient-detail-card {{ item.status_class }}"
                         data-recipient-detail-item
-                        data-user-id="{{ recipient.user_id }}"
+                        data-user-id="{{ recipient.row_key }}"
                         data-distribution-id="{{ item.distribution_id }}"
                         data-recipient-detail-status="{{ item.status }}"
+                        {% if item.is_fee_item %}
+                          data-member-fee-row
+                          data-rule-name="{{ item.rule_name }}"
+                          data-fee-status="{{ item.status }}"
+                          data-fee-amount="{{ item.amount }}"
+                          data-fee-recipient-key="{{ item.fee_key }}"
+                          data-fee-distribution-id="{{ item.distribution_id }}"
+                          data-fee-summary-source="detail"
+                          data-is-blood-fee="{% if item.rule_name == '혈비' %}true{% else %}false{% endif %}"
+                        {% endif %}
                       >
                         <div>
                           <strong>#{{ item.loot_event_id }} {{ item.item_name }}</strong>
                           <span class="panel-caption">{{ item.attendance_started_at }}</span>
                         </div>
                         <div>
-                          <span>분배 아데나</span>
+                          <span>{% if item.is_fee_item %}수수료 아데나{% else %}분배 아데나{% endif %}</span>
                           <strong>{{ item.amount_text }}</strong>
                         </div>
                         <div>
-                          <span class="payout-status-badge {{ item.status_class }}" data-recipient-detail-badge>
+                          <span class="payout-status-badge {{ item.status_class }}" data-recipient-detail-badge {% if item.is_fee_item %}data-member-fee-badge{% endif %}>
                             {{ item.status_label }}
                           </span>
                         </div>
                         {% if auth.selected_server.can_manage %}
-                          <form
-                            class="inline-actions"
-                            method="post"
-                            action="/loot/member-payouts/recipient-status?guild_id={{ auth.selected_guild_id }}"
-                            data-recipient-detail-form
-                          >
-                            <input type="hidden" name="alliance_id" value="{{ item.alliance_id }}">
-                            <input type="hidden" name="distribution_id" value="{{ item.distribution_id }}">
-                            <input type="hidden" name="user_id" value="{{ recipient.user_id }}">
-                            <input type="hidden" name="payout_status" value="{{ item.next_status }}" data-recipient-detail-status-input>
-                            <button class="tiny-button" type="submit" data-recipient-detail-button>{{ item.next_status_label }}</button>
-                          </form>
+                          {% if item.is_fee_item %}
+                            <form
+                              class="inline-actions"
+                              method="post"
+                              action="/loot/member-payouts/fee-status?guild_id={{ auth.selected_guild_id }}"
+                              data-member-fee-form
+                            >
+                              <input type="hidden" name="alliance_id" value="{{ item.alliance_id }}">
+                              <input type="hidden" name="distribution_id" value="{{ item.distribution_id }}">
+                              <input type="hidden" name="rule_name" value="{{ item.rule_name }}">
+                              <input type="hidden" name="sort_order" value="{{ item.sort_order }}">
+                              <input type="hidden" name="payout_status" value="{{ item.next_status }}" data-member-fee-status-input>
+                              <button class="tiny-button" type="submit" data-member-fee-button>{{ item.next_status_label }}</button>
+                            </form>
+                          {% else %}
+                            <form
+                              class="inline-actions"
+                              method="post"
+                              action="/loot/member-payouts/recipient-status?guild_id={{ auth.selected_guild_id }}"
+                              data-recipient-detail-form
+                            >
+                              <input type="hidden" name="alliance_id" value="{{ item.alliance_id }}">
+                              <input type="hidden" name="distribution_id" value="{{ item.distribution_id }}">
+                              <input type="hidden" name="user_id" value="{{ recipient.user_id }}">
+                              <input type="hidden" name="payout_status" value="{{ item.next_status }}" data-recipient-detail-status-input>
+                              <button class="tiny-button" type="submit" data-recipient-detail-button>{{ item.next_status_label }}</button>
+                            </form>
+                          {% endif %}
                         {% endif %}
                       </article>
                     {% endfor %}
@@ -2032,6 +2083,9 @@
       const input = row.querySelector("[data-member-fee-status-input]");
       const button = row.querySelector("[data-member-fee-button]");
       row.dataset.feeStatus = normalized;
+      if (row.hasAttribute("data-recipient-detail-item")) {
+        row.dataset.recipientDetailStatus = normalized;
+      }
       row.classList.toggle("is-paid", normalized === "paid");
       row.classList.toggle("is-unpaid", normalized !== "paid");
       if (badge) {
@@ -2045,6 +2099,93 @@
       if (button) {
         button.textContent = feeNextStatusText(normalized);
       }
+    }
+
+    function feeRowsForKey(feeKey, source = "") {
+      return Array.from(document.querySelectorAll("[data-member-fee-row]")).filter((row) => {
+        return row.dataset.feeRecipientKey === feeKey && (!source || row.dataset.feeSummarySource === source);
+      });
+    }
+
+    function syncLinkedFeeRows(sourceRow, status) {
+      const feeKey = sourceRow.dataset.feeRecipientKey;
+      const distributionId = sourceRow.dataset.feeDistributionId;
+      if (!feeKey || !distributionId) {
+        return;
+      }
+      feeRowsForKey(feeKey).forEach((row) => {
+        if (row.dataset.feeDistributionId === distributionId) {
+          setMemberFeeRow(row, status);
+        }
+      });
+    }
+
+    function updateFeeRecipientSummaryFromFeeRow(feeRow) {
+      const feeKey = feeRow.dataset.feeRecipientKey;
+      if (!feeKey) {
+        return;
+      }
+      const summaryRow = Array.from(document.querySelectorAll("[data-recipient-payout-row]")).find((row) => {
+        return row.dataset.userId === feeKey;
+      });
+      if (!summaryRow) {
+        return;
+      }
+      const feeRows = feeRowsForKey(feeKey, "event");
+      const totalCount = feeRows.length;
+      summaryRow.dataset.totalCount = String(totalCount);
+      let unpaidAmount = 0;
+      let unpaidCount = 0;
+      const unpaidDistributionIds = [];
+      feeRows.forEach((row) => {
+        if (row.dataset.feeStatus !== "paid") {
+          unpaidAmount += recipientNumber(row, "feeAmount");
+          unpaidCount += 1;
+          unpaidDistributionIds.push(row.dataset.feeDistributionId);
+        }
+      });
+      summaryRow.dataset.status = unpaidCount > 0 ? "unpaid" : "paid";
+      summaryRow.dataset.unpaidAmount = String(unpaidAmount);
+      summaryRow.dataset.unpaidCount = String(unpaidCount);
+      const unpaidText = summaryRow.querySelector("[data-recipient-unpaid-text]");
+      if (unpaidText) {
+        unpaidText.textContent = formatAdenaNumber(unpaidAmount);
+      }
+      const detailUnpaidText = summaryRow.querySelector("[data-recipient-detail-unpaid-text]");
+      if (detailUnpaidText) {
+        detailUnpaidText.textContent = formatAdenaNumber(unpaidAmount);
+      }
+      const countText = summaryRow.querySelector("[data-recipient-count-text]");
+      if (countText) {
+        countText.textContent = unpaidCount === 0 ? "완료" : `미완료 ${unpaidCount}건`;
+      }
+      const detailPaidCount = summaryRow.querySelector("[data-recipient-detail-paid-count]");
+      if (detailPaidCount) {
+        detailPaidCount.textContent = `${totalCount - unpaidCount}건`;
+      }
+      const detailUnpaidCount = summaryRow.querySelector("[data-recipient-detail-unpaid-count]");
+      if (detailUnpaidCount) {
+        detailUnpaidCount.textContent = `${unpaidCount}건`;
+      }
+      const detailTotalCount = summaryRow.querySelector("[data-recipient-detail-total-count]");
+      if (detailTotalCount) {
+        detailTotalCount.textContent = `${totalCount}건`;
+      }
+      const statusCard = summaryRow.querySelector("[data-recipient-status-card]");
+      if (statusCard) {
+        const isPaid = unpaidCount === 0;
+        statusCard.classList.toggle("is-paid", isPaid);
+        statusCard.classList.toggle("is-unpaid", !isPaid);
+      }
+      const form = summaryRow.querySelector("[data-fee-settle-all-form]");
+      if (form) {
+        form.hidden = unpaidCount === 0;
+        const distributionInput = form.querySelector("[data-recipient-distribution-ids]");
+        if (distributionInput) {
+          distributionInput.value = unpaidDistributionIds.join(",");
+        }
+      }
+      applyRecipientPayoutFilters();
     }
 
     function setMemberPayoutRow(row, status) {
@@ -2294,7 +2435,12 @@
         return;
       }
       const total = Array.from(document.querySelectorAll("[data-recipient-payout-row]")).reduce(
-        (sum, row) => sum + recipientNumber(row, "unpaidAmount"),
+        (sum, row) => {
+          if (row.dataset.recipientKind === "fee") {
+            return sum;
+          }
+          return sum + recipientNumber(row, "unpaidAmount");
+        },
         0,
       );
       const text = formatAdenaNumber(total);
@@ -2533,6 +2679,44 @@
           adjustBloodFeeSummary(row, oldStatus, nextStatus);
           adjustFeeInfoSummary(row, oldStatus, nextStatus);
           setMemberFeeRow(row, nextStatus);
+          syncLinkedFeeRows(row, nextStatus);
+          updateFeeRecipientSummaryFromFeeRow(row);
+        } catch (error) {
+          alert(error.message);
+          button.textContent = originalText;
+        } finally {
+          button.disabled = false;
+        }
+      });
+    });
+
+    document.querySelectorAll("[data-fee-settle-all-form]").forEach((form) => {
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const row = form.closest("[data-recipient-payout-row]");
+        const button = form.querySelector("[data-recipient-settle-button]");
+        if (!row || !button || button.disabled) {
+          return;
+        }
+        const originalText = button.textContent;
+        button.disabled = true;
+        button.textContent = "처리중";
+        try {
+          await submitJsonForm(form);
+          const linkedFeeRows = feeRowsForKey(row.dataset.userId);
+          linkedFeeRows
+            .filter((feeRow) => feeRow.dataset.feeSummarySource === "event")
+            .forEach((feeRow) => {
+              const oldStatus = feeRow.dataset.feeStatus === "paid" ? "paid" : "unpaid";
+              if (oldStatus !== "paid") {
+                adjustBloodFeeSummary(feeRow, oldStatus, "paid");
+                adjustFeeInfoSummary(feeRow, oldStatus, "paid");
+              }
+            });
+          linkedFeeRows.forEach((feeRow) => {
+            setMemberFeeRow(feeRow, "paid");
+          });
+          updateFeeRecipientSummaryFromFeeRow(linkedFeeRows[0] || row);
         } catch (error) {
           alert(error.message);
           button.textContent = originalText;
