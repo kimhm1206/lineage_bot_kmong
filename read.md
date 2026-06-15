@@ -60,11 +60,11 @@ Discord/OAuth 관련 값:
 DISCORD_BOT_TOKEN=...
 DISCORD_CLIENT_ID=...
 DISCORD_CLIENT_SECRET=...
-DISCORD_REDIRECT_URI=https://test.meetloa.online/auth/discord/callback
+DISCORD_REDIRECT_URI=https://xn--950bk80bh7an33asc.site/auth/discord/callback
 WEB_SESSION_SECRET=충분히_긴_랜덤_문자열
 BOT_BRIDGE_TOKEN=충분히_긴_랜덤_문자열
 BOT_BRIDGE_WS_URL=ws://127.0.0.1:8000/internal/bot/ws
-WEB_BASE_URL=https://test.meetloa.online
+WEB_BASE_URL=https://xn--950bk80bh7an33asc.site
 GLOBAL_DEVELOPER_DISCORD_ID=개발자_DISCORD_ID
 ```
 
@@ -100,13 +100,13 @@ discord_bot/venv/bin/python -m discord_bot.main
 운영 도메인:
 
 ```text
-https://test.meetloa.online
+https://xn--950bk80bh7an33asc.site
 ```
 
 Cloudflare Tunnel을 쓰는 경우 public hostname을 아래처럼 연결합니다.
 
 ```text
-Hostname: test.meetloa.online
+Hostname: xn--950bk80bh7an33asc.site
 Service: http://localhost:8000
 ```
 
@@ -115,7 +115,7 @@ Service: http://localhost:8000
 Discord Developer Portal의 OAuth2 Redirect URI에는 반드시 아래 값을 등록합니다.
 
 ```text
-https://test.meetloa.online/auth/discord/callback
+https://xn--950bk80bh7an33asc.site/auth/discord/callback
 ```
 
 ## 6. systemd 예시
@@ -181,7 +181,7 @@ journalctl -u lineage-bot -f
 웹:
 
 ```bash
-curl -I https://test.meetloa.online/login
+curl -I https://xn--950bk80bh7an33asc.site/login
 ```
 
 봇:

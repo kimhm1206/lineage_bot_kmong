@@ -36,7 +36,7 @@ DISCORD_SETTINGS_CACHE_TTL_SECONDS = int(
 )
 DISCORD_REDIRECT_URI = os.getenv(
     "DISCORD_REDIRECT_URI",
-    "https://test.meetloa.online/auth/discord/callback",
+    "https://xn--950bk80bh7an33asc.site/auth/discord/callback",
 )
 DISCORD_CLIENT_ID = os.getenv("DISCORD_CLIENT_ID") or os.getenv(
     "DISCORD_OAUTH_CLIENT_ID", ""
