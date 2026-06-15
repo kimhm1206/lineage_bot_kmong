@@ -3572,7 +3572,7 @@ button:disabled {
 
 .loot-update-form {
   display: grid;
-  grid-template-columns: minmax(118px, 0.72fr) minmax(118px, 0.72fr) minmax(130px, 0.82fr) minmax(108px, 0.55fr) minmax(180px, 1.05fr) auto;
+  grid-template-columns: repeat(5, minmax(108px, 0.8fr)) minmax(160px, 1.1fr) auto;
   gap: 10px;
   align-items: end;
   padding: 12px;

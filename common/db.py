@@ -537,6 +537,8 @@ class Database:
         sale_price: Decimal,
         adena_rate: Decimal,
         fee_rate: Decimal = DEFAULT_DISTRIBUTION_FEE_RATE,
+        bookkeeper_fee_rate: Decimal | None = None,
+        alliance_fee_rate: Decimal | None = None,
         memo: str | None,
         created_by_discord_id: int | None,
         excluded_alliance_ids: list[int] | None = None,
@@ -550,6 +552,8 @@ class Database:
             sale_price=sale_price,
             adena_rate=adena_rate,
             fee_rate=fee_rate,
+            bookkeeper_fee_rate=bookkeeper_fee_rate,
+            alliance_fee_rate=alliance_fee_rate,
             memo=memo,
             created_by_discord_id=created_by_discord_id,
             excluded_alliance_ids=excluded_alliance_ids,
@@ -564,6 +568,8 @@ class Database:
         sale_price: Decimal,
         adena_rate: Decimal,
         fee_rate: Decimal = DEFAULT_DISTRIBUTION_FEE_RATE,
+        bookkeeper_fee_rate: Decimal | None = None,
+        alliance_fee_rate: Decimal | None = None,
         memo: str | None,
     ) -> None:
         update_loot_drop(
@@ -573,6 +579,8 @@ class Database:
             sale_price=sale_price,
             adena_rate=adena_rate,
             fee_rate=fee_rate,
+            bookkeeper_fee_rate=bookkeeper_fee_rate,
+            alliance_fee_rate=alliance_fee_rate,
             memo=memo,
         )
 
@@ -3060,6 +3068,22 @@ def get_latest_adena_rate(guild_id: int) -> Decimal:
     return _decimal(row["adena_rate"]) if row else Decimal("0")
 
 
+def _normalize_distribution_fee_rates(
+    fee_rate: Decimal,
+    bookkeeper_fee_rate: Decimal | None = None,
+    alliance_fee_rate: Decimal | None = None,
+) -> tuple[Decimal, Decimal, Decimal]:
+    if bookkeeper_fee_rate is None and alliance_fee_rate is None:
+        bookkeeper_rate = _decimal(fee_rate)
+        alliance_rate = Decimal("0")
+    else:
+        bookkeeper_rate = _decimal(bookkeeper_fee_rate or Decimal("0"))
+        alliance_rate = _decimal(alliance_fee_rate or Decimal("0"))
+    if bookkeeper_rate < 0 or alliance_rate < 0:
+        raise ValueError("Fee rate must not be negative.")
+    return bookkeeper_rate + alliance_rate, bookkeeper_rate, alliance_rate
+
+
 def create_loot_drop(
     guild_id: int,
     *,
@@ -3070,6 +3094,8 @@ def create_loot_drop(
     sale_price: Decimal,
     adena_rate: Decimal,
     fee_rate: Decimal = DEFAULT_DISTRIBUTION_FEE_RATE,
+    bookkeeper_fee_rate: Decimal | None = None,
+    alliance_fee_rate: Decimal | None = None,
     memo: str | None,
     created_by_discord_id: int | None,
     excluded_alliance_ids: list[int] | None = None,
@@ -3081,9 +3107,11 @@ def create_loot_drop(
 
     cash_amount = _decimal(cash_price_krw)
     sale_amount = _decimal(sale_price)
-    normalized_fee_rate = _decimal(fee_rate)
-    if normalized_fee_rate < 0:
-        raise ValueError("Fee rate must not be negative.")
+    normalized_fee_rate, bookkeeper_rate, alliance_rate = _normalize_distribution_fee_rates(
+        fee_rate,
+        bookkeeper_fee_rate,
+        alliance_fee_rate,
+    )
     net_amount = sale_amount - (sale_amount * normalized_fee_rate)
     excluded_ids = _normalize_alliance_id_list(excluded_alliance_ids)
     excluded_id_set = set(excluded_ids)
@@ -3197,9 +3225,11 @@ def create_loot_drop(
                     cash_price_krw,
                     sale_price,
                     fee_rate,
+                    bookkeeper_fee_rate,
+                    alliance_fee_rate,
                     net_amount
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING loot_item_id
                 """,
                 (
@@ -3209,6 +3239,8 @@ def create_loot_drop(
                     cash_amount,
                     sale_amount,
                     normalized_fee_rate,
+                    bookkeeper_rate,
+                    alliance_rate,
                     net_amount,
                 ),
             )
@@ -3221,6 +3253,8 @@ def create_loot_drop(
                 sale_amount,
                 participant_counts,
                 normalized_fee_rate,
+                bookkeeper_rate,
+                alliance_rate,
             )
         connection.commit()
     return loot_event_id
@@ -3234,13 +3268,17 @@ def update_loot_drop(
     sale_price: Decimal,
     adena_rate: Decimal,
     fee_rate: Decimal = DEFAULT_DISTRIBUTION_FEE_RATE,
+    bookkeeper_fee_rate: Decimal | None = None,
+    alliance_fee_rate: Decimal | None = None,
     memo: str | None,
 ) -> None:
     cash_amount = _decimal(cash_price_krw)
     sale_amount = _decimal(sale_price)
-    normalized_fee_rate = _decimal(fee_rate)
-    if normalized_fee_rate < 0:
-        raise ValueError("Fee rate must not be negative.")
+    normalized_fee_rate, bookkeeper_rate, alliance_rate = _normalize_distribution_fee_rates(
+        fee_rate,
+        bookkeeper_fee_rate,
+        alliance_fee_rate,
+    )
     net_amount = sale_amount - (sale_amount * normalized_fee_rate)
     with _connect() as connection:
         with connection.cursor() as cursor:
@@ -3287,6 +3325,8 @@ def update_loot_drop(
                 SET cash_price_krw = %s,
                     sale_price = %s,
                     fee_rate = %s,
+                    bookkeeper_fee_rate = %s,
+                    alliance_fee_rate = %s,
                     net_amount = %s
                 WHERE loot_item_id = %s
                 """,
@@ -3294,6 +3334,8 @@ def update_loot_drop(
                     cash_amount,
                     sale_amount,
                     normalized_fee_rate,
+                    bookkeeper_rate,
+                    alliance_rate,
                     net_amount,
                     loot_item_id,
                 ),
@@ -3307,6 +3349,8 @@ def update_loot_drop(
                 sale_amount,
                 participant_counts,
                 normalized_fee_rate,
+                bookkeeper_rate,
+                alliance_rate,
             )
         connection.commit()
 
@@ -3365,7 +3409,11 @@ def get_loot_drop_events(guild_id: int, limit: int = 30) -> list[dict[str, Any]]
             db.total_net_amount,
             db.total_participant_count,
             db.fee_rate,
-            db.fee_amount
+            db.fee_amount,
+            db.bookkeeper_fee_rate,
+            db.bookkeeper_fee_amount,
+            db.alliance_fee_rate,
+            db.alliance_fee_amount
         FROM loot_events le
         LEFT JOIN attendance_sessions s ON s.attendance_id = le.attendance_id
         LEFT JOIN LATERAL (
@@ -3545,6 +3593,10 @@ def get_loot_drop_events(guild_id: int, limit: int = 30) -> list[dict[str, Any]]
                 "total_participant_count": participant_count,
                 "fee_rate": _decimal(row["fee_rate"]),
                 "fee_amount": _decimal(row["fee_amount"]),
+                "bookkeeper_fee_rate": _decimal(row["bookkeeper_fee_rate"]),
+                "bookkeeper_fee_amount": _decimal(row["bookkeeper_fee_amount"]),
+                "alliance_fee_rate": _decimal(row["alliance_fee_rate"]),
+                "alliance_fee_amount": _decimal(row["alliance_fee_amount"]),
                 "per_member_amount": _safe_divide(total_net_amount, participant_count),
                 "alliance_payouts": payouts_by_event.get(loot_event_id, []),
                 "alliances": alliances,
@@ -4201,6 +4253,8 @@ def _rebuild_loot_for_attendance(
             li.loot_item_id,
             li.sale_price,
             li.fee_rate,
+            li.bookkeeper_fee_rate,
+            li.alliance_fee_rate,
             le.excluded_alliance_ids
         FROM loot_events le
         INNER JOIN loot_event_items li ON li.loot_event_id = le.loot_event_id
@@ -4290,6 +4344,8 @@ def _rebuild_loot_for_attendance(
             _decimal(loot_row["sale_price"]),
             participant_counts,
             _decimal(loot_row["fee_rate"]),
+            _decimal(loot_row["bookkeeper_fee_rate"]),
+            _decimal(loot_row["alliance_fee_rate"]),
         )
         cursor.execute(
             """
@@ -4374,11 +4430,19 @@ def _upsert_distribution_for_loot(
     total_amount: Decimal,
     participant_counts: dict[int, int],
     fee_rate: Decimal,
+    bookkeeper_fee_rate: Decimal | None = None,
+    alliance_fee_rate: Decimal | None = None,
 ) -> int:
     participant_total = sum(participant_counts.values())
     total_sale_amount = _decimal(total_amount)
-    fee_rate = _decimal(fee_rate)
-    fee_amount = total_sale_amount * fee_rate
+    fee_rate, bookkeeper_fee_rate, alliance_fee_rate = _normalize_distribution_fee_rates(
+        fee_rate,
+        bookkeeper_fee_rate,
+        alliance_fee_rate,
+    )
+    bookkeeper_fee_amount = total_sale_amount * bookkeeper_fee_rate
+    alliance_fee_amount = total_sale_amount * alliance_fee_rate
+    fee_amount = bookkeeper_fee_amount + alliance_fee_amount
     total_net_amount = total_sale_amount - fee_amount
     cursor.execute(
         """
@@ -4401,9 +4465,13 @@ def _upsert_distribution_for_loot(
                 total_net_amount,
                 total_participant_count,
                 fee_rate,
-                fee_amount
+                fee_amount,
+                bookkeeper_fee_rate,
+                bookkeeper_fee_amount,
+                alliance_fee_rate,
+                alliance_fee_amount
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING distribution_id
             """,
             (
@@ -4414,6 +4482,10 @@ def _upsert_distribution_for_loot(
                 participant_total,
                 fee_rate,
                 fee_amount,
+                bookkeeper_fee_rate,
+                bookkeeper_fee_amount,
+                alliance_fee_rate,
+                alliance_fee_amount,
             ),
         )
         distribution_id = int(cursor.fetchone()["distribution_id"])
@@ -4427,7 +4499,11 @@ def _upsert_distribution_for_loot(
                 total_net_amount = %s,
                 total_participant_count = %s,
                 fee_rate = %s,
-                fee_amount = %s
+                fee_amount = %s,
+                bookkeeper_fee_rate = %s,
+                bookkeeper_fee_amount = %s,
+                alliance_fee_rate = %s,
+                alliance_fee_amount = %s
             WHERE distribution_id = %s
             """,
             (
@@ -4437,6 +4513,10 @@ def _upsert_distribution_for_loot(
                 participant_total,
                 fee_rate,
                 fee_amount,
+                bookkeeper_fee_rate,
+                bookkeeper_fee_amount,
+                alliance_fee_rate,
+                alliance_fee_amount,
                 distribution_id,
             ),
         )
@@ -4648,9 +4728,15 @@ def _ensure_postgres_columns(cursor: psycopg2.extensions.cursor) -> None:
         "ALTER TABLE loot_events ADD COLUMN IF NOT EXISTS adena_rate NUMERIC(18, 6) NOT NULL DEFAULT 0",
         "ALTER TABLE loot_events ADD COLUMN IF NOT EXISTS excluded_alliance_ids JSONB NOT NULL DEFAULT '[]'::jsonb",
         "ALTER TABLE loot_event_items ADD COLUMN IF NOT EXISTS cash_price_krw NUMERIC(18, 2) NOT NULL DEFAULT 0",
+        "ALTER TABLE loot_event_items ADD COLUMN IF NOT EXISTS bookkeeper_fee_rate NUMERIC(8, 6) NOT NULL DEFAULT 0",
+        "ALTER TABLE loot_event_items ADD COLUMN IF NOT EXISTS alliance_fee_rate NUMERIC(8, 6) NOT NULL DEFAULT 0",
         "ALTER TABLE distribution_batches ADD COLUMN IF NOT EXISTS guild_id BIGINT REFERENCES guilds(guild_id) ON DELETE CASCADE",
         "ALTER TABLE distribution_batches ADD COLUMN IF NOT EXISTS fee_rate NUMERIC(8, 6) NOT NULL DEFAULT 0",
         "ALTER TABLE distribution_batches ADD COLUMN IF NOT EXISTS fee_amount NUMERIC(18, 2) NOT NULL DEFAULT 0",
+        "ALTER TABLE distribution_batches ADD COLUMN IF NOT EXISTS bookkeeper_fee_rate NUMERIC(8, 6) NOT NULL DEFAULT 0",
+        "ALTER TABLE distribution_batches ADD COLUMN IF NOT EXISTS bookkeeper_fee_amount NUMERIC(18, 2) NOT NULL DEFAULT 0",
+        "ALTER TABLE distribution_batches ADD COLUMN IF NOT EXISTS alliance_fee_rate NUMERIC(8, 6) NOT NULL DEFAULT 0",
+        "ALTER TABLE distribution_batches ADD COLUMN IF NOT EXISTS alliance_fee_amount NUMERIC(18, 2) NOT NULL DEFAULT 0",
         "ALTER TABLE distribution_alliance_payouts ADD COLUMN IF NOT EXISTS payout_status TEXT NOT NULL DEFAULT 'unpaid'",
         "ALTER TABLE member_payout_statuses ADD COLUMN IF NOT EXISTS payout_status TEXT NOT NULL DEFAULT 'unpaid'",
         "ALTER TABLE alliance_payout_fee_rules ADD COLUMN IF NOT EXISTS created_by_discord_id BIGINT",
@@ -4729,6 +4815,16 @@ def _ensure_postgres_columns(cursor: psycopg2.extensions.cursor) -> None:
     )
     cursor.execute(
         """
+        UPDATE loot_event_items
+        SET bookkeeper_fee_rate = fee_rate,
+            alliance_fee_rate = 0
+        WHERE fee_rate > 0
+          AND bookkeeper_fee_rate = 0
+          AND alliance_fee_rate = 0
+        """
+    )
+    cursor.execute(
+        """
         UPDATE distribution_batches
         SET fee_rate = %s,
             fee_amount = total_sale_amount * %s,
@@ -4741,6 +4837,18 @@ def _ensure_postgres_columns(cursor: psycopg2.extensions.cursor) -> None:
             DEFAULT_DISTRIBUTION_FEE_RATE,
             DEFAULT_DISTRIBUTION_FEE_RATE,
         ),
+    )
+    cursor.execute(
+        """
+        UPDATE distribution_batches
+        SET bookkeeper_fee_rate = fee_rate,
+            bookkeeper_fee_amount = fee_amount,
+            alliance_fee_rate = 0,
+            alliance_fee_amount = 0
+        WHERE fee_rate > 0
+          AND bookkeeper_fee_rate = 0
+          AND alliance_fee_rate = 0
+        """
     )
     cursor.execute(
         """
@@ -5166,6 +5274,8 @@ CREATE TABLE IF NOT EXISTS loot_event_items (
     cash_price_krw NUMERIC(18, 2) NOT NULL DEFAULT 0,
     sale_price NUMERIC(18, 2) NOT NULL DEFAULT 0,
     fee_rate NUMERIC(8, 6) NOT NULL DEFAULT 0,
+    bookkeeper_fee_rate NUMERIC(8, 6) NOT NULL DEFAULT 0,
+    alliance_fee_rate NUMERIC(8, 6) NOT NULL DEFAULT 0,
     net_amount NUMERIC(18, 2) NOT NULL DEFAULT 0
 );
 
@@ -5193,7 +5303,11 @@ CREATE TABLE IF NOT EXISTS distribution_batches (
     total_net_amount NUMERIC(18, 2) NOT NULL DEFAULT 0,
     total_participant_count INTEGER NOT NULL DEFAULT 0,
     fee_rate NUMERIC(8, 6) NOT NULL DEFAULT 0,
-    fee_amount NUMERIC(18, 2) NOT NULL DEFAULT 0
+    fee_amount NUMERIC(18, 2) NOT NULL DEFAULT 0,
+    bookkeeper_fee_rate NUMERIC(8, 6) NOT NULL DEFAULT 0,
+    bookkeeper_fee_amount NUMERIC(18, 2) NOT NULL DEFAULT 0,
+    alliance_fee_rate NUMERIC(8, 6) NOT NULL DEFAULT 0,
+    alliance_fee_amount NUMERIC(18, 2) NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS distribution_alliance_payouts (

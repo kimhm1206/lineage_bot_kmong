@@ -2521,6 +2521,31 @@ def _fee_rate_from_form(
     return fee_percent / Decimal("100")
 
 
+def _loot_fee_rates_from_form(
+    form_data: dict[str, Any],
+    errors: list[str],
+) -> tuple[Decimal, Decimal, Decimal]:
+    bookkeeper_percent = _decimal_from_form(
+        "경리 수수료",
+        form_data.get("bookkeeper_fee_percent", form_data.get("fee_percent")),
+        errors,
+        default=Decimal("10"),
+    )
+    alliance_percent = _decimal_from_form(
+        "연합 수수료",
+        form_data.get("alliance_fee_percent"),
+        errors,
+        default=Decimal("0"),
+    )
+    bookkeeper_fee_rate = bookkeeper_percent / Decimal("100")
+    alliance_fee_rate = alliance_percent / Decimal("100")
+    return (
+        bookkeeper_fee_rate + alliance_fee_rate,
+        bookkeeper_fee_rate,
+        alliance_fee_rate,
+    )
+
+
 def _decorate_item_prices(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     decorated = []
     for item in items:
@@ -2566,12 +2591,20 @@ def _decorate_loot_events(
         participant_count = int(event.get("total_participant_count") or 0)
         total_sale = _rounded_integer(event.get("total_sale_amount"))
         fee_rate = Decimal(str(event.get("fee_rate") or "0"))
-        fee_amount = _rounded_integer(total_sale * fee_rate)
+        bookkeeper_fee_rate = Decimal(str(event.get("bookkeeper_fee_rate") or "0"))
+        alliance_fee_rate = Decimal(str(event.get("alliance_fee_rate") or "0"))
+        if bookkeeper_fee_rate == 0 and alliance_fee_rate == 0 and fee_rate > 0:
+            bookkeeper_fee_rate = fee_rate
+        bookkeeper_fee_amount = _rounded_integer(total_sale * bookkeeper_fee_rate)
+        alliance_fee_amount = _rounded_integer(total_sale * alliance_fee_rate)
+        fee_amount = bookkeeper_fee_amount + alliance_fee_amount
         total_net = total_sale - fee_amount
         per_member = _rounded_divide(total_net, participant_count)
         adena_rate = _rounded_integer(event.get("adena_rate"))
         total_sale_cash = _cash_from_adena(total_sale, adena_rate)
         fee_amount_cash = _cash_from_adena(fee_amount, adena_rate)
+        bookkeeper_fee_amount_cash = _cash_from_adena(bookkeeper_fee_amount, adena_rate)
+        alliance_fee_amount_cash = _cash_from_adena(alliance_fee_amount, adena_rate)
         total_net_cash = _cash_from_adena(total_net, adena_rate)
         per_member_cash = _cash_from_adena(per_member, adena_rate)
 
@@ -2582,6 +2615,12 @@ def _decorate_loot_events(
         row["adena_rate_input"] = _decimal_input(event.get("adena_rate"))
         row["adena_rate_text"] = _money_text(adena_rate)
         row["fee_percent_input"] = _decimal_input(fee_rate * Decimal("100"))
+        row["bookkeeper_fee_percent_input"] = _decimal_input(
+            bookkeeper_fee_rate * Decimal("100"),
+        )
+        row["alliance_fee_percent_input"] = _decimal_input(
+            alliance_fee_rate * Decimal("100"),
+        )
         row["per_member_amount_display"] = per_member
         row["per_member_text"] = _money_text(per_member)
         row["per_member_cash_amount_display"] = per_member_cash
@@ -2589,17 +2628,31 @@ def _decorate_loot_events(
         row["total_sale_amount_display"] = total_sale
         row["total_net_amount_display"] = total_net
         row["fee_amount_display"] = fee_amount
+        row["bookkeeper_fee_amount_display"] = bookkeeper_fee_amount
+        row["alliance_fee_amount_display"] = alliance_fee_amount
         row["total_sale_cash_amount_display"] = total_sale_cash
         row["total_net_cash_amount_display"] = total_net_cash
         row["fee_amount_cash_amount_display"] = fee_amount_cash
+        row["bookkeeper_fee_amount_cash_amount_display"] = bookkeeper_fee_amount_cash
+        row["alliance_fee_amount_cash_amount_display"] = alliance_fee_amount_cash
         row["total_sale_text"] = _money_text(total_sale)
         row["total_net_text"] = _money_text(total_net)
         row["fee_amount_text"] = _money_text(fee_amount)
+        row["bookkeeper_fee_amount_text"] = _money_text(bookkeeper_fee_amount)
+        row["alliance_fee_amount_text"] = _money_text(alliance_fee_amount)
         row["total_sale_cash_text"] = _cash_text(total_sale_cash)
         row["total_net_cash_text"] = _cash_text(total_net_cash)
         row["fee_amount_cash_text"] = _cash_text(fee_amount_cash)
+        row["bookkeeper_fee_amount_cash_text"] = _cash_text(bookkeeper_fee_amount_cash)
+        row["alliance_fee_amount_cash_text"] = _cash_text(alliance_fee_amount_cash)
         row["fee_rate_percent_text"] = _money_text(
-            Decimal(str(event.get("fee_rate") or "0")) * Decimal("100"),
+            (bookkeeper_fee_rate + alliance_fee_rate) * Decimal("100"),
+        )
+        row["bookkeeper_fee_rate_percent_text"] = _money_text(
+            bookkeeper_fee_rate * Decimal("100"),
+        )
+        row["alliance_fee_rate_percent_text"] = _money_text(
+            alliance_fee_rate * Decimal("100"),
         )
         event_datetime = _loot_event_datetime(row)
         row["distribution_card_time_label"] = (
@@ -4065,6 +4118,8 @@ def _default_loot_form(guild_id: int) -> dict[str, str]:
         "sale_price": "",
         "adena_rate": _decimal_input(latest_adena_rate),
         "fee_percent": "10",
+        "bookkeeper_fee_percent": "10",
+        "alliance_fee_percent": "0",
         "memo": "",
         "excluded_alliance_ids": "",
     }
@@ -5252,13 +5307,22 @@ async def create_loot_drop(
         item_id,
         errors,
     )
-    fee_rate = _fee_rate_from_form(form_data, errors)
+    fee_rate, bookkeeper_fee_rate, alliance_fee_rate = _loot_fee_rates_from_form(
+        form_data,
+        errors,
+    )
     excluded_alliance_ids = _parse_loot_excluded_alliance_ids(
         form_data.get("excluded_alliance_ids"),
     )
     form_data["cash_price_krw"] = _decimal_input(cash_price_krw)
     form_data["sale_price"] = _decimal_input(sale_price)
     form_data["fee_percent"] = _decimal_input(fee_rate * Decimal("100"))
+    form_data["bookkeeper_fee_percent"] = _decimal_input(
+        bookkeeper_fee_rate * Decimal("100"),
+    )
+    form_data["alliance_fee_percent"] = _decimal_input(
+        alliance_fee_rate * Decimal("100"),
+    )
     form_data["excluded_alliance_ids"] = ",".join(
         str(alliance_id) for alliance_id in excluded_alliance_ids
     )
@@ -5287,6 +5351,8 @@ async def create_loot_drop(
             sale_price=sale_price,
             adena_rate=adena_rate,
             fee_rate=fee_rate,
+            bookkeeper_fee_rate=bookkeeper_fee_rate,
+            alliance_fee_rate=alliance_fee_rate,
             memo=str(form_data.get("memo") or ""),
             created_by_discord_id=int(auth["user"]["id"]),
             excluded_alliance_ids=excluded_alliance_ids,
@@ -5306,6 +5372,8 @@ async def create_loot_drop(
                 "sale_price": _decimal_input(sale_price),
                 "adena_rate": _decimal_input(adena_rate),
                 "fee_rate": _decimal_input(fee_rate),
+                "bookkeeper_fee_rate": _decimal_input(bookkeeper_fee_rate),
+                "alliance_fee_rate": _decimal_input(alliance_fee_rate),
                 "excluded_alliance_ids": excluded_alliance_ids,
             },
         )
@@ -5561,7 +5629,10 @@ async def update_loot_drop(
         None,
         errors,
     )
-    fee_rate = _fee_rate_from_form(form_data, errors)
+    fee_rate, bookkeeper_fee_rate, alliance_fee_rate = _loot_fee_rates_from_form(
+        form_data,
+        errors,
+    )
     if errors:
         return RedirectResponse(
             f"/loot?guild_id={selected_guild_id}&saved=error#alliance-payouts",
@@ -5576,6 +5647,8 @@ async def update_loot_drop(
             sale_price=sale_price,
             adena_rate=adena_rate,
             fee_rate=fee_rate,
+            bookkeeper_fee_rate=bookkeeper_fee_rate,
+            alliance_fee_rate=alliance_fee_rate,
             memo=str(form_data.get("memo") or ""),
         )
         _record_work_log(
@@ -5591,6 +5664,8 @@ async def update_loot_drop(
                 "sale_price": _decimal_input(sale_price),
                 "adena_rate": _decimal_input(adena_rate),
                 "fee_rate": _decimal_input(fee_rate),
+                "bookkeeper_fee_rate": _decimal_input(bookkeeper_fee_rate),
+                "alliance_fee_rate": _decimal_input(alliance_fee_rate),
             },
         )
     except ValueError:

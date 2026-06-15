@@ -564,14 +564,26 @@
             </label>
 
             <label class="field">
-              <span>수수료(%)</span>
+              <span>경리 수수료(%)</span>
               <input
-                name="fee_percent"
+                name="bookkeeper_fee_percent"
                 type="number"
                 min="0"
                 step="0.01"
-                value="{{ loot_form.fee_percent }}"
+                value="{{ loot_form.bookkeeper_fee_percent }}"
                 placeholder="10"
+              >
+            </label>
+
+            <label class="field">
+              <span>연합 수수료(%)</span>
+              <input
+                name="alliance_fee_percent"
+                type="number"
+                min="0"
+                step="0.01"
+                value="{{ loot_form.alliance_fee_percent }}"
+                placeholder="0"
               >
             </label>
 
@@ -688,13 +700,23 @@
                       >
                     </label>
                     <label class="field">
-                      <span>수수료(%)</span>
+                      <span>경리 수수료(%)</span>
                       <input
-                        name="fee_percent"
+                        name="bookkeeper_fee_percent"
                         type="number"
                         min="0"
                         step="0.01"
-                        value="{{ event.fee_percent_input }}"
+                        value="{{ event.bookkeeper_fee_percent_input }}"
+                      >
+                    </label>
+                    <label class="field">
+                      <span>연합 수수료(%)</span>
+                      <input
+                        name="alliance_fee_percent"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value="{{ event.alliance_fee_percent_input }}"
                       >
                     </label>
                     <label class="field loot-update-memo">
@@ -735,7 +757,15 @@
                   <strong data-money-value data-adena-text="{{ event.total_sale_text }}" data-cash-text="{{ event.total_sale_cash_text }}">{{ event.total_sale_text }}</strong>
                 </div>
                 <div>
-                  <span>경리 수수료 {{ event.fee_rate_percent_text }}%</span>
+                  <span>경리 수수료 {{ event.bookkeeper_fee_rate_percent_text }}%</span>
+                  <strong data-money-value data-adena-text="{{ event.bookkeeper_fee_amount_text }}" data-cash-text="{{ event.bookkeeper_fee_amount_cash_text }}">{{ event.bookkeeper_fee_amount_text }}</strong>
+                </div>
+                <div>
+                  <span>연합 수수료 {{ event.alliance_fee_rate_percent_text }}%</span>
+                  <strong data-money-value data-adena-text="{{ event.alliance_fee_amount_text }}" data-cash-text="{{ event.alliance_fee_amount_cash_text }}">{{ event.alliance_fee_amount_text }}</strong>
+                </div>
+                <div>
+                  <span>총 수수료 {{ event.fee_rate_percent_text }}%</span>
                   <strong data-money-value data-adena-text="{{ event.fee_amount_text }}" data-cash-text="{{ event.fee_amount_cash_text }}">{{ event.fee_amount_text }}</strong>
                 </div>
                 <div>
