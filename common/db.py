@@ -702,6 +702,26 @@ class Database:
             updated_by_discord_id=updated_by_discord_id,
         )
 
+    def get_member_forfeiture_settlements(
+        self,
+        guild_id: int,
+        alliance_ids: list[int],
+    ) -> dict[tuple[int, int, int], dict[str, Any]]:
+        return get_member_forfeiture_settlements(guild_id, alliance_ids)
+
+    def settle_member_forfeitures(
+        self,
+        guild_id: int,
+        alliance_id: int,
+        *,
+        settled_by_discord_id: int | None,
+    ) -> int:
+        return settle_member_forfeitures(
+            guild_id,
+            alliance_id,
+            settled_by_discord_id=settled_by_discord_id,
+        )
+
 
 database = Database()
 
@@ -3983,6 +4003,83 @@ def update_member_payout_recipient_status(
     return distribution_id
 
 
+def get_member_forfeiture_settlements(
+    guild_id: int,
+    alliance_ids: list[int],
+) -> dict[tuple[int, int, int], dict[str, Any]]:
+    normalized_ids = _normalize_alliance_id_list(alliance_ids)
+    if not normalized_ids:
+        return {}
+    rows = _fetchall(
+        """
+        SELECT
+            mfs.distribution_id,
+            mfs.alliance_id,
+            mfs.user_id,
+            mfs.settled_by_discord_id,
+            mfs.settled_at
+        FROM member_forfeiture_settlements mfs
+        INNER JOIN distribution_batches db
+            ON db.distribution_id = mfs.distribution_id
+        WHERE db.guild_id = %s
+          AND mfs.alliance_id = ANY(%s::bigint[])
+        """,
+        (guild_id, normalized_ids),
+    )
+    return {
+        (
+            int(row["distribution_id"]),
+            int(row["alliance_id"]),
+            int(row["user_id"]),
+        ): dict(row)
+        for row in rows
+    }
+
+
+def settle_member_forfeitures(
+    guild_id: int,
+    alliance_id: int,
+    *,
+    settled_by_discord_id: int | None,
+) -> int:
+    with _connect() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO member_forfeiture_settlements (
+                    distribution_id,
+                    alliance_id,
+                    user_id,
+                    settled_by_discord_id,
+                    settled_at
+                )
+                SELECT
+                    mps.distribution_id,
+                    mps.alliance_id,
+                    mps.user_id,
+                    %s,
+                    CURRENT_TIMESTAMP
+                FROM member_payout_statuses mps
+                INNER JOIN distribution_batches db
+                    ON db.distribution_id = mps.distribution_id
+                LEFT JOIN member_forfeiture_settlements mfs
+                    ON mfs.distribution_id = mps.distribution_id
+                   AND mfs.alliance_id = mps.alliance_id
+                   AND mfs.user_id = mps.user_id
+                WHERE db.guild_id = %s
+                  AND mps.alliance_id = %s
+                  AND mps.payout_status = 'forfeited'
+                  AND mfs.distribution_id IS NULL
+                ON CONFLICT (distribution_id, alliance_id, user_id)
+                DO NOTHING
+                """,
+                (settled_by_discord_id, guild_id, alliance_id),
+            )
+            settled_count = int(cursor.rowcount or 0)
+        connection.commit()
+    return settled_count
+
+
 def _ensure_member_payout_rule_snapshot(
     cursor: psycopg2.extensions.cursor,
     guild_id: int,
@@ -4924,6 +5021,10 @@ def _ensure_postgres_columns(cursor: psycopg2.extensions.cursor) -> None:
         "ON member_payout_statuses(alliance_id, payout_status)"
     )
     cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_member_forfeiture_settlements_alliance "
+        "ON member_forfeiture_settlements(alliance_id, settled_at)"
+    )
+    cursor.execute(
         "CREATE INDEX IF NOT EXISTS idx_alliance_payout_fee_rules_active "
         "ON alliance_payout_fee_rules(guild_id, alliance_id, is_active)"
     )
@@ -5349,6 +5450,15 @@ CREATE TABLE IF NOT EXISTS member_payout_statuses (
     is_paid BOOLEAN NOT NULL DEFAULT FALSE,
     payout_status TEXT NOT NULL DEFAULT 'unpaid',
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (distribution_id, alliance_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS member_forfeiture_settlements (
+    distribution_id BIGINT NOT NULL REFERENCES distribution_batches(distribution_id) ON DELETE CASCADE,
+    alliance_id BIGINT NOT NULL REFERENCES alliances(alliance_id) ON DELETE CASCADE,
+    user_id BIGINT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    settled_by_discord_id BIGINT,
+    settled_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (distribution_id, alliance_id, user_id)
 );
 

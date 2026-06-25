@@ -4089,21 +4089,64 @@ button:disabled {
 }
 
 .forfeiture-log-modal-card {
+  display: flex;
+  flex-direction: column;
   width: min(760px, 100%);
   max-height: min(720px, calc(100vh - 48px));
   overflow: hidden;
 }
 
+.forfeiture-log-tabs {
+  display: flex;
+  gap: 8px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.forfeiture-log-panel {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+}
+
+.forfeiture-log-total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-soft);
+}
+
+.forfeiture-log-total span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.forfeiture-log-total strong {
+  color: var(--text);
+  font-size: 22px;
+  font-weight: 950;
+}
+
 .forfeiture-log-list {
   display: grid;
+  flex: 1 1 auto;
   gap: 8px;
+  min-height: 0;
   overflow: auto;
   padding-right: 4px;
 }
 
+.forfeiture-user-row,
 .forfeiture-log-row {
   display: grid;
-  grid-template-columns: minmax(160px, 1fr) minmax(150px, 0.8fr) minmax(150px, 0.8fr) minmax(100px, auto);
+  grid-template-columns: minmax(160px, 1fr) minmax(100px, auto);
   gap: 10px;
   align-items: center;
   padding: 12px;
@@ -4113,10 +4156,17 @@ button:disabled {
   background: var(--panel-soft);
 }
 
+.forfeiture-log-row {
+  grid-template-columns: minmax(160px, 1fr) minmax(150px, 0.8fr) minmax(150px, 0.8fr) minmax(100px, auto);
+}
+
+.forfeiture-user-row div,
 .forfeiture-log-row div {
   min-width: 0;
 }
 
+.forfeiture-user-row span,
+.forfeiture-user-row small,
 .forfeiture-log-row span,
 .forfeiture-log-row small {
   display: block;
@@ -4126,6 +4176,7 @@ button:disabled {
   overflow-wrap: anywhere;
 }
 
+.forfeiture-user-row strong,
 .forfeiture-log-row strong {
   color: var(--text);
   font-weight: 950;

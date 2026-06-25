@@ -1060,6 +1060,12 @@
                   data-adena-text="{{ my_alliance_payouts.summary.forfeited_text }}"
                   data-cash-text="{{ my_alliance_payouts.summary.forfeited_cash_text }}"
                 >{{ my_alliance_payouts.summary.forfeited_text }}</strong>
+                {% if auth.selected_server.can_manage and not my_alliance_payouts.selected_alliance.is_other %}
+                  <form method="post" action="/loot/member-forfeitures/settle?guild_id={{ auth.selected_guild_id }}" data-forfeiture-settle-form>
+                    <input type="hidden" name="alliance_id" value="{{ my_alliance_payouts.selected_alliance.alliance_id }}">
+                    <button class="tiny-button" type="submit" {% if my_alliance_payouts.summary.forfeited_count == 0 %}disabled{% endif %}>완료</button>
+                  </form>
+                {% endif %}
               </div>
             </div>
             <small>미정산 {{ my_alliance_payouts.summary.unsettled_count }}건 · 완료 {{ my_alliance_payouts.summary.settled_count }}건</small>
@@ -1099,26 +1105,47 @@
               </div>
               <button class="icon-button" type="button" aria-label="닫기" data-forfeiture-log-close>&times;</button>
             </header>
-            <section class="forfeiture-log-list">
-              {% for log in my_alliance_payouts.summary.forfeiture_logs %}
-                <article class="forfeiture-log-row">
-                  <div>
-                    <strong>{{ log.display_name }}</strong>
-                    <span>{{ log.item_name }}</span>
-                  </div>
-                  <div>
-                    <small>드랍 시간</small>
-                    <span>{{ log.attendance_started_at }}</span>
-                  </div>
-                  <div>
-                    <small>귀속 시간</small>
-                    <span>{{ log.forfeited_at or "-" }}</span>
-                  </div>
-                  <strong>{{ log.amount_text }}</strong>
-                </article>
-              {% else %}
-                <div class="empty report-empty">귀속된 혈비 기록이 없습니다.</div>
-              {% endfor %}
+            <div class="forfeiture-log-tabs" data-forfeiture-tabs>
+              <button class="inner-tab-button is-active" type="button" data-forfeiture-tab="pending">귀속 혈비</button>
+              <button class="inner-tab-button" type="button" data-forfeiture-tab="settled">정산 완료 귀속 혈비</button>
+            </div>
+            <section class="forfeiture-log-panel" data-forfeiture-panel="pending">
+              <div class="forfeiture-log-total">
+                <span>총 귀속 혈비</span>
+                <strong>{{ my_alliance_payouts.summary.forfeited_text }}</strong>
+              </div>
+              <div class="forfeiture-log-list">
+                {% for user in my_alliance_payouts.summary.forfeiture_users %}
+                  <article class="forfeiture-user-row">
+                    <div>
+                      <strong>{{ user.display_name }}</strong>
+                      <span>{{ user.count }}건 · 최근 귀속 {{ user.latest_forfeited_at or "-" }}</span>
+                    </div>
+                    <strong>{{ user.amount_text }}</strong>
+                  </article>
+                {% else %}
+                  <div class="empty report-empty">정산 대기 중인 귀속 혈비가 없습니다.</div>
+                {% endfor %}
+              </div>
+            </section>
+            <section class="forfeiture-log-panel" data-forfeiture-panel="settled" hidden>
+              <div class="forfeiture-log-total">
+                <span>정산 완료 귀속 혈비</span>
+                <strong>{{ my_alliance_payouts.summary.settled_forfeited_text }}</strong>
+              </div>
+              <div class="forfeiture-log-list">
+                {% for user in my_alliance_payouts.summary.settled_forfeiture_users %}
+                  <article class="forfeiture-user-row">
+                    <div>
+                      <strong>{{ user.display_name }}</strong>
+                      <span>{{ user.count }}건 · 완료 {{ user.latest_settled_at or "-" }}</span>
+                    </div>
+                    <strong>{{ user.amount_text }}</strong>
+                  </article>
+                {% else %}
+                  <div class="empty report-empty">정산 완료된 귀속 혈비 기록이 없습니다.</div>
+                {% endfor %}
+              </div>
             </section>
           </div>
         </div>
@@ -2892,6 +2919,19 @@
       if (event.target === forfeitureLogModal) {
         setForfeitureLogModalOpen(false);
       }
+    });
+    const forfeitureTabButtons = Array.from(document.querySelectorAll("[data-forfeiture-tab]"));
+    const forfeiturePanels = Array.from(document.querySelectorAll("[data-forfeiture-panel]"));
+    forfeitureTabButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        const target = button.dataset.forfeitureTab || "pending";
+        forfeitureTabButtons.forEach((item) => {
+          item.classList.toggle("is-active", item === button);
+        });
+        forfeiturePanels.forEach((panel) => {
+          panel.hidden = panel.dataset.forfeiturePanel !== target;
+        });
+      });
     });
     const bidItemGrid = document.querySelector(".bid-item-grid");
     const bidViewTabs = Array.from(document.querySelectorAll("[data-bid-view-tab]"));

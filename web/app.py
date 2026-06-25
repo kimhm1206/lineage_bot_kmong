@@ -3234,15 +3234,24 @@ def _my_alliance_payout_context(
                 "unsettled_cash_text": "0원",
                 "forfeited_text": "0",
                 "forfeited_cash_text": "0원",
+                "settled_forfeited_text": "0",
+                "settled_forfeited_cash_text": "0원",
                 "settled_count": 0,
                 "unsettled_count": 0,
                 "forfeited_count": 0,
                 "forfeiture_logs": [],
+                "settled_forfeiture_logs": [],
+                "forfeiture_users": [],
+                "settled_forfeiture_users": [],
             },
         }
 
     selected_alliance_ids = sorted(_selected_alliance_ids(selected_alliance))
     is_other_selection = bool(selected_alliance.get("is_other"))
+    forfeiture_settlements = database.get_member_forfeiture_settlements(
+        guild_id,
+        selected_alliance_ids,
+    )
     fee_rule_cache: dict[int, list[dict[str, Any]]] = {}
     member_group_cache: dict[int, dict[int, dict[str, Any]]] = {}
 
@@ -3276,9 +3285,12 @@ def _my_alliance_payout_context(
     unsettled_cash_sum = Decimal("0")
     forfeited_amount_sum = Decimal("0")
     forfeited_cash_sum = Decimal("0")
+    settled_forfeited_amount_sum = Decimal("0")
+    settled_forfeited_cash_sum = Decimal("0")
     settled_count = 0
     unsettled_count = 0
     forfeiture_logs: list[dict[str, Any]] = []
+    settled_forfeiture_logs: list[dict[str, Any]] = []
 
     for event in events:
         for alliance_id in selected_alliance_ids:
@@ -3348,6 +3360,7 @@ def _my_alliance_payout_context(
             forfeited_recipient_count = 0
             unpaid_amount = Decimal("0")
             forfeited_amount = Decimal("0")
+            settled_forfeited_amount = Decimal("0")
             for index, member in enumerate(participants):
                 member_user_id = int(member.get("user_id") or 0)
                 member_amount = (
@@ -3366,6 +3379,14 @@ def _my_alliance_payout_context(
                     forfeited_recipient_count += 1
                 status_updated_text = _format_optional_datetime(
                     status_updated_at.get(member_user_id)
+                )
+                forfeiture_settlement = forfeiture_settlements.get(
+                    (int(event["distribution_id"]), alliance_id, member_user_id)
+                )
+                forfeiture_settled_at = _format_optional_datetime(
+                    forfeiture_settlement.get("settled_at")
+                    if forfeiture_settlement
+                    else None
                 )
                 recipients.append(
                     {
@@ -3390,6 +3411,7 @@ def _my_alliance_payout_context(
                             payout_status
                         ),
                         "forfeited_at": status_updated_text if is_forfeited else "",
+                        "forfeiture_settled_at": forfeiture_settled_at,
                     }
                 )
                 summary = recipient_summaries.setdefault(
@@ -3434,6 +3456,7 @@ def _my_alliance_payout_context(
                             payout_status
                         ),
                         "forfeited_at": status_updated_text if is_forfeited else "",
+                        "forfeiture_settled_at": forfeiture_settled_at,
                     }
                 )
                 if is_paid:
@@ -3442,22 +3465,26 @@ def _my_alliance_payout_context(
                 elif is_forfeited:
                     summary["forfeited_amount"] += member_amount
                     summary["forfeited_count"] += 1
-                    forfeited_amount += member_amount
-                    forfeiture_logs.append(
-                        {
-                            "user_id": member_user_id,
-                            "display_name": str(member.get("discord_nickname") or ""),
-                            "item_name": event["item_name"],
-                            "attendance_started_at": event["attendance_started_at"]
-                            or event["event_date"],
-                            "forfeited_at": status_updated_text,
-                            "amount": member_amount,
-                            "amount_text": _money_text(member_amount),
-                            "amount_cash_text": _cash_text(
-                                _cash_from_adena(member_amount, adena_rate)
-                            ),
-                        }
-                    )
+                    log_row = {
+                        "user_id": member_user_id,
+                        "display_name": str(member.get("discord_nickname") or ""),
+                        "item_name": event["item_name"],
+                        "attendance_started_at": event["attendance_started_at"]
+                        or event["event_date"],
+                        "forfeited_at": status_updated_text,
+                        "settled_at": forfeiture_settled_at,
+                        "amount": member_amount,
+                        "amount_text": _money_text(member_amount),
+                        "amount_cash_text": _cash_text(
+                            _cash_from_adena(member_amount, adena_rate)
+                        ),
+                    }
+                    if forfeiture_settlement:
+                        settled_forfeited_amount += member_amount
+                        settled_forfeiture_logs.append(log_row)
+                    else:
+                        forfeited_amount += member_amount
+                        forfeiture_logs.append(log_row)
                 else:
                     summary["unpaid_amount"] += member_amount
                     summary["unpaid_count"] += 1
@@ -3477,6 +3504,11 @@ def _my_alliance_payout_context(
                 unsettled_cash_sum += _cash_from_adena(unpaid_amount, adena_rate)
             forfeited_amount_sum += forfeited_amount
             forfeited_cash_sum += _cash_from_adena(forfeited_amount, adena_rate)
+            settled_forfeited_amount_sum += settled_forfeited_amount
+            settled_forfeited_cash_sum += _cash_from_adena(
+                settled_forfeited_amount,
+                adena_rate,
+            )
 
             total_amount_sum += total_amount
             total_cash_sum += _cash_from_adena(total_amount, adena_rate)
@@ -3569,6 +3601,51 @@ def _my_alliance_payout_context(
         key=lambda item: str(item.get("forfeited_at") or ""),
         reverse=True,
     )
+    settled_forfeiture_logs.sort(
+        key=lambda item: str(item.get("settled_at") or item.get("forfeited_at") or ""),
+        reverse=True,
+    )
+
+    def forfeiture_user_rows(logs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        grouped: dict[int, dict[str, Any]] = {}
+        for log in logs:
+            user_id = int(log.get("user_id") or 0)
+            row = grouped.setdefault(
+                user_id,
+                {
+                    "user_id": user_id,
+                    "display_name": str(log.get("display_name") or ""),
+                    "amount": Decimal("0"),
+                    "count": 0,
+                    "latest_forfeited_at": "",
+                    "latest_settled_at": "",
+                    "items": [],
+                },
+            )
+            amount = Decimal(str(log.get("amount") or "0"))
+            row["amount"] += amount
+            row["count"] += 1
+            if str(log.get("forfeited_at") or "") > str(row["latest_forfeited_at"]):
+                row["latest_forfeited_at"] = str(log.get("forfeited_at") or "")
+            if str(log.get("settled_at") or "") > str(row["latest_settled_at"]):
+                row["latest_settled_at"] = str(log.get("settled_at") or "")
+            row["items"].append(log)
+        rows = []
+        for row in grouped.values():
+            amount = Decimal(str(row["amount"] or "0"))
+            rows.append(
+                {
+                    **row,
+                    "amount_text": _money_text(amount),
+                }
+            )
+        rows.sort(
+            key=lambda item: (
+                -Decimal(str(item["amount"] or "0")),
+                str(item["display_name"]),
+            )
+        )
+        return rows
 
     return {
         "selected_alliance": selected_alliance,
@@ -3584,10 +3661,15 @@ def _my_alliance_payout_context(
             "unsettled_cash_text": _cash_text(unsettled_cash_sum),
             "forfeited_text": _money_text(forfeited_amount_sum),
             "forfeited_cash_text": _cash_text(forfeited_cash_sum),
+            "settled_forfeited_text": _money_text(settled_forfeited_amount_sum),
+            "settled_forfeited_cash_text": _cash_text(settled_forfeited_cash_sum),
             "settled_count": settled_count,
             "unsettled_count": unsettled_count,
             "forfeited_count": len(forfeiture_logs),
             "forfeiture_logs": forfeiture_logs,
+            "settled_forfeiture_logs": settled_forfeiture_logs,
+            "forfeiture_users": forfeiture_user_rows(forfeiture_logs),
+            "settled_forfeiture_users": forfeiture_user_rows(settled_forfeiture_logs),
         },
     }
 
@@ -6202,6 +6284,48 @@ async def settle_all_member_payouts(
     except ValueError:
         return _loot_redirect(selected_guild_id, saved="error", alliance_id=alliance_id)
     return _loot_redirect(selected_guild_id, saved="member_payout", alliance_id=alliance_id)
+
+
+@app.post("/loot/member-forfeitures/settle")
+async def settle_member_forfeitures(
+    request: Request,
+    guild_id: str | None = None,
+):
+    auth = _auth_context(request, guild_id)
+    if not auth:
+        return _auth_redirect(request)
+    selected_guild_id = int(auth["selected_guild_id"])
+    if not _can_manage_selected_server(auth):
+        return _loot_redirect(selected_guild_id, saved="forbidden")
+
+    body = (await request.body()).decode("utf-8")
+    form_data = {
+        key: values[-1] if values else ""
+        for key, values in parse_qs(body, keep_blank_values=True).items()
+    }
+    try:
+        requested_alliance_id = int(form_data.get("alliance_id") or "")
+    except ValueError:
+        requested_alliance_id = None
+    alliance_id = _allowed_loot_alliance_id(auth, requested_alliance_id)
+    if alliance_id is None:
+        return _loot_redirect(selected_guild_id, saved="forbidden")
+    try:
+        settled_count = database.settle_member_forfeitures(
+            selected_guild_id,
+            alliance_id,
+            settled_by_discord_id=int(auth["user"]["id"]),
+        )
+    except ValueError:
+        return _loot_redirect(selected_guild_id, saved="error", alliance_id=alliance_id)
+
+    if _wants_json(request):
+        return JSONResponse({"ok": True, "settled_count": settled_count})
+    return _loot_redirect(
+        selected_guild_id,
+        saved="member_forfeiture",
+        alliance_id=alliance_id,
+    )
 
 
 @app.post("/loot/delete")
