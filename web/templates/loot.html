@@ -1060,12 +1060,6 @@
                   data-adena-text="{{ my_alliance_payouts.summary.forfeited_text }}"
                   data-cash-text="{{ my_alliance_payouts.summary.forfeited_cash_text }}"
                 >{{ my_alliance_payouts.summary.forfeited_text }}</strong>
-                {% if auth.selected_server.can_manage and not my_alliance_payouts.selected_alliance.is_other %}
-                  <form method="post" action="/loot/member-forfeitures/settle?guild_id={{ auth.selected_guild_id }}" data-forfeiture-settle-form>
-                    <input type="hidden" name="alliance_id" value="{{ my_alliance_payouts.selected_alliance.alliance_id }}">
-                    <button class="tiny-button" type="submit" {% if my_alliance_payouts.summary.forfeited_count == 0 %}disabled{% endif %}>완료</button>
-                  </form>
-                {% endif %}
               </div>
             </div>
             <small>미정산 {{ my_alliance_payouts.summary.unsettled_count }}건 · 완료 {{ my_alliance_payouts.summary.settled_count }}건</small>
@@ -1103,7 +1097,15 @@
                 <h2 id="forfeiture-log-modal-title">귀속 혈비 내역</h2>
                 <span class="panel-caption">유저가 받지 않아 혈비로 귀속된 분배 기록입니다.</span>
               </div>
-              <button class="icon-button" type="button" aria-label="닫기" data-forfeiture-log-close>&times;</button>
+              <div class="forfeiture-modal-actions">
+                {% if auth.selected_server.can_manage and not my_alliance_payouts.selected_alliance.is_other %}
+                  <form method="post" action="/loot/member-forfeitures/settle?guild_id={{ auth.selected_guild_id }}" data-forfeiture-settle-form>
+                    <input type="hidden" name="alliance_id" value="{{ my_alliance_payouts.selected_alliance.alliance_id }}">
+                    <button class="tiny-button" type="submit" {% if my_alliance_payouts.summary.forfeited_count == 0 %}disabled{% endif %}>현재 귀속 완료</button>
+                  </form>
+                {% endif %}
+                <button class="icon-button" type="button" aria-label="닫기" data-forfeiture-log-close>&times;</button>
+              </div>
             </header>
             <div class="forfeiture-log-tabs" data-forfeiture-tabs>
               <button class="inner-tab-button is-active" type="button" data-forfeiture-tab="pending">귀속 혈비</button>
