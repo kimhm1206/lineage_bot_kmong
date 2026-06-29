@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import sys
 from dataclasses import dataclass
@@ -37,6 +38,7 @@ class GuildSettings:
     guild_id: int
     admin_channel_id: int | None = None
     attendance_voice_channel_id: int | None = None
+    attendance_voice_channel_ids: tuple[int, ...] = ()
     log_channel_id: int | None = None
     timer: int | None = None
     attendance_available_timer: int | None = None
@@ -102,6 +104,13 @@ class Database:
         value: int | None,
     ) -> GuildSettings:
         return update_setting(guild_id, column, value)
+
+    def update_attendance_voice_channel_ids(
+        self,
+        guild_id: int,
+        channel_ids: list[int],
+    ) -> GuildSettings:
+        return update_attendance_voice_channel_ids(guild_id, channel_ids)
 
     def save_attendance_session(
         self,
@@ -885,8 +894,9 @@ def get_settings(guild_id: int) -> GuildSettings:
     ensure_guild(guild_id)
     row = _fetchone(
         """
-        SELECT guild_id, admin_channel_id, attendance_voice_channel_id, log_channel_id,
-               timer, attendance_available_timer
+        SELECT guild_id, admin_channel_id, attendance_voice_channel_id,
+               attendance_voice_channel_ids, log_channel_id, timer,
+               attendance_available_timer
         FROM guild_settings
         WHERE guild_id = %s
         """,
@@ -894,10 +904,15 @@ def get_settings(guild_id: int) -> GuildSettings:
     )
     if row is None:
         return GuildSettings(guild_id=guild_id)
+    voice_channel_ids = tuple(_normalize_id_list(row["attendance_voice_channel_ids"]))
+    legacy_voice_channel_id = _optional_int(row["attendance_voice_channel_id"])
+    if not voice_channel_ids and legacy_voice_channel_id is not None:
+        voice_channel_ids = (legacy_voice_channel_id,)
     return GuildSettings(
         guild_id=int(row["guild_id"]),
         admin_channel_id=_optional_int(row["admin_channel_id"]),
-        attendance_voice_channel_id=_optional_int(row["attendance_voice_channel_id"]),
+        attendance_voice_channel_id=voice_channel_ids[0] if voice_channel_ids else None,
+        attendance_voice_channel_ids=voice_channel_ids,
         log_channel_id=_optional_int(row["log_channel_id"]),
         timer=_optional_int(row["timer"]),
         attendance_available_timer=_optional_int(row["attendance_available_timer"]),
@@ -921,6 +936,33 @@ def update_setting(guild_id: int, column: str, value: int | None) -> GuildSettin
             cursor.execute(
                 f"UPDATE guild_settings SET {column} = %s, updated_at = CURRENT_TIMESTAMP WHERE guild_id = %s",
                 (value, guild_id),
+            )
+        connection.commit()
+    return get_settings(guild_id)
+
+
+def update_attendance_voice_channel_ids(
+    guild_id: int,
+    channel_ids: list[int],
+) -> GuildSettings:
+    normalized_ids = _normalize_id_list(channel_ids)
+    ensure_guild(guild_id)
+    with _connect() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE guild_settings
+                SET
+                    attendance_voice_channel_id = %s,
+                    attendance_voice_channel_ids = %s,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE guild_id = %s
+                """,
+                (
+                    normalized_ids[0] if normalized_ids else None,
+                    Json(normalized_ids),
+                    guild_id,
+                ),
             )
         connection.commit()
     return get_settings(guild_id)
@@ -4746,6 +4788,35 @@ def _optional_int(value: Any) -> int | None:
     return int(value)
 
 
+def _normalize_id_list(value: Any) -> list[int]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        value = value.strip()
+        if not value:
+            return []
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            parsed = value.split(",")
+    else:
+        parsed = value
+    if not isinstance(parsed, (list, tuple, set)):
+        parsed = [parsed]
+    normalized: list[int] = []
+    seen: set[int] = set()
+    for item in parsed:
+        try:
+            item_id = int(item)
+        except (TypeError, ValueError):
+            continue
+        if item_id <= 0 or item_id in seen:
+            continue
+        seen.add(item_id)
+        normalized.append(item_id)
+    return normalized
+
+
 def _normalize_alliance_id_list(value: Any) -> list[int]:
     if value in (None, ""):
         return []
@@ -4821,6 +4892,7 @@ def _ensure_postgres_columns(cursor: psycopg2.extensions.cursor) -> None:
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP",
         "ALTER TABLE guilds ADD COLUMN IF NOT EXISTS is_enabled BOOLEAN NOT NULL DEFAULT FALSE",
         "ALTER TABLE items ADD COLUMN IF NOT EXISTS guild_id BIGINT REFERENCES guilds(guild_id) ON DELETE CASCADE",
+        "ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS attendance_voice_channel_ids JSONB NOT NULL DEFAULT '[]'::jsonb",
         "ALTER TABLE loot_events ADD COLUMN IF NOT EXISTS attendance_id BIGINT REFERENCES attendance_sessions(attendance_id) ON DELETE SET NULL",
         "ALTER TABLE loot_events ADD COLUMN IF NOT EXISTS adena_rate NUMERIC(18, 6) NOT NULL DEFAULT 0",
         "ALTER TABLE loot_events ADD COLUMN IF NOT EXISTS excluded_alliance_ids JSONB NOT NULL DEFAULT '[]'::jsonb",
@@ -4853,6 +4925,14 @@ def _ensure_postgres_columns(cursor: psycopg2.extensions.cursor) -> None:
         SET payout_status = CASE WHEN is_paid = TRUE THEN 'paid' ELSE 'unpaid' END
         WHERE payout_status NOT IN ('paid', 'unpaid', 'forfeited')
            OR (is_paid = TRUE AND payout_status = 'unpaid')
+        """
+    )
+    cursor.execute(
+        """
+        UPDATE guild_settings
+        SET attendance_voice_channel_ids = jsonb_build_array(attendance_voice_channel_id)
+        WHERE attendance_voice_channel_id IS NOT NULL
+          AND attendance_voice_channel_ids = '[]'::jsonb
         """
     )
     cursor.execute("ALTER TABLE scheduled_report_settings DROP CONSTRAINT IF EXISTS chk_scheduled_report_frequency")
@@ -5122,6 +5202,7 @@ CREATE TABLE IF NOT EXISTS guild_settings (
     guild_id BIGINT PRIMARY KEY REFERENCES guilds(guild_id) ON DELETE CASCADE,
     admin_channel_id BIGINT,
     attendance_voice_channel_id BIGINT,
+    attendance_voice_channel_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
     log_channel_id BIGINT,
     timer INTEGER,
     attendance_available_timer INTEGER,

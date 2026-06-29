@@ -38,7 +38,7 @@ def build_admin_panel_embed(
     )
     embed.add_field(
         name="출석 음성채널",
-        value=_format_channel(guild, settings.attendance_voice_channel_id),
+        value=_format_channels(guild, settings.attendance_voice_channel_ids),
         inline=False,
     )
     embed.add_field(
@@ -62,7 +62,7 @@ def build_admin_panel_embed(
 
 def build_attendance_embed(
     guild: discord.Guild,
-    voice_channel: discord.abc.GuildChannel,
+    voice_channels: list[discord.abc.GuildChannel],
     seconds: int,
 ) -> discord.Embed:
     minutes = seconds // 60
@@ -71,7 +71,11 @@ def build_attendance_embed(
         description="아래 버튼을 누르거나 `/출석` 명령어로 참여할 수 있습니다.",
         color=discord.Color.green(),
     )
-    embed.add_field(name="대상 음성채널", value=voice_channel.mention, inline=False)
+    embed.add_field(
+        name="대상 음성채널",
+        value="\n".join(channel.mention for channel in voice_channels),
+        inline=False,
+    )
     embed.add_field(name="타이머", value=_format_timer(seconds), inline=False)
     embed.add_field(
         name="문의",
@@ -214,6 +218,15 @@ def _format_channel(guild: discord.Guild, channel_id: int | None) -> str:
     return channel.mention
 
 
+def _format_channels(guild: discord.Guild, channel_ids: tuple[int, ...]) -> str:
+    mentions = [
+        _format_channel(guild, channel_id)
+        for channel_id in channel_ids
+        if channel_id is not None
+    ]
+    return "\n".join(mentions) if mentions else "미설정"
+
+
 def _format_timer(seconds: int | None) -> str:
     if seconds is None:
         return "미설정"
@@ -276,6 +289,7 @@ def get_attendance_state(bot: discord.Bot, guild_id: int) -> dict[str, object | 
             "expires_at": None,
             "live_session_id": None,
             "voice_channel_id": None,
+            "voice_channel_ids": [],
             "attendance_available_timer": None,
             "participants": set(),
             "participant_times": {},
@@ -296,6 +310,7 @@ def set_attendance_state(
     expires_at: object | None = None,
     live_session_id: int | None = None,
     voice_channel_id: int | None = None,
+    voice_channel_ids: list[int] | tuple[int, ...] | None = None,
     attendance_available_timer: int | None = None,
 ) -> None:
     state = get_attendance_state(bot, guild_id)
@@ -308,6 +323,7 @@ def set_attendance_state(
     state["expires_at"] = expires_at
     state["live_session_id"] = live_session_id
     state["voice_channel_id"] = voice_channel_id
+    state["voice_channel_ids"] = list(voice_channel_ids or [])
     state["attendance_available_timer"] = attendance_available_timer
     state["participants"] = set()
     state["participant_times"] = {}
@@ -333,6 +349,7 @@ def clear_attendance_state(bot: discord.Bot, guild_id: int) -> None:
     state["expires_at"] = None
     state["live_session_id"] = None
     state["voice_channel_id"] = None
+    state["voice_channel_ids"] = []
     state["attendance_available_timer"] = None
     state["participants"] = set()
     state["participant_times"] = {}

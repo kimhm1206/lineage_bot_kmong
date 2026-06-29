@@ -189,14 +189,15 @@ async def start_attendance(
             return False, "이미 출석이 진행 중입니다."
 
         settings = database.get_settings(guild.id)
-        if settings.attendance_voice_channel_id is None:
+        voice_channel_ids = _settings_voice_channel_ids(settings)
+        if not voice_channel_ids:
             return False, "출석 음성채널을 먼저 설정해주세요."
 
         if settings.timer is None:
             return False, "타이머를 먼저 설정해주세요."
 
-        voice_channel = guild.get_channel(settings.attendance_voice_channel_id)
-        if voice_channel is None:
+        voice_channels = _resolve_voice_channels(guild, voice_channel_ids)
+        if not voice_channels:
             return False, "설정된 출석 음성채널을 찾을 수 없습니다."
 
         attendance_channel_id = settings.admin_channel_id
@@ -208,7 +209,7 @@ async def start_attendance(
             return False, "설정된 출석 채널에 메시지를 보낼 수 없습니다."
 
         attendance_message = await attendance_channel.send(
-            embed=build_attendance_embed(guild, voice_channel, settings.timer),
+            embed=build_attendance_embed(guild, voice_channels, settings.timer),
             view=AttendanceActionView(bot, guild.id),
         )
 
@@ -231,7 +232,8 @@ async def start_attendance(
             started_at=started_at_text,
             expires_at=expires_at_text,
             live_session_id=None,
-            voice_channel_id=settings.attendance_voice_channel_id,
+            voice_channel_id=voice_channel_ids[0],
+            voice_channel_ids=voice_channel_ids,
             attendance_available_timer=settings.attendance_available_timer,
         )
         _schedule_attendance_state_publish(bot, guild.id)
@@ -299,10 +301,10 @@ async def register_attendance(
     if not bool(state.get("active")):
         return False, "현재 출석이 진행 중이 아닙니다."
 
-    voice_channel_id = _optional_int(state.get("voice_channel_id"))
+    voice_channel_ids = _state_voice_channel_ids(state)
     current_voice = getattr(member.voice, "channel", None)
     current_voice_id = getattr(current_voice, "id", None)
-    if voice_channel_id is None or current_voice_id != voice_channel_id:
+    if current_voice_id not in voice_channel_ids:
         return False, "설정된 출석 음성채널에 들어가 있어야 출석할 수 있습니다."
 
     available_timer = _optional_int(state.get("attendance_available_timer"))
@@ -550,45 +552,51 @@ def sync_voice_entry_time(
     after_channel_id: int | None,
 ) -> None:
     attendance_state = get_attendance_state(bot, guild_id)
-    tracked_channel_id = (
-        _optional_int(attendance_state.get("voice_channel_id"))
+    tracked_channel_ids = (
+        _state_voice_channel_ids(attendance_state)
         if bool(attendance_state.get("active"))
-        else None
+        else []
     )
-    if tracked_channel_id is None:
+    if not tracked_channel_ids:
         settings = database.get_settings(guild_id)
-        tracked_channel_id = settings.attendance_voice_channel_id
-    if tracked_channel_id is None:
+        tracked_channel_ids = _settings_voice_channel_ids(settings)
+    tracked_channel_id_set = set(tracked_channel_ids)
+    if not tracked_channel_id_set:
         clear_voice_entry_time(bot, guild_id, member_id)
         return
 
-    if after_channel_id == tracked_channel_id:
-        if before_channel_id != tracked_channel_id:
+    if after_channel_id in tracked_channel_id_set:
+        if before_channel_id != after_channel_id:
             set_voice_entry_time(bot, guild_id, member_id, _now_kst())
         return
 
-    if before_channel_id == tracked_channel_id or after_channel_id != tracked_channel_id:
+    if before_channel_id in tracked_channel_id_set or after_channel_id not in tracked_channel_id_set:
         clear_voice_entry_time(bot, guild_id, member_id)
 
 
 def seed_voice_entry_times(bot: discord.Bot, guild: discord.Guild) -> None:
     settings = database.get_settings(guild.id)
-    tracked_channel_id = settings.attendance_voice_channel_id
-    if tracked_channel_id is None:
+    tracked_channel_ids = _settings_voice_channel_ids(settings)
+    if not tracked_channel_ids:
         return
 
-    channel = guild.get_channel(tracked_channel_id)
-    if not isinstance(channel, discord.VoiceChannel):
+    channels = _resolve_voice_channels(guild, tracked_channel_ids)
+    if not channels:
         return
 
     now = _now_kst()
-    tracked_members = {member.id for member in channel.members}
+    tracked_members = {
+        member.id
+        for channel in channels
+        for member in channel.members
+    }
     voice_entry_times = _get_voice_entry_times(bot, guild.id)
     for member_id in list(voice_entry_times.keys()):
         if member_id not in tracked_members:
             voice_entry_times.pop(member_id, None)
-    for member in channel.members:
-        voice_entry_times.setdefault(member.id, now)
+    for channel in channels:
+        for member in channel.members:
+            voice_entry_times.setdefault(member.id, now)
 
 
 def get_voice_entry_time(
@@ -696,6 +704,55 @@ def _optional_int(value: object) -> int | None:
     if value is None:
         return None
     return int(value)
+
+
+def _normalize_channel_ids(value: object) -> list[int]:
+    if value is None:
+        return []
+    if isinstance(value, (list, tuple, set)):
+        items = value
+    else:
+        items = [value]
+    normalized: list[int] = []
+    seen: set[int] = set()
+    for item in items:
+        try:
+            channel_id = _optional_int(item)
+        except (TypeError, ValueError):
+            continue
+        if channel_id is None or channel_id in seen:
+            continue
+        seen.add(channel_id)
+        normalized.append(channel_id)
+    return normalized
+
+
+def _settings_voice_channel_ids(settings: Any) -> list[int]:
+    channel_ids = _normalize_channel_ids(
+        getattr(settings, "attendance_voice_channel_ids", None)
+    )
+    if channel_ids:
+        return channel_ids
+    return _normalize_channel_ids(getattr(settings, "attendance_voice_channel_id", None))
+
+
+def _state_voice_channel_ids(state: dict[str, Any]) -> list[int]:
+    channel_ids = _normalize_channel_ids(state.get("voice_channel_ids"))
+    if channel_ids:
+        return channel_ids
+    return _normalize_channel_ids(state.get("voice_channel_id"))
+
+
+def _resolve_voice_channels(
+    guild: discord.Guild,
+    channel_ids: list[int],
+) -> list[discord.VoiceChannel]:
+    channels: list[discord.VoiceChannel] = []
+    for channel_id in channel_ids:
+        channel = guild.get_channel(channel_id)
+        if isinstance(channel, discord.VoiceChannel):
+            channels.append(channel)
+    return channels
 
 
 def _coerce_timestamp(value: object) -> str:

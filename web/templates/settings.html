@@ -527,7 +527,7 @@
         </label>
 
         <label class="field">
-          <span>출석 음성채널</span>
+          <span>출석 음성채널 1</span>
           <select name="attendance_voice_channel_id" {% if not auth.selected_server.can_manage %}disabled{% endif %}>
             <option value="" {% if not form.attendance_voice_channel_id %}selected{% endif %}>선택 안함</option>
             {% for channel in channels.voice %}
@@ -537,6 +537,19 @@
             {% endfor %}
           </select>
           <small>출석 대상자가 실제로 들어와 있어야 하는 음성채널입니다.</small>
+        </label>
+
+        <label class="field">
+          <span>출석 음성채널 2</span>
+          <select name="attendance_voice_channel_id_2" {% if not auth.selected_server.can_manage %}disabled{% endif %}>
+            <option value="" {% if not form.attendance_voice_channel_id_2 %}selected{% endif %}>선택 안함</option>
+            {% for channel in channels.voice %}
+              <option value="{{ channel.id }}" {% if form.attendance_voice_channel_id_2|string == channel.id %}selected{% endif %}>
+                {{ channel.label }}
+              </option>
+            {% endfor %}
+          </select>
+          <small>선택 시 두 채널 중 한 곳에 들어와 있으면 출석할 수 있습니다.</small>
         </label>
 
         <label class="field">

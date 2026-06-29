@@ -1784,11 +1784,16 @@ def _my_alliance_url(
     return f"/my-alliance?{urlencode(params)}"
 
 
-def _settings_to_dict(settings: Any) -> dict[str, int | None]:
+def _settings_to_dict(settings: Any) -> dict[str, Any]:
+    voice_channel_ids = list(getattr(settings, "attendance_voice_channel_ids", ()) or ())
     return {
         "guild_id": settings.guild_id,
         "admin_channel_id": settings.admin_channel_id,
         "attendance_voice_channel_id": settings.attendance_voice_channel_id,
+        "attendance_voice_channel_id_2": (
+            voice_channel_ids[1] if len(voice_channel_ids) > 1 else None
+        ),
+        "attendance_voice_channel_ids": voice_channel_ids,
         "log_channel_id": settings.log_channel_id,
         "timer": settings.timer,
         "attendance_available_timer": settings.attendance_available_timer,
@@ -1888,6 +1893,28 @@ def _validate_channel_value(
     return channel_id
 
 
+def _validate_channel_values(
+    field_label: str,
+    raw_values: list[str | None],
+    allowed_ids: set[int],
+    errors: list[str],
+) -> list[int]:
+    channel_ids: list[int] = []
+    seen: set[int] = set()
+    for index, raw_value in enumerate(raw_values, start=1):
+        channel_id = _validate_channel_value(
+            f"{field_label} {index}",
+            raw_value,
+            allowed_ids,
+            errors,
+        )
+        if channel_id is None or channel_id in seen:
+            continue
+        seen.add(channel_id)
+        channel_ids.append(channel_id)
+    return channel_ids
+
+
 def _validate_timer_value(
     field_label: str,
     raw_value: str | None,
@@ -1905,9 +1932,20 @@ def _validate_timer_value(
 
 
 def _settings_form_from_values(values: dict[str, Any]) -> dict[str, Any]:
+    voice_channel_ids = values.get("attendance_voice_channel_ids") or []
+    if not isinstance(voice_channel_ids, list):
+        voice_channel_ids = []
     return {
         "admin_channel_id": values.get("admin_channel_id"),
-        "attendance_voice_channel_id": values.get("attendance_voice_channel_id"),
+        "attendance_voice_channel_id": (
+            values.get("attendance_voice_channel_id")
+            or (voice_channel_ids[0] if len(voice_channel_ids) > 0 else None)
+        ),
+        "attendance_voice_channel_id_2": (
+            values.get("attendance_voice_channel_id_2")
+            or (voice_channel_ids[1] if len(voice_channel_ids) > 1 else None)
+        ),
+        "attendance_voice_channel_ids": voice_channel_ids,
         "log_channel_id": values.get("log_channel_id"),
         "timer": values.get("timer"),
         "attendance_available_timer": values.get("attendance_available_timer"),
@@ -6453,17 +6491,20 @@ async def update_settings(
     errors: list[str] = []
     text_channel_ids = _channel_ids(channels["text"])
     voice_channel_ids = _channel_ids(channels["voice"])
+    attendance_voice_channel_ids = _validate_channel_values(
+        "출석 음성채널",
+        [
+            form_data.get("attendance_voice_channel_id"),
+            form_data.get("attendance_voice_channel_id_2"),
+        ],
+        voice_channel_ids,
+        errors,
+    )
     settings_values = {
         "admin_channel_id": _validate_channel_value(
             "출석 패널 채널",
             form_data.get("admin_channel_id"),
             text_channel_ids,
-            errors,
-        ),
-        "attendance_voice_channel_id": _validate_channel_value(
-            "출석 음성채널",
-            form_data.get("attendance_voice_channel_id"),
-            voice_channel_ids,
             errors,
         ),
         "log_channel_id": _validate_channel_value(
@@ -6510,6 +6551,10 @@ async def update_settings(
 
     for column, value in settings_values.items():
         database.update_setting(selected_guild_id, column, value)
+    database.update_attendance_voice_channel_ids(
+        selected_guild_id,
+        attendance_voice_channel_ids,
+    )
 
     _enqueue_bot_command(
         selected_guild_id,
@@ -6517,7 +6562,10 @@ async def update_settings(
         int(auth["user"]["id"]),
         {
             "previous_admin_channel_id": previous_settings.admin_channel_id,
-            "updated_columns": list(settings_values),
+            "updated_columns": [
+                *list(settings_values),
+                "attendance_voice_channel_ids",
+            ],
         },
     )
     return RedirectResponse(
