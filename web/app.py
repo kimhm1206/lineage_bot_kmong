@@ -4215,7 +4215,8 @@ def _latest_attendance_sessions(guild_id: int, limit: int = 20) -> list[dict[str
 
 
 def _loot_attendance_options(guild_id: int) -> list[dict[str, Any]]:
-    sessions = database.get_attendance_status_sessions(guild_id, 50, 0)
+    session_count = database.count_attendance_status_sessions(guild_id)
+    sessions = database.get_attendance_status_sessions(guild_id, session_count, 0)
     for session in sessions:
         alliance_summary = ", ".join(
             f"{alliance['alliance_name']} {alliance['count']}명"
