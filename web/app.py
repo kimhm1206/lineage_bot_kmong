@@ -3830,6 +3830,7 @@ def _loot_url(
     mine: bool | None = None,
     status: str | None = None,
     alliance_id: int | str | None = None,
+    loot_page: int | None = None,
     tab: str = "distribution",
 ) -> str:
     params: dict[str, Any] = {"guild_id": guild_id}
@@ -3843,7 +3844,54 @@ def _loot_url(
         params["status"] = status
     if alliance_id:
         params["alliance_id"] = alliance_id
+    if loot_page and loot_page > 1:
+        params["loot_page"] = loot_page
     return f"/loot?{urlencode(params)}#{tab}"
+
+
+def _loot_pagination_items(
+    guild_id: int,
+    current_page: int,
+    total_pages: int,
+    *,
+    period: str,
+    mine_only: bool,
+    status: str,
+    alliance_id: int | str | None,
+) -> list[dict[str, Any]]:
+    if total_pages <= 1:
+        return []
+
+    pages = {total_pages, current_page}
+    pages.update(range(1, min(5, total_pages) + 1))
+    for page in range(current_page - 2, current_page + 3):
+        if 1 <= page <= total_pages:
+            pages.add(page)
+
+    items: list[dict[str, Any]] = []
+    previous_page = 0
+    for page in sorted(pages):
+        if previous_page and page - previous_page > 1:
+            items.append({"type": "ellipsis", "label": "..."})
+        items.append(
+            {
+                "type": "page",
+                "label": str(page),
+                "page": page,
+                "href": _loot_url(
+                    guild_id,
+                    period=period,
+                    mine=mine_only,
+                    status=status,
+                    alliance_id=alliance_id,
+                    loot_page=page,
+                    tab="distribution",
+                ),
+                "active": page == current_page,
+            }
+        )
+        previous_page = page
+    return items
 
 
 def _loot_period_filters(
@@ -4215,8 +4263,77 @@ def _latest_attendance_sessions(guild_id: int, limit: int = 20) -> list[dict[str
 
 
 def _loot_attendance_options(guild_id: int) -> list[dict[str, Any]]:
-    session_count = database.count_attendance_status_sessions(guild_id)
-    sessions = database.get_attendance_status_sessions(guild_id, session_count, 0)
+    session_rows = database.fetchall(
+        """
+        SELECT
+            s.attendance_id,
+            s.started_at,
+            s.ended_at,
+            s.started_by_discord_id,
+            COALESCE(
+                MAX(starter.discord_nickname),
+                s.started_by_discord_id::text
+            ) AS started_by_name,
+            COUNT(e.user_id) AS participant_count
+        FROM attendance_sessions s
+        LEFT JOIN attendance_entries e ON e.attendance_id = s.attendance_id
+        LEFT JOIN users starter ON starter.discord_id = s.started_by_discord_id
+        WHERE s.guild_id = %s
+        GROUP BY
+            s.attendance_id,
+            s.started_at,
+            s.ended_at,
+            s.started_by_discord_id
+        ORDER BY s.started_at DESC
+        """,
+        (guild_id,),
+    )
+    session_ids = [int(row["attendance_id"]) for row in session_rows]
+    alliance_counts_by_session: dict[int, list[dict[str, Any]]] = {
+        attendance_id: [] for attendance_id in session_ids
+    }
+    if session_ids:
+        alliance_rows = database.fetchall(
+            """
+            SELECT
+                e.attendance_id,
+                u.alliance_id,
+                COALESCE(a.alliance_name, '미분류') AS alliance_name,
+                COUNT(*) AS count
+            FROM attendance_entries e
+            INNER JOIN attendance_sessions s ON s.attendance_id = e.attendance_id
+            INNER JOIN users u ON u.user_id = e.user_id
+            LEFT JOIN alliances a ON a.alliance_id = u.alliance_id
+            WHERE s.guild_id = %s
+            GROUP BY e.attendance_id, u.alliance_id, COALESCE(a.alliance_name, '미분류')
+            ORDER BY e.attendance_id DESC, alliance_name ASC
+            """,
+            (guild_id,),
+        )
+        for row in alliance_rows:
+            attendance_id = int(row["attendance_id"])
+            alliance_counts_by_session.setdefault(attendance_id, []).append(
+                {
+                    "alliance_id": _parse_optional_int(row["alliance_id"]),
+                    "alliance_name": str(row["alliance_name"]),
+                    "count": int(row["count"] or 0),
+                    "members": [],
+                }
+            )
+
+    sessions = [
+        {
+            "attendance_id": int(row["attendance_id"]),
+            "started_at": str(row["started_at"]),
+            "ended_at": str(row["ended_at"]),
+            "started_by_discord_id": _parse_optional_int(row["started_by_discord_id"]),
+            "started_by_name": row["started_by_name"] or "",
+            "participant_count": int(row["participant_count"] or 0),
+            "alliances": alliance_counts_by_session.get(int(row["attendance_id"]), []),
+            "detail_loaded": False,
+        }
+        for row in session_rows
+    ]
     for session in sessions:
         alliance_summary = ", ".join(
             f"{alliance['alliance_name']} {alliance['count']}명"
@@ -4228,6 +4345,103 @@ def _loot_attendance_options(guild_id: int) -> list[dict[str, Any]]:
         )
         session["alliance_summary"] = alliance_summary or "출석 없음"
     return sessions
+
+
+def _loot_attendance_detail(guild_id: int, attendance_id: int) -> dict[str, Any] | None:
+    session_row = database.fetchone(
+        """
+        SELECT
+            s.attendance_id,
+            s.started_at,
+            s.ended_at,
+            s.started_by_discord_id,
+            COALESCE(
+                starter.discord_nickname,
+                s.started_by_discord_id::text
+            ) AS started_by_name,
+            COUNT(e.user_id) AS participant_count
+        FROM attendance_sessions s
+        LEFT JOIN attendance_entries e ON e.attendance_id = s.attendance_id
+        LEFT JOIN users starter ON starter.discord_id = s.started_by_discord_id
+        WHERE s.guild_id = %s
+          AND s.attendance_id = %s
+        GROUP BY
+            s.attendance_id,
+            s.started_at,
+            s.ended_at,
+            s.started_by_discord_id,
+            starter.discord_nickname
+        """,
+        (guild_id, attendance_id),
+    )
+    if session_row is None:
+        return None
+    participant_rows = database.fetchall(
+        """
+        SELECT
+            u.alliance_id,
+            COALESCE(a.alliance_name, '미분류') AS alliance_name,
+            u.user_id,
+            u.discord_id,
+            u.discord_nickname
+        FROM attendance_entries e
+        INNER JOIN users u ON u.user_id = e.user_id
+        LEFT JOIN alliances a ON a.alliance_id = u.alliance_id
+        WHERE e.attendance_id = %s
+        ORDER BY alliance_name ASC, u.discord_nickname ASC
+        """,
+        (attendance_id,),
+    )
+    grouped: dict[int | None, dict[str, Any]] = {}
+    for row in participant_rows:
+        alliance_id = _parse_optional_int(row["alliance_id"])
+        group = grouped.setdefault(
+            alliance_id,
+            {
+                "alliance_id": alliance_id,
+                "alliance_name": str(row["alliance_name"]),
+                "members": [],
+            },
+        )
+        group["members"].append(
+            {
+                "user_id": int(row["user_id"]),
+                "discord_id": int(row["discord_id"]),
+                "discord_nickname": str(row["discord_nickname"]),
+            }
+        )
+    session = {
+        "attendance_id": int(session_row["attendance_id"]),
+        "started_at": str(session_row["started_at"]),
+        "ended_at": str(session_row["ended_at"]),
+        "started_by_discord_id": _parse_optional_int(session_row["started_by_discord_id"]),
+        "started_by_name": session_row["started_by_name"] or "",
+        "participant_count": int(session_row["participant_count"] or 0),
+        "alliances": [
+            {
+                "alliance_id": group["alliance_id"],
+                "alliance_name": group["alliance_name"],
+                "count": len(group["members"]),
+                "members": group["members"],
+            }
+            for group in sorted(
+                grouped.values(),
+                key=lambda item: str(item["alliance_name"]),
+            )
+        ],
+    }
+
+    alliance_summary = ", ".join(
+        f"{alliance['alliance_name']} {alliance['count']}명"
+        for alliance in session.get("alliances", [])
+    )
+    session["label"] = (
+        f"#{session['attendance_id']} · {session['started_at']} · "
+        f"총 {session['participant_count']}명"
+    )
+    session["alliance_summary"] = alliance_summary or "출석 없음"
+    session["detail_loaded"] = True
+    return session
 
 
 def _default_loot_form(guild_id: int) -> dict[str, str]:
@@ -4284,6 +4498,7 @@ def _loot_template_context(
     alliance_id: int | str | None = None,
     mine: str | None = None,
     status: str | None = None,
+    loot_page: int = 1,
 ) -> dict[str, Any]:
     active_period, period_start, period_label = _loot_period_bounds(period)
     active_status = _normalize_loot_status_filter(status)
@@ -4312,10 +4527,22 @@ def _loot_template_context(
         viewer_current_alliance_ids,
     )
     loot_events = _filter_loot_events_by_period(all_events, period_start)
-    distribution_events = _filter_loot_events_by_status(
+    distribution_events_all = _filter_loot_events_by_status(
         _filter_loot_events_by_viewer(loot_events, mine_only),
         active_status,
     )
+    distribution_page_size = 50
+    distribution_total_count = len(distribution_events_all)
+    distribution_total_pages = max(
+        1,
+        (distribution_total_count + distribution_page_size - 1)
+        // distribution_page_size,
+    )
+    current_loot_page = max(1, min(int(loot_page or 1), distribution_total_pages))
+    distribution_start = (current_loot_page - 1) * distribution_page_size
+    distribution_events = distribution_events_all[
+        distribution_start : distribution_start + distribution_page_size
+    ]
     selected_alliance, alliance_options = _loot_alliance_selection(auth, alliance_id)
     return {
         "auth": auth,
@@ -4327,7 +4554,60 @@ def _loot_template_context(
         "item_prices": _decorate_item_prices(database.get_item_price_settings(guild_id)),
         "loot_events": loot_events,
         "distribution_events": distribution_events,
-        "loot_summary": _loot_distribution_summary(distribution_events),
+        "loot_summary": _loot_distribution_summary(distribution_events_all),
+        "distribution_pagination": {
+            "current_page": current_loot_page,
+            "total_pages": distribution_total_pages,
+            "total_count": distribution_total_count,
+            "page_size": distribution_page_size,
+            "first_href": _loot_url(
+                guild_id,
+                period=active_period,
+                mine=mine_only,
+                status=active_status,
+                alliance_id=alliance_id,
+                loot_page=1,
+                tab="distribution",
+            ),
+            "prev_href": _loot_url(
+                guild_id,
+                period=active_period,
+                mine=mine_only,
+                status=active_status,
+                alliance_id=alliance_id,
+                loot_page=max(1, current_loot_page - 1),
+                tab="distribution",
+            ),
+            "next_href": _loot_url(
+                guild_id,
+                period=active_period,
+                mine=mine_only,
+                status=active_status,
+                alliance_id=alliance_id,
+                loot_page=min(distribution_total_pages, current_loot_page + 1),
+                tab="distribution",
+            ),
+            "last_href": _loot_url(
+                guild_id,
+                period=active_period,
+                mine=mine_only,
+                status=active_status,
+                alliance_id=alliance_id,
+                loot_page=distribution_total_pages,
+                tab="distribution",
+            ),
+            "has_previous": current_loot_page > 1,
+            "has_next": current_loot_page < distribution_total_pages,
+            "items": _loot_pagination_items(
+                guild_id,
+                current_loot_page,
+                distribution_total_pages,
+                period=active_period,
+                mine_only=mine_only,
+                status=active_status,
+                alliance_id=alliance_id,
+            ),
+        },
         "bid_dashboard": database.get_bid_item_dashboard(guild_id),
         "alliance_payout_groups": _alliance_payout_group_context(
             guild_id,
@@ -5362,6 +5642,7 @@ def loot_drops(
     alliance_id: str | None = None,
     mine: str | None = None,
     status: str | None = None,
+    loot_page: int = 1,
 ):
     auth = _auth_context(request, guild_id)
     if not auth:
@@ -5380,8 +5661,31 @@ def loot_drops(
             alliance_id=alliance_id,
             mine=mine,
             status=status,
+            loot_page=loot_page,
         ),
     )
+
+
+@app.get("/loot/attendance-detail")
+def loot_attendance_detail(
+    request: Request,
+    guild_id: str | None = None,
+    attendance_id: int = 0,
+):
+    auth = _auth_context(request, guild_id)
+    if not auth:
+        return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
+
+    selected_guild_id = int(auth["selected_guild_id"])
+    if not _can_bookkeep_selected_server(auth):
+        return JSONResponse({"ok": False, "error": "forbidden"}, status_code=403)
+    if attendance_id <= 0:
+        return JSONResponse({"ok": False, "error": "invalid_attendance_id"}, status_code=400)
+
+    session = _loot_attendance_detail(selected_guild_id, attendance_id)
+    if session is None:
+        return JSONResponse({"ok": False, "error": "not_found"}, status_code=404)
+    return JSONResponse({"ok": True, "session": session})
 
 
 @app.post("/loot", response_class=HTMLResponse)

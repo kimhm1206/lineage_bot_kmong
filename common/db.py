@@ -5072,6 +5072,22 @@ def _ensure_postgres_columns(cursor: psycopg2.extensions.cursor) -> None:
         "ON distribution_batches(guild_id)"
     )
     cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_distribution_batches_loot_event "
+        "ON distribution_batches(loot_event_id)"
+    )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_distribution_alliance_payouts_distribution "
+        "ON distribution_alliance_payouts(distribution_id)"
+    )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_loot_event_items_event "
+        "ON loot_event_items(loot_event_id)"
+    )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_loot_event_participants_event "
+        "ON loot_event_participants(loot_event_id)"
+    )
+    cursor.execute(
         "CREATE INDEX IF NOT EXISTS idx_member_payout_rule_snapshots_distribution_alliance "
         "ON member_payout_rule_snapshots(distribution_id, alliance_id)"
     )
@@ -5574,4 +5590,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_bid_items_guild_name_unique ON bid_items(g
 CREATE UNIQUE INDEX IF NOT EXISTS idx_bid_results_unique_cycle ON bid_item_results(guild_id, bid_item_id, alliance_id, cycle_no);
 CREATE INDEX IF NOT EXISTS idx_bid_results_item_cycle ON bid_item_results(guild_id, bid_item_id, cycle_no);
 CREATE INDEX IF NOT EXISTS idx_loot_events_date ON loot_events(event_date);
+CREATE INDEX IF NOT EXISTS idx_distribution_batches_loot_event ON distribution_batches(loot_event_id);
+CREATE INDEX IF NOT EXISTS idx_distribution_alliance_payouts_distribution ON distribution_alliance_payouts(distribution_id);
+CREATE INDEX IF NOT EXISTS idx_loot_event_items_event ON loot_event_items(loot_event_id);
+CREATE INDEX IF NOT EXISTS idx_loot_event_participants_event ON loot_event_participants(loot_event_id);
 """

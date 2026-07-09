@@ -11,7 +11,7 @@
     </div>
     <div class="loot-hero-tools">
       <div class="server-summary">
-        {{ loot_period.label }} {{ distribution_events|length }}건
+        {{ loot_period.label }} {{ loot_summary.event_count }}건
       </div>
     </div>
   </section>
@@ -55,6 +55,24 @@
       {% endfor %}
     </div>
   {% endif %}
+
+  {% macro pagination_controls(pagination) %}
+    {% if pagination.total_pages > 1 %}
+      <nav class="pagination" aria-label="분배금 현황 페이지">
+        <a class="page-control {% if not pagination.has_previous %}is-disabled{% endif %}" href="{{ pagination.first_href }}">&lt;&lt;</a>
+        <a class="page-control {% if not pagination.has_previous %}is-disabled{% endif %}" href="{{ pagination.prev_href }}">&lt;</a>
+        {% for item in pagination["items"] %}
+          {% if item.type == "ellipsis" %}
+            <span class="page-ellipsis">{{ item.label }}</span>
+          {% else %}
+            <a class="page-control {% if item.active %}is-active{% endif %}" href="{{ item.href }}">{{ item.label }}</a>
+          {% endif %}
+        {% endfor %}
+        <a class="page-control {% if not pagination.has_next %}is-disabled{% endif %}" href="{{ pagination.next_href }}">&gt;</a>
+        <a class="page-control {% if not pagination.has_next %}is-disabled{% endif %}" href="{{ pagination.last_href }}">&gt;&gt;</a>
+      </nav>
+    {% endif %}
+  {% endmacro %}
 
   <nav class="loot-tabs" aria-label="드랍&분배 탭">
     <a class="loot-tab-button is-active" href="#distribution" data-loot-tab="distribution" data-required-role="user">분배금 현황</a>
@@ -149,6 +167,8 @@
       </div>
     </div>
 
+    {{ pagination_controls(distribution_pagination) }}
+
     <section class="loot-event-list" aria-label="분배금 현황">
       {% for event in distribution_events %}
         <details class="panel loot-event-card distribution-card distribution-compact-card {{ event.viewer_payout_class }}" data-distribution-card>
@@ -216,6 +236,8 @@
         </article>
       {% endfor %}
     </section>
+
+    {{ pagination_controls(distribution_pagination) }}
   </section>
 
   <section class="loot-tab-panel" data-loot-panel="item-bids" hidden>
@@ -1635,12 +1657,14 @@
     const canManageLoot = {{ auth.selected_server.can_manage | tojson }};
     const canBookkeepLoot = {{ auth.selected_server.can_bookkeep | tojson }};
     const canViewMyAlliancePayouts = {{ (auth.selected_server.can_manage and auth.selected_server.my_alliance.can_view) | tojson }};
+    const selectedGuildId = {{ auth.selected_guild_id | tojson }};
     const attendanceOptions = {{ attendance_options | tojson }};
     const attendanceSelect = document.querySelector("[data-loot-attendance]");
     const attendancePreview = document.querySelector("[data-loot-attendance-preview]");
     const itemSelect = document.querySelector("[data-loot-item]");
     const createForm = document.querySelector("[data-loot-form]");
     const excludedAllianceInput = document.querySelector("[data-loot-excluded-alliances]");
+    const attendanceDetailRequests = new Map();
     const excludedAllianceIds = new Set(
       String(excludedAllianceInput?.value || "")
         .split(",")
@@ -1649,6 +1673,38 @@
     );
     function selectedAttendance() {
       return attendanceOptions.find((session) => String(session.attendance_id) === attendanceSelect?.value);
+    }
+
+    async function loadAttendanceDetail(session) {
+      if (!session || session.detail_loaded || session.detail_error) {
+        return session;
+      }
+      const key = String(session.attendance_id);
+      if (!attendanceDetailRequests.has(key)) {
+        const url = `/loot/attendance-detail?guild_id=${encodeURIComponent(selectedGuildId)}&attendance_id=${encodeURIComponent(key)}`;
+        const request = fetch(url, { headers: { "Accept": "application/json" } })
+          .then(async (response) => {
+            if (!response.ok) {
+              throw new Error(`attendance detail ${response.status}`);
+            }
+            const payload = await response.json();
+            if (!payload.ok || !payload.session) {
+              throw new Error("attendance detail failed");
+            }
+            Object.assign(session, payload.session);
+            return session;
+          })
+          .catch((error) => {
+            console.error(error);
+            session.detail_error = true;
+            return session;
+          })
+          .finally(() => {
+            attendanceDetailRequests.delete(key);
+          });
+        attendanceDetailRequests.set(key, request);
+      }
+      return attendanceDetailRequests.get(key);
     }
 
     function syncExcludedAllianceInput() {
@@ -1729,6 +1785,28 @@
       });
       if (toggles.children.length > 0) {
         attendancePreview.appendChild(toggles);
+      }
+
+      if (!selected.detail_loaded && !selected.detail_error) {
+        const loading = document.createElement("div");
+        loading.className = "empty report-empty";
+        loading.textContent = "출석 유저를 불러오는 중입니다.";
+        attendancePreview.appendChild(loading);
+        const selectedId = String(selected.attendance_id);
+        loadAttendanceDetail(selected).then(() => {
+          if (String(attendanceSelect?.value || "") === selectedId) {
+            renderAttendancePreview();
+          }
+        });
+        return;
+      }
+
+      if (selected.detail_error) {
+        const error = document.createElement("div");
+        error.className = "empty report-empty";
+        error.textContent = "출석 유저를 불러오지 못했습니다.";
+        attendancePreview.appendChild(error);
+        return;
       }
 
       selected.alliances.forEach((alliance) => {
