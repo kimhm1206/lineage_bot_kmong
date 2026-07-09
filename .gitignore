@@ -13,3 +13,4 @@ aitest/
 .venv/
 .vscode/tasks.json
 deploy_once.sh
+scripts/sync_guild_roles_from_nicknames.py
