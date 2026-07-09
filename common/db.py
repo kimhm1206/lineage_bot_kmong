@@ -16,7 +16,6 @@ from psycopg2.extras import Json, RealDictCursor
 
 load_dotenv()
 
-DEFAULT_ALLIANCE_NAMES = ("정지", "랭커", "삼국", "해적", "보스", "인연")
 DEFAULT_DISTRIBUTION_FEE_RATE = Decimal("0.10")
 TEST_DB_FLAG = "--test"
 KST = timezone(timedelta(hours=9))
@@ -797,7 +796,6 @@ def init_db() -> None:
             _drop_redundant_timestamp_columns(cursor)
             _drop_obsolete_member_payout_tables(cursor)
             _drop_obsolete_loot_boss_schema(cursor)
-            _seed_default_alliances(cursor)
         connection.commit()
 
 
@@ -5173,23 +5171,6 @@ def _drop_obsolete_loot_boss_schema(cursor: psycopg2.extensions.cursor) -> None:
             cursor.execute(
                 f"ALTER TABLE IF EXISTS {table_name} DROP COLUMN IF EXISTS {column_name}"
             )
-
-
-def _seed_default_alliances(cursor: psycopg2.extensions.cursor) -> None:
-    for index, alliance_name in enumerate(DEFAULT_ALLIANCE_NAMES, start=1):
-        cursor.execute(
-            """
-            INSERT INTO alliances (alliance_name, display_name, tag_name, sort_order, is_active)
-            VALUES (%s, %s, %s, %s, TRUE)
-            ON CONFLICT (alliance_name) DO UPDATE SET
-                display_name = COALESCE(alliances.display_name, EXCLUDED.display_name),
-                tag_name = COALESCE(alliances.tag_name, EXCLUDED.tag_name),
-                sort_order = COALESCE(alliances.sort_order, EXCLUDED.sort_order),
-                is_active = TRUE,
-                updated_at = CURRENT_TIMESTAMP
-            """,
-            (alliance_name, alliance_name, alliance_name, index),
-        )
 
 
 SCHEMA_SQL = """
