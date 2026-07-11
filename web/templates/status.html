@@ -32,6 +32,16 @@
     {% endif %}
   {% endmacro %}
 
+  <section class="panel filter-panel compact-filter-panel">
+    <div class="quick-filter-row">
+      {% for item in status_period.filters %}
+        <a class="quick-filter {% if item.active %}is-active{% endif %}" href="{{ item.href }}">
+          {{ item.label }}
+        </a>
+      {% endfor %}
+    </div>
+  </section>
+
   {{ pagination_controls(pagination) }}
 
   <section class="status-list" aria-label="출석 회차별 현황">
@@ -106,7 +116,7 @@
                       <strong>{{ member.discord_nickname }}</strong>
                       <span>{{ alliance.alliance_name }}</span>
                     </div>
-                    <form method="post" action="/status/delete-entry?guild_id={{ auth.selected_guild_id }}&page={{ pagination.current_page }}">
+                    <form method="post" action="/status/delete-entry?guild_id={{ auth.selected_guild_id }}&page={{ pagination.current_page }}&period={{ status_period.active }}">
                       <input type="hidden" name="attendance_id" value="{{ session.attendance_id }}">
                       <input type="hidden" name="user_id" value="{{ member.user_id }}">
                       <button class="tiny-button danger-text-button" type="submit">삭제</button>
@@ -140,7 +150,7 @@
                     <strong>{{ candidate.discord_nickname }}</strong>
                     <span>{{ candidate.alliance_name }}</span>
                   </div>
-                  <form method="post" action="/status/add-entry?guild_id={{ auth.selected_guild_id }}&page={{ pagination.current_page }}">
+                  <form method="post" action="/status/add-entry?guild_id={{ auth.selected_guild_id }}&page={{ pagination.current_page }}&period={{ status_period.active }}">
                     <input type="hidden" name="attendance_id" value="{{ session.attendance_id }}">
                     <input type="hidden" name="user_id" value="{{ candidate.user_id }}">
                     <button class="tiny-button" type="submit">추가</button>

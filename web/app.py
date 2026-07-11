@@ -93,6 +93,14 @@ PAGE_REQUIRED_ROLES = {
     "logs": "developer",
     "developer_servers": "developer",
 }
+LOOT_TABS = {
+    "distribution",
+    "item-bids",
+    "create",
+    "alliance-payouts",
+    "my-alliance-payouts",
+    "item-settings",
+}
 
 _BOT_BRIDGE_WEBSOCKET: WebSocket | None = None
 _BOT_BRIDGE_LOCK = asyncio.Lock()
@@ -1239,8 +1247,11 @@ def _dashboard_url(
     search: str | None = None,
     alliance: str | None = None,
     limit: int | None = None,
+    period: str | None = None,
 ) -> str:
     params: dict[str, Any] = {"guild_id": guild_id}
+    if period:
+        params["period"] = period
     if start_date:
         params["start_date"] = start_date
     if end_date:
@@ -1261,8 +1272,11 @@ def _dashboard_csv_url(
     end_date: str | None = None,
     search: str | None = None,
     alliance: str | None = None,
+    period: str | None = None,
 ) -> str:
     params: dict[str, Any] = {"guild_id": guild_id}
+    if period:
+        params["period"] = period
     if start_date:
         params["start_date"] = start_date
     if end_date:
@@ -1274,14 +1288,16 @@ def _dashboard_csv_url(
     return f"/dashboard/export.csv?{urlencode(params)}"
 
 
-def _status_url(guild_id: int, page: int) -> str:
-    return f"/status?{urlencode({'guild_id': guild_id, 'page': page})}"
+def _status_url(guild_id: int, page: int, period: str = "30d") -> str:
+    return f"/status?{urlencode({'guild_id': guild_id, 'page': page, 'period': period})}"
 
 
 def _pagination_items(
     guild_id: int,
     current_page: int,
     total_pages: int,
+    *,
+    period: str = "30d",
 ) -> list[dict[str, Any]]:
     if total_pages <= 1:
         return []
@@ -1302,12 +1318,32 @@ def _pagination_items(
                 "type": "page",
                 "label": str(page),
                 "page": page,
-                "href": _status_url(guild_id, page),
+                "href": _status_url(guild_id, page, period),
                 "active": page == current_page,
             }
         )
         previous_page = page
     return items
+
+
+def _status_period_filters(guild_id: int, active_period: str) -> list[dict[str, Any]]:
+    return [
+        {
+            "label": "최근 한달",
+            "href": _status_url(guild_id, 1, "30d"),
+            "active": active_period == "30d",
+        },
+        {
+            "label": "최근 일주일",
+            "href": _status_url(guild_id, 1, "7d"),
+            "active": active_period == "7d",
+        },
+        {
+            "label": "전체",
+            "href": _status_url(guild_id, 1, "all"),
+            "active": active_period == "all",
+        },
+    ]
 
 
 def _quick_dashboard_filters(
@@ -1321,8 +1357,8 @@ def _quick_dashboard_filters(
 ) -> list[dict[str, Any]]:
     items = []
     for label, period in (
-        ("최근 7일", "7d"),
         ("최근 30일", "30d"),
+        ("최근 7일", "7d"),
         ("이번 달", "month"),
         ("전체", "all"),
     ):
@@ -1332,6 +1368,7 @@ def _quick_dashboard_filters(
                 "label": label,
                 "href": _dashboard_url(
                     guild_id,
+                    period=period,
                     start_date=quick_start,
                     end_date=quick_end,
                     search=search,
@@ -1773,8 +1810,11 @@ def _my_alliance_url(
     alliance_id: int | str | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
+    period: str | None = None,
 ) -> str:
     params: dict[str, Any] = {"guild_id": guild_id}
+    if period:
+        params["period"] = period
     if alliance_id:
         params["alliance_id"] = alliance_id
     if start_date:
@@ -2960,7 +3000,7 @@ def _loot_event_datetime(event: dict[str, Any]) -> datetime | None:
 
 
 def _loot_period_bounds(period: str | None) -> tuple[str, datetime | None, str]:
-    normalized = period if period in {"all", "30d", "7d"} else "all"
+    normalized = period if period in {"all", "30d", "7d"} else "30d"
     now = datetime.now(KST).replace(tzinfo=None)
     if normalized == "all":
         return normalized, None, "전체 기간"
@@ -3834,6 +3874,8 @@ def _loot_url(
     tab: str = "distribution",
 ) -> str:
     params: dict[str, Any] = {"guild_id": guild_id}
+    if tab in LOOT_TABS:
+        params["tab"] = tab
     if period:
         params["period"] = period
     if mine is True:
@@ -3902,11 +3944,6 @@ def _loot_period_filters(
 ) -> list[dict[str, str | bool]]:
     return [
         {
-            "label": "전체",
-            "href": _loot_url(guild_id, period="all", mine=mine_only, status=status),
-            "active": active_period == "all",
-        },
-        {
             "label": "최근 한달",
             "href": _loot_url(guild_id, period="30d", mine=mine_only, status=status),
             "active": active_period == "30d",
@@ -3915,6 +3952,11 @@ def _loot_period_filters(
             "label": "최근 일주일",
             "href": _loot_url(guild_id, period="7d", mine=mine_only, status=status),
             "active": active_period == "7d",
+        },
+        {
+            "label": "전체",
+            "href": _loot_url(guild_id, period="all", mine=mine_only, status=status),
+            "active": active_period == "all",
         },
     ]
 
@@ -4015,6 +4057,8 @@ def _loot_redirect(
         params["saved"] = saved
     if alliance_id:
         params["alliance_id"] = alliance_id
+    if tab in LOOT_TABS:
+        params["tab"] = tab
     return RedirectResponse(
         f"/loot?{urlencode(params)}#{tab}",
         status_code=303,
@@ -4052,6 +4096,101 @@ def _allowed_loot_alliance_id(
     if selected_alliance.get("is_other"):
         return None
     return int(selected_alliance["alliance_id"])
+
+
+def _normalize_loot_tab(tab: str | None, auth: dict[str, Any]) -> str:
+    normalized = str(tab or "distribution")
+    if normalized not in LOOT_TABS:
+        return "distribution"
+
+    selected_server = auth.get("selected_server") or {}
+    if normalized in {"create", "item-settings"} and not selected_server.get(
+        "can_bookkeep"
+    ):
+        return "distribution"
+    if normalized == "alliance-payouts" and not selected_server.get("can_manage"):
+        return "distribution"
+    if normalized == "my-alliance-payouts":
+        my_alliance = selected_server.get("my_alliance") or {}
+        if not selected_server.get("can_manage") or not my_alliance.get("can_view"):
+            return "distribution"
+    return normalized
+
+
+def _empty_bid_dashboard() -> dict[str, Any]:
+    return {
+        "summary": {"item_count": 0, "alliance_count": 0},
+        "alliances": [],
+        "items": [],
+        "table_rows": [],
+    }
+
+
+def _empty_distribution_pagination(
+    guild_id: int,
+    *,
+    active_period: str,
+    mine_only: bool,
+    status: str,
+    alliance_id: int | str | None,
+) -> dict[str, Any]:
+    href = _loot_url(
+        guild_id,
+        period=active_period,
+        mine=mine_only,
+        status=status,
+        alliance_id=alliance_id,
+        loot_page=1,
+        tab="distribution",
+    )
+    return {
+        "current_page": 1,
+        "total_pages": 1,
+        "total_count": 0,
+        "page_size": 50,
+        "first_href": href,
+        "prev_href": href,
+        "next_href": href,
+        "last_href": href,
+        "has_previous": False,
+        "has_next": False,
+        "items": [],
+    }
+
+
+def _loot_tab_hrefs(
+    guild_id: int,
+    *,
+    active_period: str,
+    mine_only: bool,
+    status: str,
+    alliance_id: int | str | None,
+) -> dict[str, str]:
+    return {
+        "distribution": _loot_url(
+            guild_id,
+            period=active_period,
+            mine=mine_only,
+            status=status,
+            alliance_id=alliance_id,
+            tab="distribution",
+        ),
+        "item-bids": _loot_url(guild_id, tab="item-bids"),
+        "create": _loot_url(guild_id, tab="create"),
+        "alliance-payouts": _loot_url(
+            guild_id,
+            period=active_period,
+            alliance_id=alliance_id,
+            tab="alliance-payouts",
+        ),
+        "my-alliance-payouts": _loot_url(
+            guild_id,
+            period=active_period,
+            alliance_id=alliance_id,
+            tab="my-alliance-payouts",
+        ),
+        "item-settings": _loot_url(guild_id, tab="item-settings"),
+    }
 
 
 def _validate_run_time(raw_value: str | None, errors: list[str]) -> str:
@@ -4460,6 +4599,21 @@ def _default_loot_form(guild_id: int) -> dict[str, str]:
     }
 
 
+def _blank_loot_form() -> dict[str, str]:
+    return {
+        "attendance_id": "",
+        "item_id": "",
+        "cash_price_krw": "",
+        "sale_price": "",
+        "adena_rate": "",
+        "fee_percent": "10",
+        "bookkeeper_fee_percent": "10",
+        "alliance_fee_percent": "0",
+        "memo": "",
+        "excluded_alliance_ids": "",
+    }
+
+
 def _loot_form_from_values(values: dict[str, Any], guild_id: int) -> dict[str, str]:
     form = _default_loot_form(guild_id)
     for key in form:
@@ -4499,7 +4653,9 @@ def _loot_template_context(
     mine: str | None = None,
     status: str | None = None,
     loot_page: int = 1,
+    tab: str | None = None,
 ) -> dict[str, Any]:
+    active_loot_tab = _normalize_loot_tab(tab, auth)
     active_period, period_start, period_label = _loot_period_bounds(period)
     active_status = _normalize_loot_status_filter(status)
     mine_only = (
@@ -4507,55 +4663,75 @@ def _loot_template_context(
         if mine is None
         else str(mine or "").lower() in {"1", "true", "yes", "on", "mine"}
     )
-    try:
-        viewer_discord_id = int(auth["user"]["id"])
-    except (KeyError, TypeError, ValueError):
-        viewer_discord_id = None
-    viewer_current_alliance_ids = (
-        {
-            int(option["alliance_id"])
-            for option in _member_alliance_options(guild_id, str(viewer_discord_id))
-            if str(option.get("alliance_id") or "").isdigit()
-        }
-        if viewer_discord_id is not None
-        else set()
-    )
-    all_events = _decorate_loot_events(
-        database.get_loot_drop_events(guild_id, limit=5000),
-        viewer_discord_id,
+
+    selected_alliance, alliance_options = _loot_alliance_selection(auth, alliance_id)
+    tab_hrefs = _loot_tab_hrefs(
         guild_id,
-        viewer_current_alliance_ids,
+        active_period=active_period,
+        mine_only=mine_only,
+        status=active_status,
+        alliance_id=alliance_id,
     )
-    loot_events = _filter_loot_events_by_period(all_events, period_start)
-    distribution_events_all = _filter_loot_events_by_status(
-        _filter_loot_events_by_viewer(loot_events, mine_only),
-        active_status,
+
+    needs_loot_events = active_loot_tab in {
+        "distribution",
+        "alliance-payouts",
+        "my-alliance-payouts",
+    }
+    loot_events: list[dict[str, Any]] = []
+    if needs_loot_events:
+        try:
+            viewer_discord_id = int(auth["user"]["id"])
+        except (KeyError, TypeError, ValueError):
+            viewer_discord_id = None
+        viewer_current_alliance_ids = (
+            {
+                int(option["alliance_id"])
+                for option in _member_alliance_options(guild_id, str(viewer_discord_id))
+                if str(option.get("alliance_id") or "").isdigit()
+            }
+            if viewer_discord_id is not None
+            else set()
+        )
+        all_events = _decorate_loot_events(
+            database.get_loot_drop_events(
+                guild_id,
+                limit=5000,
+                start_at=period_start,
+            ),
+            viewer_discord_id,
+            guild_id,
+            viewer_current_alliance_ids,
+        )
+        loot_events = _filter_loot_events_by_period(all_events, period_start)
+
+    distribution_events_all: list[dict[str, Any]] = []
+    distribution_events: list[dict[str, Any]] = []
+    distribution_pagination = _empty_distribution_pagination(
+        guild_id,
+        active_period=active_period,
+        mine_only=mine_only,
+        status=active_status,
+        alliance_id=alliance_id,
     )
     distribution_page_size = 50
-    distribution_total_count = len(distribution_events_all)
-    distribution_total_pages = max(
-        1,
-        (distribution_total_count + distribution_page_size - 1)
-        // distribution_page_size,
-    )
-    current_loot_page = max(1, min(int(loot_page or 1), distribution_total_pages))
-    distribution_start = (current_loot_page - 1) * distribution_page_size
-    distribution_events = distribution_events_all[
-        distribution_start : distribution_start + distribution_page_size
-    ]
-    selected_alliance, alliance_options = _loot_alliance_selection(auth, alliance_id)
-    return {
-        "auth": auth,
-        "saved": saved,
-        "errors": errors,
-        "loot_form": loot_form or _default_loot_form(guild_id),
-        "item_price_form": item_price_form or _default_item_price_form(),
-        "attendance_options": _loot_attendance_options(guild_id),
-        "item_prices": _decorate_item_prices(database.get_item_price_settings(guild_id)),
-        "loot_events": loot_events,
-        "distribution_events": distribution_events,
-        "loot_summary": _loot_distribution_summary(distribution_events_all),
-        "distribution_pagination": {
+    if active_loot_tab == "distribution":
+        distribution_events_all = _filter_loot_events_by_status(
+            _filter_loot_events_by_viewer(loot_events, mine_only),
+            active_status,
+        )
+        distribution_total_count = len(distribution_events_all)
+        distribution_total_pages = max(
+            1,
+            (distribution_total_count + distribution_page_size - 1)
+            // distribution_page_size,
+        )
+        current_loot_page = max(1, min(int(loot_page or 1), distribution_total_pages))
+        distribution_start = (current_loot_page - 1) * distribution_page_size
+        distribution_events = distribution_events_all[
+            distribution_start : distribution_start + distribution_page_size
+        ]
+        distribution_pagination = {
             "current_page": current_loot_page,
             "total_pages": distribution_total_pages,
             "total_count": distribution_total_count,
@@ -4607,18 +4783,54 @@ def _loot_template_context(
                 status=active_status,
                 alliance_id=alliance_id,
             ),
-        },
-        "bid_dashboard": database.get_bid_item_dashboard(guild_id),
-        "alliance_payout_groups": _alliance_payout_group_context(
-            guild_id,
-            loot_events,
-        ),
-        "my_alliance_payouts": _my_alliance_payout_context(
-            guild_id,
-            selected_alliance,
-            loot_events,
-        ),
+        }
+
+    attendance_options = (
+        _loot_attendance_options(guild_id) if active_loot_tab == "create" else []
+    )
+    item_prices = (
+        _decorate_item_prices(database.get_item_price_settings(guild_id))
+        if active_loot_tab in {"create", "item-settings"}
+        else []
+    )
+    bid_dashboard = (
+        database.get_bid_item_dashboard(guild_id)
+        if active_loot_tab == "item-bids"
+        else _empty_bid_dashboard()
+    )
+    alliance_payout_groups = (
+        _alliance_payout_group_context(guild_id, loot_events)
+        if active_loot_tab == "alliance-payouts"
+        else {"alliances": [], "mapped_alliances": []}
+    )
+    my_alliance_payouts = (
+        _my_alliance_payout_context(guild_id, selected_alliance, loot_events)
+        if active_loot_tab == "my-alliance-payouts"
+        else _my_alliance_payout_context(guild_id, None, [])
+    )
+    loot_form_value = (
+        loot_form
+        or (_default_loot_form(guild_id) if active_loot_tab == "create" else _blank_loot_form())
+    )
+
+    return {
+        "auth": auth,
+        "saved": saved,
+        "errors": errors,
+        "loot_form": loot_form_value,
+        "item_price_form": item_price_form or _default_item_price_form(),
+        "attendance_options": attendance_options,
+        "item_prices": item_prices,
+        "loot_events": loot_events,
+        "distribution_events": distribution_events,
+        "loot_summary": _loot_distribution_summary(distribution_events_all),
+        "distribution_pagination": distribution_pagination,
+        "bid_dashboard": bid_dashboard,
+        "alliance_payout_groups": alliance_payout_groups,
+        "my_alliance_payouts": my_alliance_payouts,
         "loot_alliance_options": alliance_options,
+        "active_loot_tab": active_loot_tab,
+        "loot_tab_hrefs": tab_hrefs,
         "loot_period": {
             "active": active_period,
             "label": period_label,
@@ -5147,8 +5359,12 @@ def dashboard(
         return _auth_redirect(request)
 
     selected_guild_id = int(auth["selected_guild_id"])
-    if period:
-        start_date, end_date = _dashboard_period_dates(period)
+    requested_period = period if period in {"7d", "30d", "month", "all"} else None
+    active_period = requested_period or (
+        "30d" if not start_date and not end_date else ""
+    )
+    if active_period:
+        start_date, end_date = _dashboard_period_dates(active_period)
     start_at, end_at, start_value, end_value = _date_bounds(start_date, end_date)
     search_value = (search or "").strip()
     alliance_value = (alliance or "").strip()
@@ -5222,6 +5438,7 @@ def dashboard(
                 "alliance": alliance_value,
                 "export_href": _dashboard_csv_url(
                     selected_guild_id,
+                    period=active_period if active_period == "all" else None,
                     start_date=start_value,
                     end_date=end_value,
                     search=search_value,
@@ -5268,8 +5485,12 @@ def dashboard_export_csv(
         return _auth_redirect(request)
 
     selected_guild_id = int(auth["selected_guild_id"])
-    if period:
-        start_date, end_date = _dashboard_period_dates(period)
+    requested_period = period if period in {"7d", "30d", "month", "all"} else None
+    active_period = requested_period or (
+        "30d" if not start_date and not end_date else ""
+    )
+    if active_period:
+        start_date, end_date = _dashboard_period_dates(active_period)
     start_at, end_at, start_value, end_value = _date_bounds(start_date, end_date)
     search_value = (search or "").strip()
     alliance_value = (alliance or "").strip()
@@ -5324,6 +5545,7 @@ def my_alliance(
     alliance_id: str | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
+    period: str | None = None,
 ):
     auth = _auth_context(request, guild_id)
     if not auth:
@@ -5348,6 +5570,17 @@ def my_alliance(
     )
     selected_alliance = allowed_by_value[selected_alliance_value]
     selected_alliance_ids = _selected_alliance_ids(selected_alliance)
+    today = datetime.now(KST).date()
+    month_start_default = today - timedelta(days=29)
+    if period == "30d":
+        start_date = month_start_default.isoformat()
+        end_date = today.isoformat()
+    elif period == "all":
+        start_date = None
+        end_date = None
+    elif not start_date and not end_date:
+        start_date = month_start_default.isoformat()
+        end_date = today.isoformat()
     start_at, end_at, start_value, end_value = _date_bounds(start_date, end_date)
 
     overview = _alliance_overview(
@@ -5392,7 +5625,6 @@ def my_alliance(
         limit=10,
     )
 
-    today = datetime.now(KST).date()
     week_start = today - timedelta(days=today.weekday())
     month_start = today.replace(day=1)
     filters = {
@@ -5401,12 +5633,14 @@ def my_alliance(
         "alliance_id": selected_alliance_value,
         "quick": [
             {
-                "label": "전체",
+                "label": "최근 한달",
                 "href": _my_alliance_url(
                     selected_guild_id,
                     alliance_id=selected_alliance_value,
+                    period="30d",
                 ),
-                "active": not start_value and not end_value,
+                "active": start_value == month_start_default.isoformat()
+                and end_value == today.isoformat(),
             },
             {
                 "label": "이번 주",
@@ -5429,6 +5663,15 @@ def my_alliance(
                 ),
                 "active": start_value == month_start.isoformat()
                 and end_value == today.isoformat(),
+            },
+            {
+                "label": "전체",
+                "href": _my_alliance_url(
+                    selected_guild_id,
+                    alliance_id=selected_alliance_value,
+                    period="all",
+                ),
+                "active": not start_value and not end_value,
             },
         ],
     }
@@ -5486,14 +5729,22 @@ def attendance_status(
     request: Request,
     guild_id: str | None = None,
     page: int = 1,
+    period: str | None = None,
 ):
     auth = _auth_context(request, guild_id)
     if not auth:
         return _auth_redirect(request)
 
     selected_guild_id = int(auth["selected_guild_id"])
+    active_period = period if period in {"all", "30d", "7d"} else "30d"
+    start_date, end_date = _dashboard_period_dates(active_period)
+    start_at, end_at, _start_value, _end_value = _date_bounds(start_date, end_date)
     page_size = 10
-    total_count = database.count_attendance_status_sessions(selected_guild_id)
+    total_count = database.count_attendance_status_sessions(
+        selected_guild_id,
+        start_at,
+        end_at,
+    )
     total_pages = max(1, (total_count + page_size - 1) // page_size)
     current_page = min(max(1, page), total_pages)
     offset = (current_page - 1) * page_size
@@ -5501,6 +5752,8 @@ def attendance_status(
         selected_guild_id,
         page_size,
         offset,
+        start_at,
+        end_at,
     )
     can_manage_status = _can_manage_selected_server(auth)
     edit_candidates = (
@@ -5522,24 +5775,34 @@ def attendance_status(
             "sessions": sessions,
             "can_manage_status": can_manage_status,
             "edit_candidates": edit_candidates,
+            "status_period": {
+                "active": active_period,
+                "filters": _status_period_filters(selected_guild_id, active_period),
+            },
             "pagination": {
                 "current_page": current_page,
                 "total_pages": total_pages,
                 "total_count": total_count,
                 "page_size": page_size,
-                "first_href": _status_url(selected_guild_id, 1),
-                "prev_href": _status_url(selected_guild_id, max(1, current_page - 1)),
+                "first_href": _status_url(selected_guild_id, 1, active_period),
+                "prev_href": _status_url(
+                    selected_guild_id,
+                    max(1, current_page - 1),
+                    active_period,
+                ),
                 "next_href": _status_url(
                     selected_guild_id,
                     min(total_pages, current_page + 1),
+                    active_period,
                 ),
-                "last_href": _status_url(selected_guild_id, total_pages),
+                "last_href": _status_url(selected_guild_id, total_pages, active_period),
                 "has_previous": current_page > 1,
                 "has_next": current_page < total_pages,
                 "items": _pagination_items(
                     selected_guild_id,
                     current_page,
                     total_pages,
+                    period=active_period,
                 ),
             },
             "active_page": "status",
@@ -5552,15 +5815,17 @@ async def add_attendance_status_entry(
     request: Request,
     guild_id: str | None = None,
     page: int = 1,
+    period: str = "30d",
 ):
     auth = _auth_context(request, guild_id)
     if not auth:
         return _auth_redirect(request)
 
     selected_guild_id = int(auth["selected_guild_id"])
+    active_period = period if period in {"all", "30d", "7d"} else "30d"
     if not _can_manage_selected_server(auth):
         return RedirectResponse(
-            f"/status?guild_id={selected_guild_id}&page={max(1, page)}",
+            f"/status?guild_id={selected_guild_id}&page={max(1, page)}&period={active_period}",
             status_code=303,
         )
 
@@ -5585,7 +5850,7 @@ async def add_attendance_status_entry(
     except Exception:
         pass
     return RedirectResponse(
-        f"/status?guild_id={selected_guild_id}&page={max(1, page)}#attendance-{attendance_id}",
+        f"/status?guild_id={selected_guild_id}&page={max(1, page)}&period={active_period}#attendance-{attendance_id}",
         status_code=303,
     )
 
@@ -5595,15 +5860,17 @@ async def delete_attendance_status_entry(
     request: Request,
     guild_id: str | None = None,
     page: int = 1,
+    period: str = "30d",
 ):
     auth = _auth_context(request, guild_id)
     if not auth:
         return _auth_redirect(request)
 
     selected_guild_id = int(auth["selected_guild_id"])
+    active_period = period if period in {"all", "30d", "7d"} else "30d"
     if not _can_manage_selected_server(auth):
         return RedirectResponse(
-            f"/status?guild_id={selected_guild_id}&page={max(1, page)}",
+            f"/status?guild_id={selected_guild_id}&page={max(1, page)}&period={active_period}",
             status_code=303,
         )
 
@@ -5628,7 +5895,7 @@ async def delete_attendance_status_entry(
     except Exception:
         pass
     return RedirectResponse(
-        f"/status?guild_id={selected_guild_id}&page={max(1, page)}#attendance-{attendance_id}",
+        f"/status?guild_id={selected_guild_id}&page={max(1, page)}&period={active_period}#attendance-{attendance_id}",
         status_code=303,
     )
 
@@ -5643,6 +5910,7 @@ def loot_drops(
     mine: str | None = None,
     status: str | None = None,
     loot_page: int = 1,
+    tab: str | None = None,
 ):
     auth = _auth_context(request, guild_id)
     if not auth:
@@ -5662,6 +5930,7 @@ def loot_drops(
             mine=mine,
             status=status,
             loot_page=loot_page,
+            tab=tab,
         ),
     )
 
@@ -5762,6 +6031,7 @@ async def create_loot_drop(
                 saved="",
                 errors=errors,
                 loot_form=_loot_form_from_values(form_data, selected_guild_id),
+                tab="create",
             ),
             status_code=400,
         )
@@ -5812,12 +6082,13 @@ async def create_loot_drop(
                 saved="",
                 errors=[str(exc)],
                 loot_form=_loot_form_from_values(form_data, selected_guild_id),
+                tab="create",
             ),
             status_code=400,
         )
 
     return RedirectResponse(
-        f"/loot?guild_id={selected_guild_id}&saved=created",
+        f"/loot?guild_id={selected_guild_id}&saved=created&tab=alliance-payouts#alliance-payouts",
         status_code=303,
     )
 
@@ -7089,6 +7360,7 @@ async def create_item_price(
                     saved="",
                     errors=errors,
                     item_price_form=_item_price_form_from_values(form_data),
+                    tab="item-settings",
                 ),
                 status_code=400,
             )
@@ -7251,7 +7523,7 @@ def _item_price_redirect(
 ) -> RedirectResponse:
     if return_to == "loot":
         return RedirectResponse(
-            f"/loot?guild_id={selected_guild_id}&saved={saved}#item-settings",
+            f"/loot?guild_id={selected_guild_id}&saved={saved}&tab=item-settings#item-settings",
             status_code=303,
         )
     return RedirectResponse(

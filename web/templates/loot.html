@@ -75,19 +75,19 @@
   {% endmacro %}
 
   <nav class="loot-tabs" aria-label="드랍&분배 탭">
-    <a class="loot-tab-button is-active" href="#distribution" data-loot-tab="distribution" data-required-role="user">분배금 현황</a>
-    <a class="loot-tab-button" href="#item-bids" data-loot-tab="item-bids" data-required-role="user">아이템 입찰</a>
+    <a class="loot-tab-button {% if active_loot_tab == 'distribution' %}is-active{% endif %}" href="{{ loot_tab_hrefs['distribution'] }}" data-loot-tab="distribution" data-required-role="user">분배금 현황</a>
+    <a class="loot-tab-button {% if active_loot_tab == 'item-bids' %}is-active{% endif %}" href="{{ loot_tab_hrefs['item-bids'] }}" data-loot-tab="item-bids" data-required-role="user">아이템 입찰</a>
     {% if auth.selected_server.can_bookkeep %}
-      <a class="loot-tab-button" href="#create" data-loot-tab="create" data-required-role="owner">드랍 등록</a>
+      <a class="loot-tab-button {% if active_loot_tab == 'create' %}is-active{% endif %}" href="{{ loot_tab_hrefs['create'] }}" data-loot-tab="create" data-required-role="owner">드랍 등록</a>
     {% endif %}
     {% if auth.selected_server.can_manage %}
-      <a class="loot-tab-button" href="#alliance-payouts" data-loot-tab="alliance-payouts" data-required-role="admin">각혈 분배</a>
+      <a class="loot-tab-button {% if active_loot_tab == 'alliance-payouts' %}is-active{% endif %}" href="{{ loot_tab_hrefs['alliance-payouts'] }}" data-loot-tab="alliance-payouts" data-required-role="admin">각혈 분배</a>
     {% endif %}
     {% if auth.selected_server.can_manage and auth.selected_server.my_alliance.can_view %}
-      <a class="loot-tab-button" href="#my-alliance-payouts" data-loot-tab="my-alliance-payouts" data-required-role="admin">내 혈맹</a>
+      <a class="loot-tab-button {% if active_loot_tab == 'my-alliance-payouts' %}is-active{% endif %}" href="{{ loot_tab_hrefs['my-alliance-payouts'] }}" data-loot-tab="my-alliance-payouts" data-required-role="admin">내 혈맹</a>
     {% endif %}
     {% if auth.selected_server.can_bookkeep %}
-      <a class="loot-tab-button" href="#item-settings" data-loot-tab="item-settings" data-required-role="owner">아이템 설정</a>
+      <a class="loot-tab-button {% if active_loot_tab == 'item-settings' %}is-active{% endif %}" href="{{ loot_tab_hrefs['item-settings'] }}" data-loot-tab="item-settings" data-required-role="owner">아이템 설정</a>
     {% endif %}
     {% if auth.selected_server.can_manage and auth.selected_server.my_alliance.can_select %}
       <div class="loot-tab-spacer" data-loot-alliance-control hidden></div>
@@ -96,7 +96,7 @@
         <select data-loot-alliance-select>
           {% for alliance in loot_alliance_options %}
             <option
-              value="/loot?guild_id={{ auth.selected_guild_id }}&alliance_id={{ alliance.alliance_id }}#my-alliance-payouts"
+              value="/loot?guild_id={{ auth.selected_guild_id }}&tab=my-alliance-payouts&alliance_id={{ alliance.alliance_id }}#my-alliance-payouts"
               {% if my_alliance_payouts.selected_alliance and alliance.alliance_id == my_alliance_payouts.selected_alliance.alliance_id %}selected{% endif %}
             >
               {{ alliance.alliance_name }}
@@ -107,7 +107,7 @@
     {% endif %}
   </nav>
 
-  <section class="loot-tab-panel" data-loot-panel="distribution">
+  <section class="loot-tab-panel" data-loot-panel="distribution" {% if active_loot_tab != 'distribution' %}hidden{% endif %}>
     <section class="loot-overview-grid loot-distribution-overview-grid">
       <article class="panel loot-total-card">
         <span>기간 내 총 분배금</span>
@@ -240,7 +240,7 @@
     {{ pagination_controls(distribution_pagination) }}
   </section>
 
-  <section class="loot-tab-panel" data-loot-panel="item-bids" hidden>
+  <section class="loot-tab-panel" data-loot-panel="item-bids" {% if active_loot_tab != 'item-bids' %}hidden{% endif %}>
     <section class="bid-overview-grid">
       <article class="panel bid-stat-card">
         <span>입찰 아이템</span>
@@ -503,7 +503,7 @@
   </section>
 
   {% if auth.selected_server.can_bookkeep %}
-    <section class="loot-tab-panel" data-loot-panel="create" hidden>
+    <section class="loot-tab-panel" data-loot-panel="create" {% if active_loot_tab != 'create' %}hidden{% endif %}>
       <section class="loot-layout">
         <form class="panel loot-create-panel" method="post" action="/loot?guild_id={{ auth.selected_guild_id }}" data-loot-form>
           <input
@@ -514,7 +514,7 @@
           >
           <header class="panel-header">
             <h2>드랍 등록</h2>
-            <a class="tiny-button" href="#item-settings" data-loot-tab-link="item-settings">아이템 추가하기</a>
+            <a class="tiny-button" href="{{ loot_tab_hrefs['item-settings'] }}" data-loot-tab-link="item-settings">아이템 추가하기</a>
           </header>
 
           <div class="loot-create-grid">
@@ -640,7 +640,7 @@
   {% endif %}
 
   {% if auth.selected_server.can_manage %}
-    <section class="loot-tab-panel" data-loot-panel="alliance-payouts" hidden>
+    <section class="loot-tab-panel" data-loot-panel="alliance-payouts" {% if active_loot_tab != 'alliance-payouts' %}hidden{% endif %}>
       <div class="inner-tab-row" data-alliance-payout-tabs>
         <button class="inner-tab-button is-active" type="button" data-alliance-payout-tab="events">아이템 건별</button>
         <button class="inner-tab-button" type="button" data-alliance-payout-tab="alliances">혈맹별</button>
@@ -1043,7 +1043,7 @@
   {% endif %}
 
   {% if auth.selected_server.can_manage and auth.selected_server.my_alliance.can_view %}
-    <section class="loot-tab-panel" data-loot-panel="my-alliance-payouts" hidden>
+    <section class="loot-tab-panel" data-loot-panel="my-alliance-payouts" {% if active_loot_tab != 'my-alliance-payouts' %}hidden{% endif %}>
       {% if my_alliance_payouts.selected_alliance %}
         <section class="loot-overview-grid my-alliance-overview-grid">
           <article class="panel loot-total-card my-alliance-total-card">
@@ -1562,7 +1562,7 @@
   {% endif %}
 
   {% if auth.selected_server.can_bookkeep %}
-    <section class="loot-tab-panel" data-loot-panel="item-settings" hidden>
+    <section class="loot-tab-panel" data-loot-panel="item-settings" {% if active_loot_tab != 'item-settings' %}hidden{% endif %}>
       <section class="loot-item-settings-layout">
         <article class="panel settings-form">
           <header class="panel-header">
@@ -3417,7 +3417,7 @@
     syncItemPrice();
     setupDistributionRowDetails();
     document.querySelectorAll("[data-loot-event-form]").forEach(syncLootPrice);
-    activateLootTab(location.hash.replace("#", "") || "distribution");
+    activateLootTab(location.hash.replace("#", "") || "{{ active_loot_tab }}");
     setCurrencyMode("adena");
   </script>
 {% endblock %}

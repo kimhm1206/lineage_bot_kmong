@@ -283,11 +283,24 @@ class Database:
         guild_id: int,
         limit: int = 10,
         offset: int = 0,
+        start_at: str | None = None,
+        end_at: str | None = None,
     ) -> list[dict[str, Any]]:
-        return get_attendance_status_sessions(guild_id, limit, offset)
+        return get_attendance_status_sessions(
+            guild_id,
+            limit,
+            offset,
+            start_at,
+            end_at,
+        )
 
-    def count_attendance_status_sessions(self, guild_id: int) -> int:
-        return count_attendance_status_sessions(guild_id)
+    def count_attendance_status_sessions(
+        self,
+        guild_id: int,
+        start_at: str | None = None,
+        end_at: str | None = None,
+    ) -> int:
+        return count_attendance_status_sessions(guild_id, start_at, end_at)
 
     def get_attendance_edit_candidates(
         self,
@@ -595,8 +608,14 @@ class Database:
     def delete_loot_drop(self, guild_id: int, loot_event_id: int) -> None:
         delete_loot_drop(guild_id, loot_event_id)
 
-    def get_loot_drop_events(self, guild_id: int, limit: int = 30) -> list[dict[str, Any]]:
-        return get_loot_drop_events(guild_id, limit)
+    def get_loot_drop_events(
+        self,
+        guild_id: int,
+        limit: int = 30,
+        start_at: str | datetime | None = None,
+        end_at: str | datetime | None = None,
+    ) -> list[dict[str, Any]]:
+        return get_loot_drop_events(guild_id, limit, start_at, end_at)
 
     def update_distribution_alliance_payout_status(
         self,
@@ -1581,14 +1600,26 @@ def get_attendance_export_rows(
     ]
 
 
-def count_attendance_status_sessions(guild_id: int) -> int:
+def count_attendance_status_sessions(
+    guild_id: int,
+    start_at: str | None = None,
+    end_at: str | None = None,
+) -> int:
+    conditions = ["guild_id = %s"]
+    params: list[Any] = [guild_id]
+    if start_at:
+        conditions.append("started_at >= %s")
+        params.append(start_at)
+    if end_at:
+        conditions.append("started_at <= %s")
+        params.append(end_at)
     row = _fetchone(
-        """
+        f"""
         SELECT COUNT(*) AS session_count
         FROM attendance_sessions
-        WHERE guild_id = %s
+        WHERE {' AND '.join(conditions)}
         """,
-        (guild_id,),
+        tuple(params),
     )
     return int(row["session_count"] or 0) if row else 0
 
@@ -1597,9 +1628,20 @@ def get_attendance_status_sessions(
     guild_id: int,
     limit: int = 10,
     offset: int = 0,
+    start_at: str | None = None,
+    end_at: str | None = None,
 ) -> list[dict[str, Any]]:
+    conditions = ["s.guild_id = %s"]
+    params: list[Any] = [guild_id]
+    if start_at:
+        conditions.append("s.started_at >= %s")
+        params.append(start_at)
+    if end_at:
+        conditions.append("s.started_at <= %s")
+        params.append(end_at)
+    params.extend([int(limit), int(offset)])
     session_rows = _fetchall(
-        """
+        f"""
         SELECT
             s.attendance_id,
             s.started_at,
@@ -1613,7 +1655,7 @@ def get_attendance_status_sessions(
         FROM attendance_sessions s
         LEFT JOIN attendance_entries e ON e.attendance_id = s.attendance_id
         LEFT JOIN users starter ON starter.discord_id = s.started_by_discord_id
-        WHERE s.guild_id = %s
+        WHERE {' AND '.join(conditions)}
         GROUP BY
             s.attendance_id,
             s.started_at,
@@ -1623,7 +1665,7 @@ def get_attendance_status_sessions(
         LIMIT %s
         OFFSET %s
         """,
-        (guild_id, int(limit), int(offset)),
+        tuple(params),
     )
     session_ids = [int(row["attendance_id"]) for row in session_rows]
     if not session_ids:
@@ -3441,9 +3483,23 @@ def delete_loot_drop(guild_id: int, loot_event_id: int) -> None:
         connection.commit()
 
 
-def get_loot_drop_events(guild_id: int, limit: int = 30) -> list[dict[str, Any]]:
+def get_loot_drop_events(
+    guild_id: int,
+    limit: int = 30,
+    start_at: str | datetime | None = None,
+    end_at: str | datetime | None = None,
+) -> list[dict[str, Any]]:
+    conditions = ["le.guild_id = %s"]
+    params: list[Any] = [guild_id]
+    if start_at:
+        conditions.append("s.started_at >= %s")
+        params.append(start_at)
+    if end_at:
+        conditions.append("s.started_at <= %s")
+        params.append(end_at)
+    params.append(int(limit))
     event_rows = _fetchall(
-        """
+        f"""
         SELECT
             le.loot_event_id,
             le.guild_id,
@@ -3490,14 +3546,14 @@ def get_loot_drop_events(guild_id: int, limit: int = 30) -> list[dict[str, Any]]
             LIMIT 1
         ) li ON TRUE
         LEFT JOIN distribution_batches db ON db.loot_event_id = le.loot_event_id
-        WHERE le.guild_id = %s
+        WHERE {' AND '.join(conditions)}
         ORDER BY
             le.event_date DESC,
             le.event_time_label DESC NULLS LAST,
             le.loot_event_id DESC
         LIMIT %s
         """,
-        (guild_id, int(limit)),
+        tuple(params),
     )
     event_ids = [int(row["loot_event_id"]) for row in event_rows]
     if not event_ids:
@@ -5589,6 +5645,7 @@ CREATE INDEX IF NOT EXISTS idx_items_name ON items(item_name);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_bid_items_guild_name_unique ON bid_items(guild_id, LOWER(item_name));
 CREATE UNIQUE INDEX IF NOT EXISTS idx_bid_results_unique_cycle ON bid_item_results(guild_id, bid_item_id, alliance_id, cycle_no);
 CREATE INDEX IF NOT EXISTS idx_bid_results_item_cycle ON bid_item_results(guild_id, bid_item_id, cycle_no);
+CREATE INDEX IF NOT EXISTS idx_loot_events_guild_attendance ON loot_events(guild_id, attendance_id);
 CREATE INDEX IF NOT EXISTS idx_loot_events_date ON loot_events(event_date);
 CREATE INDEX IF NOT EXISTS idx_distribution_batches_loot_event ON distribution_batches(loot_event_id);
 CREATE INDEX IF NOT EXISTS idx_distribution_alliance_payouts_distribution ON distribution_alliance_payouts(distribution_id);
