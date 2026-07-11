@@ -32,6 +32,17 @@ def _now_kst_text() -> str:
     return datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
 
 
+def _datetime_bound_text(value: str | datetime | None) -> str | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, datetime):
+        normalized = value
+        if normalized.tzinfo is not None:
+            normalized = normalized.astimezone(KST).replace(tzinfo=None)
+        return normalized.strftime("%Y-%m-%d %H:%M:%S")
+    return str(value)
+
+
 @dataclass(slots=True)
 class GuildSettings:
     guild_id: int
@@ -283,8 +294,8 @@ class Database:
         guild_id: int,
         limit: int = 10,
         offset: int = 0,
-        start_at: str | None = None,
-        end_at: str | None = None,
+        start_at: str | datetime | None = None,
+        end_at: str | datetime | None = None,
     ) -> list[dict[str, Any]]:
         return get_attendance_status_sessions(
             guild_id,
@@ -297,8 +308,8 @@ class Database:
     def count_attendance_status_sessions(
         self,
         guild_id: int,
-        start_at: str | None = None,
-        end_at: str | None = None,
+        start_at: str | datetime | None = None,
+        end_at: str | datetime | None = None,
     ) -> int:
         return count_attendance_status_sessions(guild_id, start_at, end_at)
 
@@ -1602,17 +1613,19 @@ def get_attendance_export_rows(
 
 def count_attendance_status_sessions(
     guild_id: int,
-    start_at: str | None = None,
-    end_at: str | None = None,
+    start_at: str | datetime | None = None,
+    end_at: str | datetime | None = None,
 ) -> int:
     conditions = ["guild_id = %s"]
     params: list[Any] = [guild_id]
-    if start_at:
+    start_bound = _datetime_bound_text(start_at)
+    end_bound = _datetime_bound_text(end_at)
+    if start_bound:
         conditions.append("started_at >= %s")
-        params.append(start_at)
-    if end_at:
+        params.append(start_bound)
+    if end_bound:
         conditions.append("started_at <= %s")
-        params.append(end_at)
+        params.append(end_bound)
     row = _fetchone(
         f"""
         SELECT COUNT(*) AS session_count
@@ -1628,17 +1641,19 @@ def get_attendance_status_sessions(
     guild_id: int,
     limit: int = 10,
     offset: int = 0,
-    start_at: str | None = None,
-    end_at: str | None = None,
+    start_at: str | datetime | None = None,
+    end_at: str | datetime | None = None,
 ) -> list[dict[str, Any]]:
     conditions = ["s.guild_id = %s"]
     params: list[Any] = [guild_id]
-    if start_at:
+    start_bound = _datetime_bound_text(start_at)
+    end_bound = _datetime_bound_text(end_at)
+    if start_bound:
         conditions.append("s.started_at >= %s")
-        params.append(start_at)
-    if end_at:
+        params.append(start_bound)
+    if end_bound:
         conditions.append("s.started_at <= %s")
-        params.append(end_at)
+        params.append(end_bound)
     params.extend([int(limit), int(offset)])
     session_rows = _fetchall(
         f"""
@@ -3491,12 +3506,14 @@ def get_loot_drop_events(
 ) -> list[dict[str, Any]]:
     conditions = ["le.guild_id = %s"]
     params: list[Any] = [guild_id]
-    if start_at:
+    start_bound = _datetime_bound_text(start_at)
+    end_bound = _datetime_bound_text(end_at)
+    if start_bound:
         conditions.append("s.started_at >= %s")
-        params.append(start_at)
-    if end_at:
+        params.append(start_bound)
+    if end_bound:
         conditions.append("s.started_at <= %s")
-        params.append(end_at)
+        params.append(end_bound)
     params.append(int(limit))
     event_rows = _fetchall(
         f"""
