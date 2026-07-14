@@ -1151,7 +1151,7 @@ def _can_edit_alliance_payouts(auth: dict[str, Any]) -> bool:
 
 
 def _can_edit_my_alliance_payouts(auth: dict[str, Any]) -> bool:
-    return _can_bookkeep_selected_server(auth)
+    return _can_manage_selected_server(auth) or _can_bookkeep_selected_server(auth)
 
 
 def _can_manage_bookkeepers(auth: dict[str, Any]) -> bool:
