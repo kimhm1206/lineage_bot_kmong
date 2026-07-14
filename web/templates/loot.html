@@ -691,7 +691,10 @@
                   <article class="forfeiture-user-row">
                     <div>
                       <strong>#{{ row.loot_event_id }} {{ row.item_name }}</strong>
-                      <span>{{ row.attendance_started_at }} · {{ row.completed_count }}/{{ row.recipient_count }} 혈맹 완료</span>
+                      <span>
+                        {{ row.attendance_started_at }} · {{ row.completed_count }}/{{ row.recipient_count }} 혈맹 완료
+                        {% if row.fee_pending_count %} · 수수료 {{ row.fee_pending_count }}건 대기{% endif %}
+                      </span>
                     </div>
                     <strong>{{ row.amount_text }}</strong>
                   </article>
@@ -710,7 +713,7 @@
                   <article class="forfeiture-user-row">
                     <div>
                       <strong>#{{ row.loot_event_id }} {{ row.item_name }}</strong>
-                      <span>{{ row.attendance_started_at }} · 전체 혈맹 완료</span>
+                      <span>{{ row.attendance_started_at }} · 전체 혈맹/수수료 완료</span>
                     </div>
                     <strong>{{ row.amount_text }}</strong>
                   </article>
@@ -760,20 +763,20 @@
                 </div>
                 <div class="forfeiture-log-list">
                   {% for fee in fee_group.pending_logs %}
-                    <article class="forfeiture-user-row">
+                    <article class="forfeiture-user-row" data-fee-settle-row data-fee-distribution-id="{{ fee.distribution_id }}" data-fee-alliance-id="0" data-fee-key="{{ fee.fee_key }}">
                       <div>
                         <strong>#{{ fee.loot_event_id }} {{ fee.item_name }}</strong>
-                        <span>{{ fee.fee_label }} {{ fee.fee_percent_text }}% · {{ fee.attendance_started_at }}</span>
+                        <span data-fee-status>{{ fee.fee_label }} {{ fee.fee_percent_text }}% · {{ fee.attendance_started_at }}</span>
                       </div>
                       <div class="inline-actions">
                         <strong>{{ fee.fee_amount_text }}</strong>
-                        <form method="post" action="/loot/fee-settlements/settle?guild_id={{ auth.selected_guild_id }}">
+                        <form method="post" action="/loot/fee-settlements/settle?guild_id={{ auth.selected_guild_id }}" data-fee-settle-form>
                           <input type="hidden" name="distribution_id" value="{{ fee.distribution_id }}">
                           <input type="hidden" name="alliance_id" value="0">
                           <input type="hidden" name="fee_key" value="{{ fee.fee_key }}">
                           <input type="hidden" name="fee_label" value="{{ fee.fee_label }}">
                           <input type="hidden" name="return_tab" value="alliance-payouts">
-                          <button class="tiny-button" type="submit">정산 완료</button>
+                          <button class="tiny-button" type="submit" data-fee-settle-button>정산 완료</button>
                         </form>
                       </div>
                     </article>
@@ -985,21 +988,21 @@
                       <strong data-money-value data-adena-text="{{ fee.fee_amount_text }}" data-cash-text="{{ fee.fee_amount_cash_text }}">{{ fee.fee_amount_text }}</strong>
                     </div>
                     <div class="forfeiture-log-list">
-                      <article class="forfeiture-user-row">
+                      <article class="forfeiture-user-row" data-fee-settle-row data-fee-distribution-id="{{ fee.distribution_id }}" data-fee-alliance-id="0" data-fee-key="{{ fee.fee_key }}">
                         <div>
                           <strong>{{ fee.fee_label }} {{ fee.fee_percent_text }}%</strong>
                           <span>
                             {% if fee.is_settled %}
                               정산 완료 · {{ fee.settled_at or "-" }}
                             {% else %}
-                              정산 대기
+                              <span data-fee-status>정산 대기</span>
                             {% endif %}
                           </span>
                         </div>
                         <div class="inline-actions">
                           <strong>{{ fee.fee_amount_text }}</strong>
                           {% if can_edit_alliance_payouts and not fee.is_settled and fee.fee_amount > 0 %}
-                            <form method="post" action="/loot/fee-settlements/settle?guild_id={{ auth.selected_guild_id }}">
+                            <form method="post" action="/loot/fee-settlements/settle?guild_id={{ auth.selected_guild_id }}" data-fee-settle-form>
                               <input type="hidden" name="distribution_id" value="{{ fee.distribution_id }}">
                               <input type="hidden" name="alliance_id" value="0">
                               <input type="hidden" name="fee_key" value="{{ fee.fee_key }}">
@@ -1007,7 +1010,7 @@
                               <input type="hidden" name="fee_rate" value="{{ fee.fee_rate }}">
                               <input type="hidden" name="fee_amount" value="{{ fee.fee_amount }}">
                               <input type="hidden" name="return_tab" value="alliance-payouts">
-                              <button class="tiny-button" type="submit">정산 완료</button>
+                              <button class="tiny-button" type="submit" data-fee-settle-button>정산 완료</button>
                             </form>
                           {% endif %}
                         </div>
@@ -1360,20 +1363,20 @@
                   </div>
                   <div class="forfeiture-log-list">
                     {% for fee in rule.pending_fee_logs %}
-                      <article class="forfeiture-user-row">
+                      <article class="forfeiture-user-row" data-fee-settle-row data-fee-distribution-id="{{ fee.distribution_id }}" data-fee-alliance-id="{{ fee.alliance_id }}" data-fee-key="{{ fee.fee_key }}">
                         <div>
                           <strong>#{{ fee.loot_event_id }} {{ fee.item_name }}</strong>
-                          <span>{{ fee.attendance_started_at }} · {{ fee.fee_percent_text }}%</span>
+                          <span data-fee-status>{{ fee.attendance_started_at }} · {{ fee.fee_percent_text }}%</span>
                         </div>
                         <div class="inline-actions">
                           <strong>{{ fee.fee_amount_text }}</strong>
-                          <form method="post" action="/loot/fee-settlements/settle?guild_id={{ auth.selected_guild_id }}">
+                          <form method="post" action="/loot/fee-settlements/settle?guild_id={{ auth.selected_guild_id }}" data-fee-settle-form>
                             <input type="hidden" name="distribution_id" value="{{ fee.distribution_id }}">
                             <input type="hidden" name="alliance_id" value="{{ fee.alliance_id }}">
                             <input type="hidden" name="fee_key" value="{{ fee.fee_key }}">
                             <input type="hidden" name="fee_label" value="{{ fee.fee_label }}">
                             <input type="hidden" name="return_tab" value="my-alliance-payouts">
-                            <button class="tiny-button" type="submit">정산 완료</button>
+                            <button class="tiny-button" type="submit" data-fee-settle-button>정산 완료</button>
                           </form>
                         </div>
                       </article>
@@ -1429,7 +1432,10 @@
                   <article class="forfeiture-user-row">
                     <div>
                       <strong>#{{ row.loot_event_id }} {{ row.item_name }}</strong>
-                      <span>{{ row.attendance_started_at }} · {{ row.completed_count }}/{{ row.recipient_count }}명 완료</span>
+                      <span>
+                        {{ row.attendance_started_at }} · {{ row.completed_count }}/{{ row.recipient_count }}명 완료
+                        {% if row.fee_pending_count %} · 수수료 {{ row.fee_pending_count }}건 대기{% endif %}
+                      </span>
                     </div>
                     <strong>{{ row.amount_text }}</strong>
                   </article>
@@ -1444,7 +1450,7 @@
                   <article class="forfeiture-user-row">
                     <div>
                       <strong>#{{ row.loot_event_id }} {{ row.item_name }}</strong>
-                      <span>{{ row.attendance_started_at }} · 전체 완료</span>
+                      <span>{{ row.attendance_started_at }} · 유저/수수료 전체 완료</span>
                     </div>
                     <strong>{{ row.amount_text }}</strong>
                   </article>
@@ -1682,21 +1688,21 @@
                               <strong>{{ fee.fee_amount_total_text }}</strong>
                             </div>
                             <div class="forfeiture-log-list">
-                              <article class="forfeiture-user-row">
+                              <article class="forfeiture-user-row" data-fee-settle-row data-fee-distribution-id="{{ payout.distribution_id }}" data-fee-alliance-id="{{ payout.alliance_id }}" data-fee-key="{{ fee.fee_key }}">
                                 <div>
                                   <strong>{{ fee.rule_name }} {{ fee.fee_percent_text }}%</strong>
                                   <span>
                                     {% if fee.is_settled %}
                                       정산 완료 · {{ fee.settled_at or "-" }}
                                     {% else %}
-                                      정산 대기
+                                      <span data-fee-status>정산 대기</span>
                                     {% endif %}
                                   </span>
                                 </div>
                                 <div class="inline-actions">
                                   <strong>{{ fee.fee_amount_total_text }}</strong>
                                   {% if can_edit_my_alliance_payouts and not fee.is_settled and fee.fee_amount > 0 and not my_alliance_payouts.selected_alliance.is_other %}
-                                    <form method="post" action="/loot/fee-settlements/settle?guild_id={{ auth.selected_guild_id }}">
+                                    <form method="post" action="/loot/fee-settlements/settle?guild_id={{ auth.selected_guild_id }}" data-fee-settle-form>
                                       <input type="hidden" name="distribution_id" value="{{ payout.distribution_id }}">
                                       <input type="hidden" name="alliance_id" value="{{ payout.alliance_id }}">
                                       <input type="hidden" name="fee_key" value="{{ fee.fee_key }}">
@@ -1704,7 +1710,7 @@
                                       <input type="hidden" name="fee_rate" value="{{ fee.fee_rate }}">
                                       <input type="hidden" name="fee_amount" value="{{ fee.fee_amount }}">
                                       <input type="hidden" name="return_tab" value="my-alliance-payouts">
-                                      <button class="tiny-button" type="submit">정산 완료</button>
+                                      <button class="tiny-button" type="submit" data-fee-settle-button>정산 완료</button>
                                     </form>
                                   {% endif %}
                                 </div>
@@ -2527,15 +2533,39 @@
         window.clearTimeout(timeoutId);
       }
       let payload = {};
+      const contentType = response.headers.get("content-type") || "";
       try {
-        payload = await response.json();
+        if (contentType.includes("application/json")) {
+          payload = await response.json();
+        }
       } catch {
         payload = {};
       }
-      if (!response.ok || payload.ok === false) {
+      if (!contentType.includes("application/json") || !response.ok || payload.ok === false) {
         throw new Error(payload.message || "요청을 처리하지 못했습니다.");
       }
       return payload;
+    }
+
+    function feeRowSelector(distributionId, allianceId, feeKey) {
+      const safeFeeKey = String(feeKey || "").replace(/\\/g, "\\\\").replace(/"/g, "\\\"");
+      return `[data-fee-settle-row][data-fee-distribution-id="${distributionId}"][data-fee-alliance-id="${allianceId}"][data-fee-key="${safeFeeKey}"]`;
+    }
+
+    function markFeeRowsSettled(distributionId, allianceId, feeKey) {
+      document.querySelectorAll(feeRowSelector(distributionId, allianceId, feeKey)).forEach((row) => {
+        row.classList.add("is-paid");
+        row.querySelectorAll("[data-fee-status]").forEach((status) => {
+          status.textContent = "정산 완료";
+        });
+        row.querySelectorAll("[data-fee-settle-form]").forEach((form) => {
+          const button = form.querySelector("[data-fee-settle-button]");
+          if (button) {
+            button.disabled = true;
+            button.textContent = "완료됨";
+          }
+        });
+      });
     }
 
     const lootOpenCardStorageKey = `loot-open-card:${location.pathname}:${new URLSearchParams(location.search).get("guild_id") || ""}`;
@@ -3397,6 +3427,39 @@
             button.textContent = originalText;
           }
         }
+      });
+    });
+
+    document.querySelectorAll("[data-fee-settle-form]").forEach((form) => {
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const button = form.querySelector("[data-fee-settle-button]");
+        if (!button || button.disabled || form.dataset.submitting === "true") {
+          return;
+        }
+        const formData = new FormData(form);
+        const distributionId = formData.get("distribution_id") || "";
+        const allianceId = formData.get("alliance_id") || "0";
+        const feeKey = formData.get("fee_key") || "";
+        const originalText = button.textContent;
+        form.dataset.submitting = "true";
+        button.disabled = true;
+        button.textContent = "처리중";
+        try {
+          const payload = await submitJsonForm(form);
+          markFeeRowsSettled(
+            payload.distribution_id || distributionId,
+            payload.alliance_id ?? allianceId,
+            payload.fee_key || feeKey,
+          );
+        } catch (error) {
+          alert(error.message);
+          button.disabled = false;
+          button.textContent = originalText;
+          form.dataset.submitting = "false";
+          return;
+        }
+        form.dataset.submitting = "false";
       });
     });
 

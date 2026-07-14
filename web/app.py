@@ -2758,6 +2758,12 @@ def _decorate_loot_events(
                 settlement=alliance_fee_settlement,
             ),
         ]
+        owner_fee_pending_count = sum(
+            1
+            for fee in row["distribution_fee_logs"]
+            if not fee.get("is_settled")
+            and Decimal(str(fee.get("fee_amount") or "0")) > 0
+        )
 
         row["cash_price_input"] = _decimal_input(event.get("cash_price_krw"))
         row["cash_price_text"] = _money_text(event.get("cash_price_krw"), places=0)
@@ -3064,10 +3070,14 @@ def _decorate_loot_events(
             row["payout_summary_label"] = "분배 없음"
             row["payout_summary_meta"] = "혈맹 0개"
             row["payout_summary_class"] = "is-empty"
-        elif unpaid_count == 0:
+        elif unpaid_count == 0 and owner_fee_pending_count == 0:
             row["payout_summary_label"] = "분배완료"
             row["payout_summary_meta"] = f"{paid_count}/{payout_total} 혈맹"
             row["payout_summary_class"] = "is-paid"
+        elif unpaid_count == 0:
+            row["payout_summary_label"] = "수수료 대기"
+            row["payout_summary_meta"] = f"수수료 {owner_fee_pending_count}건 대기"
+            row["payout_summary_class"] = "is-unpaid"
         else:
             row["payout_summary_label"] = "미완료"
             row["payout_summary_meta"] = f"{unpaid_count}개 미완료"
@@ -3866,7 +3876,19 @@ def _my_alliance_payout_context(
 
             recipient_total_count = len(recipients)
             completed_recipient_count = paid_recipient_count + forfeited_recipient_count
-            status = "paid" if recipient_total_count > 0 and completed_recipient_count == recipient_total_count else "unpaid"
+            fee_pending_count = sum(
+                1
+                for line in decorated_fee_lines
+                if not line.get("is_settled")
+                and Decimal(str(line.get("fee_amount_total") or line.get("fee_amount") or "0")) > 0
+            )
+            status = (
+                "paid"
+                if recipient_total_count > 0
+                and completed_recipient_count == recipient_total_count
+                and fee_pending_count == 0
+                else "unpaid"
+            )
             if status == "paid":
                 settled_count += 1
                 settled_alliance_distribution_logs.append(
@@ -3883,6 +3905,7 @@ def _my_alliance_payout_context(
                         ),
                         "completed_count": completed_recipient_count,
                         "recipient_count": recipient_total_count,
+                        "fee_pending_count": fee_pending_count,
                     }
                 )
             else:
@@ -3905,6 +3928,7 @@ def _my_alliance_payout_context(
                         ),
                         "completed_count": completed_recipient_count,
                         "recipient_count": recipient_total_count,
+                        "fee_pending_count": fee_pending_count,
                     }
                 )
             forfeited_amount_sum += forfeited_amount
@@ -3950,7 +3974,15 @@ def _my_alliance_payout_context(
                         adena_rate,
                     ),
                     "status": status,
-                    "status_label": "정산완료" if status == "paid" else "미정산",
+                    "status_label": (
+                        "정산완료"
+                        if status == "paid"
+                        else (
+                            "수수료 대기"
+                            if unpaid_amount == 0 and fee_unsettled_amount > 0
+                            else "미정산"
+                        )
+                    ),
                     "status_class": "is-paid" if status == "paid" else "is-unpaid",
                     "fee_lines": fee_lines,
                     "recipients": recipients,
@@ -4193,6 +4225,15 @@ def _alliance_payout_group_context(
             for payout in event_payouts
             if str(payout.get("payout_status") or "") == "paid"
         )
+        owner_fee_logs = [
+            fee
+            for fee in event.get("distribution_fee_logs", [])
+            if str(fee.get("fee_key") or "") in {"bookkeeper", "alliance"}
+            and Decimal(str(fee.get("fee_amount") or "0")) > 0
+        ]
+        owner_fee_pending_count = sum(
+            1 for fee in owner_fee_logs if not fee.get("is_settled")
+        )
         sale_amount = _rounded_integer(
             event.get("total_sale_amount_display")
             or event.get("total_sale_amount")
@@ -4209,17 +4250,20 @@ def _alliance_payout_group_context(
             "amount_text": _money_text(sale_amount),
             "completed_count": payout_paid,
             "recipient_count": payout_total,
+            "fee_pending_count": owner_fee_pending_count,
         }
-        if payout_total > 0 and payout_paid == payout_total:
+        if (
+            payout_total > 0
+            and payout_paid == payout_total
+            and owner_fee_pending_count == 0
+        ):
             owner_summary["settled_sale_amount"] += sale_amount
             owner_summary["settled_sale_logs"].append(sale_log)
         else:
             owner_summary["sale_amount"] += sale_amount
             owner_summary["sale_logs"].append(sale_log)
-        for fee in event.get("distribution_fee_logs", []):
+        for fee in owner_fee_logs:
             fee_key = str(fee.get("fee_key") or "")
-            if fee_key not in {"bookkeeper", "alliance"}:
-                continue
             fee_log = dict(fee)
             pending_key = (
                 "bookkeeper_fee_logs"
@@ -7565,11 +7609,26 @@ async def settle_loot_fee(
             settled_by_discord_id=int(auth["user"]["id"]),
         )
     except ValueError:
+        if _wants_json(request):
+            return JSONResponse(
+                {"ok": False, "message": "수수료 정산 처리에 실패했습니다."},
+                status_code=400,
+            )
         return _loot_redirect(
             selected_guild_id,
             saved="error",
             alliance_id=alliance_id if alliance_id > 0 else None,
             tab=redirect_tab,
+        )
+    if _wants_json(request):
+        return JSONResponse(
+            {
+                "ok": True,
+                "distribution_id": distribution_id,
+                "alliance_id": allowed_alliance_id or 0,
+                "fee_key": fee_key,
+                "fee_label": fee_label,
+            }
         )
     return _loot_redirect(
         selected_guild_id,
