@@ -3462,6 +3462,42 @@ def _fee_group_percent_text(
     return fallback
 
 
+def _fee_history_group_rows(logs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    grouped: dict[str, dict[str, Any]] = {}
+    for log in logs:
+        label = str(log.get("fee_label") or "수수료").strip() or "수수료"
+        row = grouped.setdefault(
+            label,
+            {
+                "fee_label": label,
+                "amount": Decimal("0"),
+                "count": 0,
+                "latest_settled_at": "",
+            },
+        )
+        row["amount"] += Decimal(str(log.get("fee_amount") or "0"))
+        row["count"] += 1
+        settled_at = str(log.get("settled_at") or "")
+        if settled_at > str(row["latest_settled_at"] or ""):
+            row["latest_settled_at"] = settled_at
+    rows = []
+    for row in grouped.values():
+        amount = Decimal(str(row.get("amount") or "0"))
+        rows.append(
+            {
+                **row,
+                "amount_text": _money_text(amount),
+            }
+        )
+    rows.sort(
+        key=lambda item: (
+            -Decimal(str(item.get("amount") or "0")),
+            str(item.get("fee_label") or ""),
+        )
+    )
+    return rows
+
+
 def _my_alliance_payout_context(
     guild_id: int,
     selected_alliance: dict[str, Any] | None,
@@ -3492,6 +3528,12 @@ def _my_alliance_payout_context(
                 "settled_forfeiture_logs": [],
                 "forfeiture_users": [],
                 "settled_forfeiture_users": [],
+                "fee_logs": [],
+                "settled_fee_logs": [],
+                "settled_fee_groups": [],
+                "settled_fee_group_total_text": "0",
+                "alliance_distribution_logs": [],
+                "settled_alliance_distribution_logs": [],
             },
         }
 
@@ -3609,6 +3651,10 @@ def _my_alliance_payout_context(
                 total_amount,
                 selected_rules,
             )
+            active_fee_keys = {
+                _internal_fee_key(rule)
+                for rule in fee_rules_for(alliance_id)
+            }
             fee_amount = sum(
                 (Decimal(str(line["fee_amount"])) for line in fee_lines_raw),
                 Decimal("0"),
@@ -3633,6 +3679,7 @@ def _my_alliance_payout_context(
                         alliance_id,
                         f"internal:{snapshot_id}",
                     )
+                is_legacy_fee = snapshot_id > 0 and fee_key not in active_fee_keys
                 fee_log = _fee_log_row(
                     distribution_id=int(event["distribution_id"]),
                     loot_event_id=int(event.get("loot_event_id") or 0),
@@ -3650,15 +3697,19 @@ def _my_alliance_payout_context(
                     adena_rate=adena_rate,
                     settlement=fee_settlement,
                 )
+                if is_legacy_fee and fee_settlement is None:
+                    fee_log["is_settled"] = True
+                    fee_log["settled_at"] = "이전 룰 자동 완료"
+                    fee_log["is_legacy"] = True
                 decorated_line = _decorate_member_fee_lines([line], adena_rate)[0]
                 decorated_line["fee_key"] = fee_key
-                decorated_line["is_settled"] = bool(fee_settlement)
+                decorated_line["is_settled"] = bool(fee_settlement) or is_legacy_fee
                 decorated_line["settled_at"] = fee_log["settled_at"]
                 decorated_line["fee_amount_total_text"] = decorated_line["fee_amount_text"]
                 decorated_line["fee_amount_total_cash_text"] = decorated_line[
                     "fee_amount_cash_text"
                 ]
-                if fee_settlement:
+                if fee_settlement or is_legacy_fee:
                     decorated_line["fee_amount_text"] = "0"
                     decorated_line["fee_amount_cash_text"] = "0원"
                     settled_fee_logs.append(fee_log)
@@ -3969,7 +4020,6 @@ def _my_alliance_payout_context(
     )
     fee_rule_rows = []
     fee_rule_groups = []
-    seen_fee_keys: set[str] = set()
     for rule in fee_rules:
         fee_key = _internal_fee_key(rule)
         pending_rule_logs = [
@@ -4000,59 +4050,8 @@ def _my_alliance_payout_context(
         }
         fee_rule_rows.append(row)
         fee_rule_groups.append(row)
-        seen_fee_keys.add(fee_key)
-
-    all_fee_logs_by_key: dict[str, dict[str, Any]] = {}
-    for fee in [*fee_logs, *settled_fee_logs]:
-        fee_key = str(fee.get("fee_key") or "")
-        if not fee_key or fee_key in seen_fee_keys:
-            continue
-        group = all_fee_logs_by_key.setdefault(
-            fee_key,
-            {
-                "fee_key": fee_key,
-                "rule_name": str(fee.get("fee_label") or "이전 수수료"),
-                "fee_percent_text": str(fee.get("fee_percent_text") or "0"),
-                "fee_rate": Decimal(str(fee.get("fee_rate") or "0")),
-                "pending_fee_logs": [],
-                "settled_fee_logs": [],
-            },
-        )
-        if fee.get("is_settled"):
-            group["settled_fee_logs"].append(fee)
-        else:
-            group["pending_fee_logs"].append(fee)
-
-    for index, group in enumerate(
-        sorted(all_fee_logs_by_key.values(), key=lambda item: str(item["rule_name"])),
-        start=1,
-    ):
-        pending_summary = _sum_fee_logs(group["pending_fee_logs"])
-        settled_summary = _sum_fee_logs(group["settled_fee_logs"])
-        fee_rule_groups.append(
-            {
-                "rule_id": 0,
-                "rule_name": group["rule_name"],
-                "fee_key": group["fee_key"],
-                "modal_id": f"legacy-{index}",
-                "is_legacy": True,
-                "fee_rate": group["fee_rate"],
-                "fee_percent_text": group["fee_percent_text"],
-                "display_fee_percent_text": _fee_group_percent_text(
-                    [*group["pending_fee_logs"], *group["settled_fee_logs"]],
-                    str(group["fee_percent_text"] or "0"),
-                ),
-                "fee_percent_input": "",
-                "pending_fee_logs": group["pending_fee_logs"],
-                "settled_fee_logs": group["settled_fee_logs"],
-                "pending_fee_amount": pending_summary["amount"],
-                "pending_fee_amount_text": pending_summary["amount_text"],
-                "pending_fee_count": pending_summary["count"],
-                "settled_fee_amount": settled_summary["amount"],
-                "settled_fee_amount_text": settled_summary["amount_text"],
-                "settled_fee_count": settled_summary["count"],
-            }
-        )
+    settled_fee_group_total = _sum_fee_logs(settled_fee_logs)
+    settled_fee_groups = _fee_history_group_rows(settled_fee_logs)
     alliance_distribution_logs.sort(
         key=lambda item: str(item.get("attendance_started_at") or ""),
         reverse=True,
@@ -4129,6 +4128,8 @@ def _my_alliance_payout_context(
             "settled_forfeiture_users": forfeiture_user_rows(settled_forfeiture_logs),
             "fee_logs": fee_logs,
             "settled_fee_logs": settled_fee_logs,
+            "settled_fee_groups": settled_fee_groups,
+            "settled_fee_group_total_text": settled_fee_group_total["amount_text"],
             "alliance_distribution_logs": alliance_distribution_logs,
             "settled_alliance_distribution_logs": settled_alliance_distribution_logs,
         },

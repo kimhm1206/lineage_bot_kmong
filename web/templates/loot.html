@@ -1291,7 +1291,10 @@
             </span>
             <div class="my-alliance-split-metrics">
               <div>
-                <small>수수료 총액</small>
+                <small class="forfeit-metric-label">
+                  수수료 총액
+                  <button class="icon-button forfeit-info-button" type="button" aria-label="완료 수수료 내역 보기" data-simple-modal-open="my-alliance-fee-log">i</button>
+                </small>
                 <strong
                   data-money-value
                   data-adena-text="{{ my_alliance_payouts.summary.fee_text }}"
@@ -1323,7 +1326,7 @@
                   <div class="fee-rule-card">
                     <div>
                       <strong>{{ rule.rule_name }}</strong>
-                      <span>{{ rule.display_fee_percent_text }}{% if rule.display_fee_percent_text != "변동" %}%{% endif %} · 미정산 {{ rule.pending_fee_amount_text }}{% if rule.is_legacy %} · 이전 룰{% endif %}</span>
+                      <span>{{ rule.display_fee_percent_text }}{% if rule.display_fee_percent_text != "변동" %}%{% endif %} · 미정산 {{ rule.pending_fee_amount_text }}</span>
                     </div>
                     <button class="icon-button forfeit-info-button" type="button" aria-label="{{ rule.rule_name }} 수수료 내역 보기" data-simple-modal-open="my-fee-rule-{{ rule.modal_id }}">i</button>
                   </div>
@@ -1342,7 +1345,7 @@
                 <header class="panel-header">
                   <div>
                     <h2 id="my-fee-rule-title-{{ rule.modal_id }}">{{ rule.rule_name }}</h2>
-                    <span class="panel-caption">{{ rule.display_fee_percent_text }}{% if rule.display_fee_percent_text != "변동" %}%{% endif %} · 미정산 {{ rule.pending_fee_amount_text }}{% if rule.is_legacy %} · 이전 룰{% endif %}</span>
+                    <span class="panel-caption">{{ rule.display_fee_percent_text }}{% if rule.display_fee_percent_text != "변동" %}%{% endif %} · 미정산 {{ rule.pending_fee_amount_text }}</span>
                   </div>
                   <button class="icon-button" type="button" aria-label="닫기" data-simple-modal-close>&times;</button>
                 </header>
@@ -1457,57 +1460,24 @@
           <div class="modal-card forfeiture-log-modal-card" role="dialog" aria-modal="true" aria-labelledby="my-alliance-fee-log-title">
             <header class="panel-header">
               <div>
-                <h2 id="my-alliance-fee-log-title">내부 수수료 정산 내역</h2>
-                <span class="panel-caption">정산 완료된 수수료는 메인 수수료 합계에서 제외됩니다.</span>
+                <h2 id="my-alliance-fee-log-title">완료 수수료 내역</h2>
+                <span class="panel-caption">삭제되었거나 이름이 바뀐 과거 수수료도 완료 기록에 포함됩니다.</span>
               </div>
               <button class="icon-button" type="button" aria-label="닫기" data-simple-modal-close>&times;</button>
             </header>
-            <div class="forfeiture-log-tabs" data-modal-tabs="my-alliance-fee-log">
-              <button class="inner-tab-button is-active" type="button" data-modal-tab="pending">정산 대기</button>
-              <button class="inner-tab-button" type="button" data-modal-tab="settled">정산 완료</button>
-            </div>
-            <section class="forfeiture-log-panel" data-modal-panel="pending">
+            <section class="forfeiture-log-panel">
               <div class="forfeiture-log-total">
-                <span>정산 대기 수수료</span>
-                <strong>{{ my_alliance_payouts.summary.fee_text }}</strong>
+                <span>완료 수수료 합계</span>
+                <strong>{{ my_alliance_payouts.summary.settled_fee_group_total_text }}</strong>
               </div>
               <div class="forfeiture-log-list">
-                {% for fee in my_alliance_payouts.summary.fee_logs %}
+                {% for fee in my_alliance_payouts.summary.settled_fee_groups %}
                   <article class="forfeiture-user-row">
                     <div>
-                      <strong>#{{ fee.loot_event_id }} {{ fee.item_name }}</strong>
-                      <span>{{ fee.fee_label }} {{ fee.fee_percent_text }}% · {{ fee.attendance_started_at }}</span>
+                      <strong>{{ fee.fee_label }}</strong>
+                      <span>{{ fee.count }}건{% if fee.latest_settled_at %} · 최근 완료 {{ fee.latest_settled_at }}{% endif %}</span>
                     </div>
-                    <div class="inline-actions">
-                      <strong>{{ fee.fee_amount_text }}</strong>
-                      {% if can_edit_my_alliance_payouts and not my_alliance_payouts.selected_alliance.is_other and fee.fee_amount > 0 %}
-                        <form method="post" action="/loot/fee-settlements/settle?guild_id={{ auth.selected_guild_id }}">
-                          <input type="hidden" name="distribution_id" value="{{ fee.distribution_id }}">
-                          <input type="hidden" name="alliance_id" value="{{ fee.alliance_id }}">
-                          <input type="hidden" name="fee_key" value="{{ fee.fee_key }}">
-                          <input type="hidden" name="fee_label" value="{{ fee.fee_label }}">
-                          <input type="hidden" name="fee_rate" value="{{ fee.fee_rate }}">
-                          <input type="hidden" name="fee_amount" value="{{ fee.fee_amount }}">
-                          <input type="hidden" name="return_tab" value="my-alliance-payouts">
-                          <button class="tiny-button" type="submit">정산 완료</button>
-                        </form>
-                      {% endif %}
-                    </div>
-                  </article>
-                {% else %}
-                  <div class="empty report-empty">정산 대기 중인 내부 수수료가 없습니다.</div>
-                {% endfor %}
-              </div>
-            </section>
-            <section class="forfeiture-log-panel" data-modal-panel="settled" hidden>
-              <div class="forfeiture-log-list">
-                {% for fee in my_alliance_payouts.summary.settled_fee_logs %}
-                  <article class="forfeiture-user-row">
-                    <div>
-                      <strong>#{{ fee.loot_event_id }} {{ fee.item_name }}</strong>
-                      <span>{{ fee.fee_label }} · 완료 {{ fee.settled_at or "-" }}</span>
-                    </div>
-                    <strong>{{ fee.fee_amount_text }}</strong>
+                    <strong>{{ fee.amount_text }}</strong>
                   </article>
                 {% else %}
                   <div class="empty report-empty">정산 완료된 내부 수수료가 없습니다.</div>
