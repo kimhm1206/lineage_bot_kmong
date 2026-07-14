@@ -3432,6 +3432,18 @@ def _fee_log_row(
     }
 
 
+def _sum_fee_logs(logs: list[dict[str, Any]]) -> dict[str, Any]:
+    amount = sum(
+        (Decimal(str(log.get("fee_amount") or "0")) for log in logs),
+        Decimal("0"),
+    )
+    return {
+        "amount": amount,
+        "amount_text": _money_text(amount),
+        "count": len(logs),
+    }
+
+
 def _my_alliance_payout_context(
     guild_id: int,
     selected_alliance: dict[str, Any] | None,
@@ -3936,6 +3948,31 @@ def _my_alliance_payout_context(
         key=lambda item: str(item.get("settled_at") or item.get("attendance_started_at") or ""),
         reverse=True,
     )
+    fee_rule_rows = []
+    for rule in fee_rules:
+        fee_key = _internal_fee_key(rule)
+        pending_rule_logs = [
+            fee for fee in fee_logs if str(fee.get("fee_key") or "") == fee_key
+        ]
+        settled_rule_logs = [
+            fee for fee in settled_fee_logs if str(fee.get("fee_key") or "") == fee_key
+        ]
+        pending_summary = _sum_fee_logs(pending_rule_logs)
+        settled_summary = _sum_fee_logs(settled_rule_logs)
+        fee_rule_rows.append(
+            {
+                **rule,
+                "fee_key": fee_key,
+                "pending_fee_logs": pending_rule_logs,
+                "settled_fee_logs": settled_rule_logs,
+                "pending_fee_amount": pending_summary["amount"],
+                "pending_fee_amount_text": pending_summary["amount_text"],
+                "pending_fee_count": pending_summary["count"],
+                "settled_fee_amount": settled_summary["amount"],
+                "settled_fee_amount_text": settled_summary["amount_text"],
+                "settled_fee_count": settled_summary["count"],
+            }
+        )
     alliance_distribution_logs.sort(
         key=lambda item: str(item.get("attendance_started_at") or ""),
         reverse=True,
@@ -3988,7 +4025,7 @@ def _my_alliance_payout_context(
 
     return {
         "selected_alliance": selected_alliance,
-        "fee_rules": fee_rules,
+        "fee_rules": fee_rule_rows,
         "events": rows,
         "recipients": recipient_rows,
         "summary": {
@@ -4054,9 +4091,68 @@ def _alliance_payout_group_context(
         }
         for alliance in mapped_alliances
     }
+    owner_summary: dict[str, Any] = {
+        "sale_amount": Decimal("0"),
+        "settled_sale_amount": Decimal("0"),
+        "sale_logs": [],
+        "settled_sale_logs": [],
+        "bookkeeper_fee_logs": [],
+        "settled_bookkeeper_fee_logs": [],
+        "alliance_fee_logs": [],
+        "settled_alliance_fee_logs": [],
+    }
 
     for event in events:
         adena_rate = Decimal(str(event.get("adena_rate") or "0"))
+        event_payouts = list(event.get("alliance_payouts") or [])
+        payout_total = len(event_payouts)
+        payout_paid = sum(
+            1
+            for payout in event_payouts
+            if str(payout.get("payout_status") or "") == "paid"
+        )
+        sale_amount = _rounded_integer(
+            event.get("total_sale_amount_display")
+            or event.get("total_sale_amount")
+            or 0
+        )
+        sale_log = {
+            "distribution_id": int(event.get("distribution_id") or 0),
+            "loot_event_id": int(event.get("loot_event_id") or 0),
+            "item_name": str(event.get("item_name") or ""),
+            "attendance_started_at": event.get("attendance_started_at")
+            or event.get("event_date")
+            or "",
+            "amount": sale_amount,
+            "amount_text": _money_text(sale_amount),
+            "completed_count": payout_paid,
+            "recipient_count": payout_total,
+        }
+        if payout_total > 0 and payout_paid == payout_total:
+            owner_summary["settled_sale_amount"] += sale_amount
+            owner_summary["settled_sale_logs"].append(sale_log)
+        else:
+            owner_summary["sale_amount"] += sale_amount
+            owner_summary["sale_logs"].append(sale_log)
+        for fee in event.get("distribution_fee_logs", []):
+            fee_key = str(fee.get("fee_key") or "")
+            if fee_key not in {"bookkeeper", "alliance"}:
+                continue
+            fee_log = dict(fee)
+            pending_key = (
+                "bookkeeper_fee_logs"
+                if fee_key == "bookkeeper"
+                else "alliance_fee_logs"
+            )
+            settled_key = (
+                "settled_bookkeeper_fee_logs"
+                if fee_key == "bookkeeper"
+                else "settled_alliance_fee_logs"
+            )
+            if fee.get("is_settled"):
+                owner_summary[settled_key].append(fee_log)
+            else:
+                owner_summary[pending_key].append(fee_log)
         for payout in event.get("alliance_payouts", []):
             alliance_id = _parse_optional_int(payout.get("alliance_id"))
             if alliance_id is None or alliance_id not in alliance_rows:
@@ -4122,9 +4218,51 @@ def _alliance_payout_group_context(
             str(item["alliance_name"]),
         )
     )
+    for key in (
+        "sale_logs",
+        "settled_sale_logs",
+        "bookkeeper_fee_logs",
+        "settled_bookkeeper_fee_logs",
+        "alliance_fee_logs",
+        "settled_alliance_fee_logs",
+    ):
+        owner_summary[key].sort(
+            key=lambda item: str(
+                item.get("settled_at") or item.get("attendance_started_at") or ""
+            ),
+            reverse=True,
+        )
+    sale_amount = Decimal(str(owner_summary["sale_amount"]))
+    settled_sale_amount = Decimal(str(owner_summary["settled_sale_amount"]))
+    bookkeeper_pending = _sum_fee_logs(owner_summary["bookkeeper_fee_logs"])
+    bookkeeper_settled = _sum_fee_logs(owner_summary["settled_bookkeeper_fee_logs"])
+    alliance_pending = _sum_fee_logs(owner_summary["alliance_fee_logs"])
+    alliance_settled = _sum_fee_logs(owner_summary["settled_alliance_fee_logs"])
     return {
         "alliances": rows,
         "mapped_alliances": mapped_alliances,
+        "summary": {
+            "sale_text": _money_text(sale_amount),
+            "sale_count": len(owner_summary["sale_logs"]),
+            "settled_sale_text": _money_text(settled_sale_amount),
+            "settled_sale_count": len(owner_summary["settled_sale_logs"]),
+            "sale_logs": owner_summary["sale_logs"],
+            "settled_sale_logs": owner_summary["settled_sale_logs"],
+            "bookkeeper_fee_text": bookkeeper_pending["amount_text"],
+            "bookkeeper_fee_count": bookkeeper_pending["count"],
+            "settled_bookkeeper_fee_text": bookkeeper_settled["amount_text"],
+            "settled_bookkeeper_fee_count": bookkeeper_settled["count"],
+            "bookkeeper_fee_logs": owner_summary["bookkeeper_fee_logs"],
+            "settled_bookkeeper_fee_logs": owner_summary[
+                "settled_bookkeeper_fee_logs"
+            ],
+            "alliance_fee_text": alliance_pending["amount_text"],
+            "alliance_fee_count": alliance_pending["count"],
+            "settled_alliance_fee_text": alliance_settled["amount_text"],
+            "settled_alliance_fee_count": alliance_settled["count"],
+            "alliance_fee_logs": owner_summary["alliance_fee_logs"],
+            "settled_alliance_fee_logs": owner_summary["settled_alliance_fee_logs"],
+        },
     }
 
 
@@ -5072,7 +5210,30 @@ def _loot_template_context(
     alliance_payout_groups = (
         _alliance_payout_group_context(guild_id, loot_events)
         if active_loot_tab == "alliance-payouts"
-        else {"alliances": [], "mapped_alliances": []}
+        else {
+            "alliances": [],
+            "mapped_alliances": [],
+            "summary": {
+                "sale_text": "0",
+                "sale_count": 0,
+                "settled_sale_text": "0",
+                "settled_sale_count": 0,
+                "sale_logs": [],
+                "settled_sale_logs": [],
+                "bookkeeper_fee_text": "0",
+                "bookkeeper_fee_count": 0,
+                "settled_bookkeeper_fee_text": "0",
+                "settled_bookkeeper_fee_count": 0,
+                "bookkeeper_fee_logs": [],
+                "settled_bookkeeper_fee_logs": [],
+                "alliance_fee_text": "0",
+                "alliance_fee_count": 0,
+                "settled_alliance_fee_text": "0",
+                "settled_alliance_fee_count": 0,
+                "alliance_fee_logs": [],
+                "settled_alliance_fee_logs": [],
+            },
+        }
     )
     my_alliance_payouts = (
         _my_alliance_payout_context(guild_id, selected_alliance, loot_events)
@@ -6894,6 +7055,46 @@ async def create_alliance_fee_rule(
             rule_name=str(form_data.get("rule_name") or ""),
             fee_rate=fee_rate,
             created_by_discord_id=int(auth["user"]["id"]),
+        )
+    except ValueError:
+        return _loot_redirect(selected_guild_id, saved="error", alliance_id=alliance_id)
+    return _loot_redirect(selected_guild_id, saved="fee_rule", alliance_id=alliance_id)
+
+
+@app.post("/loot/alliance-fee-rules/update")
+async def update_alliance_fee_rule(
+    request: Request,
+    guild_id: str | None = None,
+):
+    auth = _auth_context(request, guild_id)
+    if not auth:
+        return _auth_redirect(request)
+    selected_guild_id = int(auth["selected_guild_id"])
+    if not _can_edit_my_alliance_payouts(auth):
+        return _loot_redirect(selected_guild_id, saved="forbidden")
+
+    form_data = await _urlencoded_form_data(request)
+    try:
+        requested_alliance_id = int(form_data.get("alliance_id") or "")
+        rule_id = int(form_data.get("rule_id") or "")
+    except ValueError:
+        requested_alliance_id = None
+        rule_id = 0
+    alliance_id = _allowed_loot_alliance_id(auth, requested_alliance_id)
+    if alliance_id is None:
+        return _loot_redirect(selected_guild_id, saved="forbidden")
+
+    errors: list[str] = []
+    fee_rate = _fee_rate_from_form(form_data, errors)
+    if errors:
+        return _loot_redirect(selected_guild_id, saved="error", alliance_id=alliance_id)
+    try:
+        database.update_alliance_payout_fee_rule(
+            selected_guild_id,
+            alliance_id,
+            rule_id,
+            rule_name=str(form_data.get("rule_name") or ""),
+            fee_rate=fee_rate,
         )
     except ValueError:
         return _loot_redirect(selected_guild_id, saved="error", alliance_id=alliance_id)

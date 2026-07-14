@@ -14,7 +14,7 @@
         }
       })();
     </script>
-    <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}?v=20260606-tab-role-marker">
+    <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}?v=20260715-loot-fee-panels">
   </head>
   <body class="{% block body_class %}{% endblock %}{% if auth %} page-role-{{ page_required_role|default('user') }}{% endif %}">
     <header class="topbar {% if not auth %}topbar-public{% endif %}">

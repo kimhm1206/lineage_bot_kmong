@@ -686,6 +686,23 @@ class Database:
     ) -> None:
         deactivate_alliance_payout_fee_rule(guild_id, alliance_id, rule_id)
 
+    def update_alliance_payout_fee_rule(
+        self,
+        guild_id: int,
+        alliance_id: int,
+        rule_id: int,
+        *,
+        rule_name: str,
+        fee_rate: Decimal,
+    ) -> None:
+        update_alliance_payout_fee_rule(
+            guild_id,
+            alliance_id,
+            rule_id,
+            rule_name=rule_name,
+            fee_rate=fee_rate,
+        )
+
     def get_member_payout_groups(
         self,
         guild_id: int,
@@ -3936,6 +3953,47 @@ def deactivate_alliance_payout_fee_rule(
                   AND rule_id = %s
                 """,
                 (guild_id, alliance_id, rule_id),
+            )
+            if cursor.rowcount == 0:
+                raise ValueError("Fee rule was not found.")
+        connection.commit()
+
+
+def update_alliance_payout_fee_rule(
+    guild_id: int,
+    alliance_id: int,
+    rule_id: int,
+    *,
+    rule_name: str,
+    fee_rate: Decimal,
+) -> None:
+    normalized_name = rule_name.strip()
+    normalized_fee_rate = _decimal(fee_rate)
+    if not normalized_name:
+        raise ValueError("Fee rule name must not be empty.")
+    if normalized_fee_rate < 0:
+        raise ValueError("Fee rule rate must not be negative.")
+
+    with _connect() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE alliance_payout_fee_rules
+                SET rule_name = %s,
+                    fee_rate = %s,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE guild_id = %s
+                  AND alliance_id = %s
+                  AND rule_id = %s
+                  AND is_active = TRUE
+                """,
+                (
+                    normalized_name,
+                    normalized_fee_rate,
+                    guild_id,
+                    alliance_id,
+                    rule_id,
+                ),
             )
             if cursor.rowcount == 0:
                 raise ValueError("Fee rule was not found.")
