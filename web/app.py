@@ -7,7 +7,6 @@ import json
 import os
 import secrets
 import ipaddress
-from html import escape
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_FLOOR
 from pathlib import Path
@@ -5184,6 +5183,345 @@ def _parse_loot_excluded_alliance_ids(value: str | None) -> list[int]:
     return ids
 
 
+def _modal_fee_form_payload(
+    guild_id: int,
+    fee: dict[str, Any],
+    *,
+    alliance_id: int,
+    return_tab: str,
+    can_edit: bool,
+) -> dict[str, Any] | None:
+    if (
+        not can_edit
+        or fee.get("is_settled")
+        or Decimal(str(fee.get("fee_amount") or "0")) <= 0
+    ):
+        return None
+    return {
+        "action": f"/loot/fee-settlements/settle?guild_id={int(guild_id)}",
+        "button_text": "정산 완료",
+        "fields": {
+            "distribution_id": str(fee.get("distribution_id") or ""),
+            "alliance_id": str(int(alliance_id or 0)),
+            "fee_key": str(fee.get("fee_key") or ""),
+            "fee_label": str(fee.get("fee_label") or fee.get("rule_name") or ""),
+            "fee_rate": str(fee.get("fee_rate") or ""),
+            "fee_amount": str(fee.get("fee_amount") or ""),
+            "return_tab": return_tab,
+        },
+    }
+
+
+def _modal_row_payload(
+    title: str,
+    meta: str,
+    amount_text: str,
+    *,
+    fee: dict[str, Any] | None = None,
+    form: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    row = {
+        "title": str(title or ""),
+        "meta": str(meta or ""),
+        "amount": str(amount_text or "0"),
+    }
+    if fee is not None:
+        row["fee"] = {
+            "distribution_id": str(fee.get("distribution_id") or ""),
+            "alliance_id": str(int(fee.get("alliance_id") or 0)),
+            "fee_key": str(fee.get("fee_key") or ""),
+        }
+    if form is not None:
+        row["form"] = form
+    return row
+
+
+def _modal_fee_row_payload(
+    guild_id: int,
+    fee: dict[str, Any],
+    *,
+    alliance_id: int,
+    return_tab: str,
+    can_edit: bool,
+    title: str | None = None,
+    meta: str | None = None,
+) -> dict[str, Any]:
+    fee_payload = {**fee, "alliance_id": int(alliance_id or 0)}
+    status_meta = (
+        f"정산 완료 · {fee.get('settled_at') or '-'}"
+        if fee.get("is_settled")
+        else "정산 대기"
+    )
+    return _modal_row_payload(
+        title or str(fee.get("fee_label") or fee.get("rule_name") or "수수료"),
+        meta or status_meta,
+        str(fee.get("fee_amount_total_text") or fee.get("fee_amount_text") or "0"),
+        fee=fee_payload,
+        form=_modal_fee_form_payload(
+            guild_id,
+            fee,
+            alliance_id=alliance_id,
+            return_tab=return_tab,
+            can_edit=can_edit,
+        ),
+    )
+
+
+def _loot_modal_payload(
+    guild_id: int,
+    alliance_payout_groups: dict[str, Any],
+    my_alliance_payouts: dict[str, Any],
+    *,
+    can_edit_alliance: bool,
+    can_edit_my: bool,
+) -> dict[str, Any]:
+    data: dict[str, Any] = {}
+
+    owner_summary = alliance_payout_groups.get("summary") or {}
+    data["owner-sale"] = {
+        "title": "판매대금 기록",
+        "caption": "모든 혈맹 분배와 수수료가 완료된 아이템은 완료 기록으로 이동합니다.",
+        "tabs": [
+            {
+                "key": "pending",
+                "label": "미분배",
+                "total_label": "미분배 판매대금",
+                "total": str(owner_summary.get("sale_text") or "0"),
+                "empty": "미분배 판매대금이 없습니다.",
+                "rows": [
+                    _modal_row_payload(
+                        f"#{row.get('loot_event_id')} {row.get('item_name')}",
+                        (
+                            f"{row.get('attendance_started_at')} · "
+                            f"{row.get('completed_count')}/{row.get('recipient_count')} 혈맹 완료"
+                            + (
+                                f" · 수수료 {row.get('fee_pending_count')}건 대기"
+                                if row.get("fee_pending_count")
+                                else ""
+                            )
+                        ),
+                        str(row.get("amount_text") or "0"),
+                    )
+                    for row in owner_summary.get("sale_logs", [])
+                ],
+            },
+            {
+                "key": "settled",
+                "label": "완료 기록",
+                "total_label": "완료 판매대금",
+                "total": str(owner_summary.get("settled_sale_text") or "0"),
+                "empty": "완료된 판매대금 기록이 없습니다.",
+                "rows": [
+                    _modal_row_payload(
+                        f"#{row.get('loot_event_id')} {row.get('item_name')}",
+                        f"{row.get('attendance_started_at')} · 전체 혈맹/수수료 완료",
+                        str(row.get("amount_text") or "0"),
+                    )
+                    for row in owner_summary.get("settled_sale_logs", [])
+                ],
+            },
+        ],
+    }
+
+    for fee_key, payload_key, title in (
+        ("bookkeeper", "owner-fee-bookkeeper", "경리 수수료 기록"),
+        ("alliance", "owner-fee-alliance", "연합 수수료 기록"),
+    ):
+        pending_logs = owner_summary.get(f"{fee_key}_fee_logs", [])
+        settled_logs = owner_summary.get(f"settled_{fee_key}_fee_logs", [])
+        data[payload_key] = {
+            "title": title,
+            "caption": "정산 완료된 수수료는 상단 합계에서 제외됩니다.",
+            "tabs": [
+                {
+                    "key": "pending",
+                    "label": "정산 대기",
+                    "total_label": "정산 대기 수수료",
+                    "total": str(owner_summary.get(f"{fee_key}_fee_text") or "0"),
+                    "empty": "정산 대기 중인 수수료가 없습니다.",
+                    "rows": [
+                        _modal_fee_row_payload(
+                            guild_id,
+                            fee,
+                            alliance_id=0,
+                            return_tab="alliance-payouts",
+                            can_edit=can_edit_alliance,
+                            title=f"#{fee.get('loot_event_id')} {fee.get('item_name')}",
+                            meta=(
+                                f"{fee.get('fee_label')} {fee.get('fee_percent_text')}% · "
+                                f"{fee.get('attendance_started_at')}"
+                            ),
+                        )
+                        for fee in pending_logs
+                    ],
+                },
+                {
+                    "key": "settled",
+                    "label": "완료 기록",
+                    "total_label": "정산 완료 수수료",
+                    "total": str(owner_summary.get(f"settled_{fee_key}_fee_text") or "0"),
+                    "empty": "정산 완료된 수수료 기록이 없습니다.",
+                    "rows": [
+                        _modal_row_payload(
+                            f"#{fee.get('loot_event_id')} {fee.get('item_name')}",
+                            f"{fee.get('fee_label')} · 완료 {fee.get('settled_at') or '-'}",
+                            str(fee.get("fee_amount_text") or "0"),
+                        )
+                        for fee in settled_logs
+                    ],
+                },
+            ],
+        }
+
+    selected_alliance = my_alliance_payouts.get("selected_alliance")
+    my_summary = my_alliance_payouts.get("summary") or {}
+    if selected_alliance:
+        data["my-alliance-distribution"] = {
+            "title": "연합 분배금 기록",
+            "caption": "정산이 끝난 아이템별 연합 분배금 기록입니다.",
+            "sections": [
+                {
+                    "total_label": "완료 연합 분배금",
+                    "total": str(my_summary.get("settled_total_text") or "0"),
+                    "empty": "완료된 연합 분배금 기록이 없습니다.",
+                    "rows": [
+                        _modal_row_payload(
+                            f"#{row.get('loot_event_id')} {row.get('item_name')}",
+                            f"{row.get('attendance_started_at')} · 유저/수수료 전체 완료",
+                            str(row.get("amount_text") or "0"),
+                        )
+                        for row in my_summary.get("settled_alliance_distribution_logs", [])
+                    ],
+                }
+            ],
+        }
+        data["my-fee-summary"] = {
+            "title": "완료 수수료 내역",
+            "caption": "삭제되었거나 이름이 바뀐 과거 수수료도 완료 기록에 포함됩니다.",
+            "sections": [
+                {
+                    "total_label": "완료 수수료 합계",
+                    "total": str(my_summary.get("settled_fee_group_total_text") or "0"),
+                    "empty": "정산 완료된 내부 수수료가 없습니다.",
+                    "rows": [
+                        _modal_row_payload(
+                            str(row.get("fee_label") or "수수료"),
+                            (
+                                f"{row.get('count')}건"
+                                + (
+                                    f" · 최근 완료 {row.get('latest_settled_at')}"
+                                    if row.get("latest_settled_at")
+                                    else ""
+                                )
+                            ),
+                            str(row.get("amount_text") or "0"),
+                        )
+                        for row in my_summary.get("settled_fee_groups", [])
+                    ],
+                }
+            ],
+        }
+        forfeiture_action = None
+        if can_edit_my and not selected_alliance.get("is_other"):
+            forfeiture_action = {
+                "action": f"/loot/member-forfeitures/settle?guild_id={int(guild_id)}",
+                "button_text": "현재 귀속 완료",
+                "disabled": int(my_summary.get("forfeited_count") or 0) == 0,
+                "fields": {
+                    "alliance_id": str(selected_alliance.get("alliance_id") or ""),
+                },
+            }
+        data["forfeiture"] = {
+            "title": "귀속 혈비 내역",
+            "caption": "유저가 받지 않아 혈비로 귀속된 분배 기록입니다.",
+            "actions": [forfeiture_action] if forfeiture_action else [],
+            "tabs": [
+                {
+                    "key": "pending",
+                    "label": "귀속 혈비",
+                    "total_label": "총 귀속 혈비",
+                    "total": str(my_summary.get("forfeited_text") or "0"),
+                    "total_target": "forfeiture-pending-total",
+                    "empty": "현재 귀속 혈비가 없습니다.",
+                    "rows": [
+                        _modal_row_payload(
+                            str(row.get("display_name") or ""),
+                            f"{row.get('count')}건 · 최근 귀속 {row.get('latest_forfeited_at') or '-'}",
+                            str(row.get("amount_text") or "0"),
+                        )
+                        for row in my_summary.get("forfeiture_users", [])
+                    ],
+                },
+                {
+                    "key": "settled",
+                    "label": "정산 완료 귀속 혈비",
+                    "total_label": "정산 완료 귀속 혈비",
+                    "total": str(my_summary.get("settled_forfeited_text") or "0"),
+                    "empty": "정산 완료된 귀속 혈비 기록이 없습니다.",
+                    "rows": [
+                        _modal_row_payload(
+                            str(row.get("display_name") or ""),
+                            f"{row.get('count')}건 · 최근 완료 {row.get('latest_settled_at') or '-'}",
+                            str(row.get("amount_text") or "0"),
+                        )
+                        for row in my_summary.get("settled_forfeiture_users", [])
+                    ],
+                },
+            ],
+        }
+
+        for rule in my_alliance_payouts.get("fee_rule_groups", []):
+            modal_key = f"my-fee-rule-{int(rule.get('rule_id') or 0)}"
+            percent_text = str(rule.get("display_fee_percent_text") or "0")
+            caption = (
+                f"{percent_text} · 미정산 {rule.get('pending_fee_amount_text')}"
+                if percent_text == "변동"
+                else f"{percent_text}% · 미정산 {rule.get('pending_fee_amount_text')}"
+            )
+            data[modal_key] = {
+                "title": str(rule.get("rule_name") or "수수료"),
+                "caption": caption,
+                "tabs": [
+                    {
+                        "key": "pending",
+                        "label": "정산 대기",
+                        "total_label": "정산 대기 수수료",
+                        "total": str(rule.get("pending_fee_amount_text") or "0"),
+                        "empty": "정산 대기 중인 수수료가 없습니다.",
+                        "rows": [
+                            _modal_fee_row_payload(
+                                guild_id,
+                                fee,
+                                alliance_id=int(fee.get("alliance_id") or 0),
+                                return_tab="my-alliance-payouts",
+                                can_edit=can_edit_my and not selected_alliance.get("is_other"),
+                                title=f"#{fee.get('loot_event_id')} {fee.get('item_name')}",
+                                meta=f"{fee.get('attendance_started_at')} · {fee.get('fee_percent_text')}%",
+                            )
+                            for fee in rule.get("pending_fee_logs", [])
+                        ],
+                    },
+                    {
+                        "key": "settled",
+                        "label": "완료 기록",
+                        "total_label": "정산 완료 수수료",
+                        "total": str(rule.get("settled_fee_amount_text") or "0"),
+                        "empty": "정산 완료된 수수료 기록이 없습니다.",
+                        "rows": [
+                            _modal_row_payload(
+                                f"#{fee.get('loot_event_id')} {fee.get('item_name')}",
+                                f"{fee.get('attendance_started_at')} · 완료 {fee.get('settled_at') or '-'}",
+                                str(fee.get("fee_amount_text") or "0"),
+                            )
+                            for fee in rule.get("settled_fee_logs", [])
+                        ],
+                    },
+                ],
+            }
+
+    return data
+
+
 def _loot_template_context(
     auth: dict[str, Any],
     guild_id: int,
@@ -5395,6 +5733,13 @@ def _loot_template_context(
         "bid_dashboard": bid_dashboard,
         "alliance_payout_groups": alliance_payout_groups,
         "my_alliance_payouts": my_alliance_payouts,
+        "loot_modal_data": _loot_modal_payload(
+            guild_id,
+            alliance_payout_groups,
+            my_alliance_payouts,
+            can_edit_alliance=_can_edit_alliance_payouts(auth),
+            can_edit_my=_can_edit_my_alliance_payouts(auth),
+        ),
         "loot_alliance_options": alliance_options,
         "active_loot_tab": active_loot_tab,
         "loot_tab_hrefs": tab_hrefs,
@@ -5426,420 +5771,6 @@ def _loot_template_context(
         },
         "active_page": "loot",
     }
-
-
-def _html(value: Any) -> str:
-    return escape(str(value or ""), quote=True)
-
-
-def _loot_modal_events(
-    auth: dict[str, Any],
-    guild_id: int,
-    period: str | None,
-) -> list[dict[str, Any]]:
-    _active_period, period_start, _period_label = _loot_period_bounds(period)
-    try:
-        viewer_discord_id = int(auth["user"]["id"])
-    except (KeyError, TypeError, ValueError):
-        viewer_discord_id = None
-    viewer_current_alliance_ids = (
-        {
-            int(option["alliance_id"])
-            for option in _member_alliance_options(guild_id, str(viewer_discord_id))
-            if str(option.get("alliance_id") or "").isdigit()
-        }
-        if viewer_discord_id is not None
-        else set()
-    )
-    events = _decorate_loot_events(
-        database.get_loot_drop_events(guild_id, limit=5000, start_at=period_start),
-        viewer_discord_id,
-        guild_id,
-        viewer_current_alliance_ids,
-    )
-    return _filter_loot_events_by_period(events, period_start)
-
-
-def _modal_card_html(title: str, caption: str, body: str) -> str:
-    return f"""
-      <div class="modal-card forfeiture-log-modal-card" role="dialog" aria-modal="true">
-        <header class="panel-header">
-          <div>
-            <h2>{_html(title)}</h2>
-            <span class="panel-caption">{_html(caption)}</span>
-          </div>
-          <button class="icon-button" type="button" aria-label="닫기" data-lazy-modal-close>&times;</button>
-        </header>
-        {body}
-      </div>
-    """
-
-
-def _modal_total_html(label: str, amount_text: str) -> str:
-    return f"""
-      <div class="forfeiture-log-total">
-        <span>{_html(label)}</span>
-        <strong>{_html(amount_text)}</strong>
-      </div>
-    """
-
-
-def _modal_empty_html(message: str) -> str:
-    return f'<div class="empty report-empty">{_html(message)}</div>'
-
-
-def _modal_row_html(
-    title: str,
-    meta: str,
-    amount_text: str,
-    *,
-    attrs: str = "",
-    action_html: str = "",
-) -> str:
-    return f"""
-      <article class="forfeiture-user-row"{attrs}>
-        <div>
-          <strong>{_html(title)}</strong>
-          <span>{meta}</span>
-        </div>
-        <div class="inline-actions">
-          <strong>{_html(amount_text)}</strong>
-          {action_html}
-        </div>
-      </article>
-    """
-
-
-def _fee_settle_form_html(
-    guild_id: int,
-    fee: dict[str, Any],
-    *,
-    alliance_id: int,
-    return_tab: str,
-    can_edit: bool,
-) -> str:
-    if (
-        not can_edit
-        or fee.get("is_settled")
-        or Decimal(str(fee.get("fee_amount") or "0")) <= 0
-    ):
-        return ""
-    return f"""
-      <form method="post" action="/loot/fee-settlements/settle?guild_id={int(guild_id)}" data-fee-settle-form>
-        <input type="hidden" name="distribution_id" value="{_html(fee.get('distribution_id'))}">
-        <input type="hidden" name="alliance_id" value="{int(alliance_id or 0)}">
-        <input type="hidden" name="fee_key" value="{_html(fee.get('fee_key'))}">
-        <input type="hidden" name="fee_label" value="{_html(fee.get('fee_label') or fee.get('rule_name'))}">
-        <input type="hidden" name="fee_rate" value="{_html(fee.get('fee_rate'))}">
-        <input type="hidden" name="fee_amount" value="{_html(fee.get('fee_amount'))}">
-        <input type="hidden" name="return_tab" value="{_html(return_tab)}">
-        <button class="tiny-button" type="submit" data-fee-settle-button>정산 완료</button>
-      </form>
-    """
-
-
-def _fee_row_html(
-    guild_id: int,
-    fee: dict[str, Any],
-    *,
-    alliance_id: int,
-    return_tab: str,
-    can_edit: bool,
-    title: str | None = None,
-    meta: str | None = None,
-) -> str:
-    fee_key = str(fee.get("fee_key") or "")
-    settled_meta = (
-        f"정산 완료 · {_html(fee.get('settled_at') or '-')}"
-        if fee.get("is_settled")
-        else '<span data-fee-status>정산 대기</span>'
-    )
-    attrs = (
-        f' data-fee-settle-row data-fee-distribution-id="{_html(fee.get("distribution_id"))}"'
-        f' data-fee-alliance-id="{int(alliance_id or 0)}"'
-        f' data-fee-key="{_html(fee_key)}"'
-    )
-    action_html = _fee_settle_form_html(
-        guild_id,
-        fee,
-        alliance_id=alliance_id,
-        return_tab=return_tab,
-        can_edit=can_edit,
-    )
-    return _modal_row_html(
-        title or str(fee.get("fee_label") or fee.get("rule_name") or "수수료"),
-        meta or settled_meta,
-        str(fee.get("fee_amount_total_text") or fee.get("fee_amount_text") or "0"),
-        attrs=attrs,
-        action_html=action_html,
-    )
-
-
-def _tabbed_modal_body(
-    modal_key: str,
-    pending_label: str,
-    pending_total: str,
-    pending_rows: str,
-    settled_label: str,
-    settled_total: str,
-    settled_rows: str,
-) -> str:
-    return f"""
-      <div class="forfeiture-log-tabs" data-modal-tabs="{_html(modal_key)}">
-        <button class="inner-tab-button is-active" type="button" data-modal-tab="pending">{_html(pending_label)}</button>
-        <button class="inner-tab-button" type="button" data-modal-tab="settled">완료 기록</button>
-      </div>
-      <section class="forfeiture-log-panel" data-modal-panel="pending">
-        {_modal_total_html(pending_label, pending_total)}
-        <div class="forfeiture-log-list">{pending_rows}</div>
-      </section>
-      <section class="forfeiture-log-panel" data-modal-panel="settled" hidden>
-        {_modal_total_html(settled_label, settled_total)}
-        <div class="forfeiture-log-list">{settled_rows}</div>
-      </section>
-    """
-
-
-def _loot_modal_html(
-    auth: dict[str, Any],
-    guild_id: int,
-    *,
-    modal: str,
-    period: str | None,
-    alliance_id: int | None,
-    distribution_id: int,
-    fee_key: str,
-    rule_id: int,
-) -> str:
-    events = _loot_modal_events(auth, guild_id, period)
-    can_edit_alliance = _can_edit_alliance_payouts(auth)
-    can_edit_my = _can_edit_my_alliance_payouts(auth)
-
-    if modal in {"owner-sale", "owner-fee"}:
-        if not can_edit_alliance:
-            raise ValueError("forbidden")
-        summary = _alliance_payout_group_context(guild_id, events)["summary"]
-        if modal == "owner-sale":
-            pending_rows = "".join(
-                _modal_row_html(
-                    f"#{row['loot_event_id']} {row['item_name']}",
-                    _html(
-                        f"{row['attendance_started_at']} · {row['completed_count']}/{row['recipient_count']} 혈맹 완료"
-                        + (
-                            f" · 수수료 {row['fee_pending_count']}건 대기"
-                            if row.get("fee_pending_count")
-                            else ""
-                        )
-                    ),
-                    row["amount_text"],
-                )
-                for row in summary["sale_logs"]
-            ) or _modal_empty_html("미분배 판매대금이 없습니다.")
-            settled_rows = "".join(
-                _modal_row_html(
-                    f"#{row['loot_event_id']} {row['item_name']}",
-                    _html(f"{row['attendance_started_at']} · 전체 혈맹/수수료 완료"),
-                    row["amount_text"],
-                )
-                for row in summary["settled_sale_logs"]
-            ) or _modal_empty_html("완료된 판매대금 기록이 없습니다.")
-            body = _tabbed_modal_body(
-                "owner-sale",
-                "미분배 판매대금",
-                summary["sale_text"],
-                pending_rows,
-                "완료 판매대금",
-                summary["settled_sale_text"],
-                settled_rows,
-            )
-            return _modal_card_html(
-                "판매대금 기록",
-                "모든 혈맹 분배와 수수료가 완료된 아이템은 완료 기록으로 이동합니다.",
-                body,
-            )
-
-        is_bookkeeper = fee_key == "bookkeeper"
-        pending_logs = summary["bookkeeper_fee_logs"] if is_bookkeeper else summary["alliance_fee_logs"]
-        settled_logs = (
-            summary["settled_bookkeeper_fee_logs"]
-            if is_bookkeeper
-            else summary["settled_alliance_fee_logs"]
-        )
-        pending_text = summary["bookkeeper_fee_text"] if is_bookkeeper else summary["alliance_fee_text"]
-        settled_text = (
-            summary["settled_bookkeeper_fee_text"]
-            if is_bookkeeper
-            else summary["settled_alliance_fee_text"]
-        )
-        title = "경리 수수료 기록" if is_bookkeeper else "연합 수수료 기록"
-        pending_rows = "".join(
-            _fee_row_html(
-                guild_id,
-                fee,
-                alliance_id=0,
-                return_tab="alliance-payouts",
-                can_edit=can_edit_alliance,
-                title=f"#{fee['loot_event_id']} {fee['item_name']}",
-                meta=_html(f"{fee['fee_label']} {fee['fee_percent_text']}% · {fee['attendance_started_at']}"),
-            )
-            for fee in pending_logs
-        ) or _modal_empty_html("정산 대기 중인 수수료가 없습니다.")
-        settled_rows = "".join(
-            _modal_row_html(
-                f"#{fee['loot_event_id']} {fee['item_name']}",
-                _html(f"{fee['fee_label']} · 완료 {fee.get('settled_at') or '-'}"),
-                fee["fee_amount_text"],
-            )
-            for fee in settled_logs
-        ) or _modal_empty_html("정산 완료된 수수료 기록이 없습니다.")
-        return _modal_card_html(
-            title,
-            "정산 완료된 수수료는 상단 합계에서 제외됩니다.",
-            _tabbed_modal_body(
-                f"owner-fee-{fee_key}",
-                "정산 대기 수수료",
-                pending_text,
-                pending_rows,
-                "정산 완료 수수료",
-                settled_text,
-                settled_rows,
-            ),
-        )
-
-    selected_alliance, _options = _loot_alliance_selection(auth, alliance_id)
-    if selected_alliance is None:
-        raise ValueError("alliance")
-    context = _my_alliance_payout_context(guild_id, selected_alliance, events)
-    summary = context["summary"]
-
-    if modal == "my-alliance-distribution":
-        rows = "".join(
-            _modal_row_html(
-                f"#{row['loot_event_id']} {row['item_name']}",
-                _html(f"{row['attendance_started_at']} · 유저/수수료 전체 완료"),
-                row["amount_text"],
-            )
-            for row in summary["settled_alliance_distribution_logs"]
-        ) or _modal_empty_html("완료된 연합 분배금 기록이 없습니다.")
-        body = (
-            _modal_total_html("완료 연합 분배금", summary["settled_total_text"])
-            + f'<div class="forfeiture-log-list">{rows}</div>'
-        )
-        return _modal_card_html(
-            "연합 분배금 기록",
-            "정산이 끝난 아이템별 연합 분배금 기록입니다.",
-            body,
-        )
-
-    if modal == "my-fee-summary":
-        rows = "".join(
-            _modal_row_html(
-                row["fee_label"],
-                _html(
-                    f"{row['count']}건"
-                    + (f" · 최근 완료 {row['latest_settled_at']}" if row.get("latest_settled_at") else "")
-                ),
-                row["amount_text"],
-            )
-            for row in summary["settled_fee_groups"]
-        ) or _modal_empty_html("정산 완료된 내부 수수료가 없습니다.")
-        body = (
-            _modal_total_html("완료 수수료 합계", summary["settled_fee_group_total_text"])
-            + f'<div class="forfeiture-log-list">{rows}</div>'
-        )
-        return _modal_card_html(
-            "완료 수수료 내역",
-            "삭제되었거나 이름이 바뀐 과거 수수료도 완료 기록에 포함됩니다.",
-            body,
-        )
-
-    if modal == "forfeiture":
-        pending_rows = "".join(
-            _modal_row_html(
-                row["display_name"],
-                _html(f"{row['count']}건 · 최근 귀속 {row['latest_forfeited_at'] or '-'}"),
-                row["amount_text"],
-            )
-            for row in summary["forfeiture_users"]
-        ) or _modal_empty_html("현재 귀속 혈비가 없습니다.")
-        settled_rows = "".join(
-            _modal_row_html(
-                row["display_name"],
-                _html(f"{row['count']}건 · 최근 완료 {row['latest_settled_at'] or '-'}"),
-                row["amount_text"],
-            )
-            for row in summary["settled_forfeiture_users"]
-        ) or _modal_empty_html("정산 완료된 귀속 혈비 기록이 없습니다.")
-        settle_button = ""
-        if can_edit_my and not selected_alliance.get("is_other"):
-            disabled = "disabled" if summary["forfeited_count"] == 0 else ""
-            settle_button = f"""
-              <form method="post" action="/loot/member-forfeitures/settle?guild_id={int(guild_id)}" data-forfeiture-settle-form>
-                <input type="hidden" name="alliance_id" value="{_html(selected_alliance.get('alliance_id'))}">
-                <button class="tiny-button" type="submit" {disabled}>현재 귀속 완료</button>
-              </form>
-            """
-        body = (
-            f'<div class="forfeiture-modal-actions">{settle_button}</div>'
-            + _tabbed_modal_body(
-                "forfeiture",
-                "귀속 혈비",
-                summary["forfeited_text"],
-                pending_rows,
-                "정산 완료 귀속 혈비",
-                summary["settled_forfeited_text"],
-                settled_rows,
-            )
-        )
-        return _modal_card_html("귀속 혈비 내역", "유저가 받지 않아 혈비로 귀속된 분배 기록입니다.", body)
-
-    if modal == "my-fee-rule":
-        rule = next(
-            (item for item in context["fee_rule_groups"] if int(item.get("rule_id") or 0) == int(rule_id or 0)),
-            None,
-        )
-        if rule is None:
-            raise ValueError("rule")
-        pending_rows = "".join(
-            _fee_row_html(
-                guild_id,
-                fee,
-                alliance_id=int(fee.get("alliance_id") or 0),
-                return_tab="my-alliance-payouts",
-                can_edit=can_edit_my and not selected_alliance.get("is_other"),
-                title=f"#{fee['loot_event_id']} {fee['item_name']}",
-                meta=_html(f"{fee['attendance_started_at']} · {fee['fee_percent_text']}%"),
-            )
-            for fee in rule["pending_fee_logs"]
-        ) or _modal_empty_html("정산 대기 중인 수수료가 없습니다.")
-        settled_rows = "".join(
-            _modal_row_html(
-                f"#{fee['loot_event_id']} {fee['item_name']}",
-                _html(f"{fee['attendance_started_at']} · 완료 {fee.get('settled_at') or '-'}"),
-                fee["fee_amount_text"],
-            )
-            for fee in rule["settled_fee_logs"]
-        ) or _modal_empty_html("정산 완료된 수수료 기록이 없습니다.")
-        body = _tabbed_modal_body(
-            f"my-fee-rule-{rule_id}",
-            "정산 대기 수수료",
-            rule["pending_fee_amount_text"],
-            pending_rows,
-            "정산 완료 수수료",
-            rule["settled_fee_amount_text"],
-            settled_rows,
-        )
-        return _modal_card_html(
-            str(rule["rule_name"]),
-            (
-                f"{rule['display_fee_percent_text']} · 미정산 {rule['pending_fee_amount_text']}"
-                if str(rule.get("display_fee_percent_text") or "") == "변동"
-                else f"{rule['display_fee_percent_text']}% · 미정산 {rule['pending_fee_amount_text']}"
-            ),
-            body,
-        )
-
-    raise ValueError("modal")
 
 
 def _command_category(command_type: str) -> str:
@@ -6881,44 +6812,6 @@ async def delete_attendance_status_entry(
         f"/status?guild_id={selected_guild_id}&page={max(1, page)}&period={active_period}#attendance-{attendance_id}",
         status_code=303,
     )
-
-
-@app.get("/loot/modal", response_class=HTMLResponse)
-def loot_modal(
-    request: Request,
-    guild_id: str | None = None,
-    modal: str = "",
-    period: str | None = None,
-    alliance_id: int | None = None,
-    distribution_id: int = 0,
-    fee_key: str = "",
-    rule_id: int = 0,
-):
-    auth = _auth_context(request, guild_id)
-    if not auth:
-        return HTMLResponse(_modal_card_html("로그인 필요", "다시 로그인해주세요.", ""), status_code=401)
-    selected_guild_id = int(auth["selected_guild_id"])
-    try:
-        html = _loot_modal_html(
-            auth,
-            selected_guild_id,
-            modal=modal,
-            period=period,
-            alliance_id=alliance_id,
-            distribution_id=distribution_id,
-            fee_key=str(fee_key or ""),
-            rule_id=rule_id,
-        )
-    except ValueError:
-        return HTMLResponse(
-            _modal_card_html(
-                "모달 로딩 실패",
-                "현재 권한 또는 선택 조건으로 불러올 수 없는 데이터입니다.",
-                _modal_empty_html("데이터를 불러오지 못했습니다."),
-            ),
-            status_code=400,
-        )
-    return HTMLResponse(html)
 
 
 @app.get("/loot", response_class=HTMLResponse)

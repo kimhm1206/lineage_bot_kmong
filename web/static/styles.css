@@ -4146,8 +4146,9 @@ button:disabled {
 .forfeiture-log-modal-card {
   display: flex;
   flex-direction: column;
-  width: min(760px, 100%);
-  max-height: min(720px, calc(100vh - 48px));
+  width: min(960px, calc(100vw - 40px));
+  min-height: min(560px, calc(100vh - 48px));
+  max-height: min(780px, calc(100vh - 48px));
   overflow: hidden;
 }
 
@@ -4162,7 +4163,9 @@ button:disabled {
   display: flex;
   flex-shrink: 0;
   align-items: center;
+  justify-content: flex-end;
   gap: 8px;
+  min-height: 34px;
 }
 
 .forfeiture-log-panel {
@@ -4212,7 +4215,7 @@ button:disabled {
 .forfeiture-user-row,
 .forfeiture-log-row {
   display: grid;
-  grid-template-columns: minmax(160px, 1fr) minmax(100px, auto);
+  grid-template-columns: minmax(0, 1fr) minmax(190px, 220px);
   gap: 10px;
   align-items: center;
   padding: 12px;
@@ -4229,6 +4232,17 @@ button:disabled {
 .forfeiture-user-row div,
 .forfeiture-log-row div {
   min-width: 0;
+}
+
+.forfeiture-user-row .inline-actions {
+  justify-content: flex-end;
+  align-items: center;
+  flex-wrap: nowrap;
+}
+
+.forfeiture-user-row .inline-actions strong {
+  min-width: 90px;
+  text-align: right;
 }
 
 .forfeiture-user-row span,
