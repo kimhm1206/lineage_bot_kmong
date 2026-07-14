@@ -4118,6 +4118,10 @@ button:disabled {
   min-height: 0;
 }
 
+.forfeiture-log-panel[hidden] {
+  display: none;
+}
+
 .forfeiture-log-total {
   display: flex;
   align-items: center;

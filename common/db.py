@@ -5,7 +5,7 @@ import os
 import sys
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal
+from decimal import Decimal, ROUND_FLOOR
 from typing import Any
 from urllib.parse import quote
 
@@ -4286,16 +4286,11 @@ def settle_loot_fee(
     settled_by_discord_id: int | None,
 ) -> None:
     normalized_fee_key = str(fee_key or "").strip()
-    normalized_fee_label = str(fee_label or "").strip()
     normalized_alliance_id = int(alliance_id or 0)
-    normalized_fee_rate = _decimal(fee_rate)
-    normalized_fee_amount = _decimal(fee_amount)
     if int(distribution_id or 0) <= 0:
         raise ValueError("Distribution id is required.")
-    if not normalized_fee_key or not normalized_fee_label:
-        raise ValueError("Fee key and label are required.")
-    if normalized_fee_amount <= 0:
-        raise ValueError("Fee amount must be positive.")
+    if not normalized_fee_key:
+        raise ValueError("Fee key is required.")
 
     with _connect() as connection:
         with connection.cursor() as cursor:
@@ -4313,15 +4308,87 @@ def settle_loot_fee(
             if normalized_alliance_id > 0:
                 cursor.execute(
                     """
-                    SELECT 1
+                    SELECT net_amount
                     FROM distribution_alliance_payouts
                     WHERE distribution_id = %s
                       AND alliance_id = %s
                     """,
                     (distribution_id, normalized_alliance_id),
                 )
-                if cursor.fetchone() is None:
+                payout_row = cursor.fetchone()
+                if payout_row is None:
                     raise ValueError("Alliance payout was not found.")
+                _ensure_member_payout_rule_snapshot(
+                    cursor,
+                    guild_id,
+                    distribution_id,
+                    normalized_alliance_id,
+                )
+                cursor.execute(
+                    """
+                    SELECT
+                        snapshot_id,
+                        rule_name_snapshot,
+                        fee_rate_snapshot,
+                        sort_order
+                    FROM member_payout_rule_snapshots
+                    WHERE distribution_id = %s
+                      AND alliance_id = %s
+                    ORDER BY sort_order ASC, snapshot_id ASC
+                    """,
+                    (distribution_id, normalized_alliance_id),
+                )
+                matched_fee: dict[str, Any] | None = None
+                for row in cursor.fetchall():
+                    candidate_key = _loot_internal_fee_key(
+                        str(row["rule_name_snapshot"]),
+                        int(row["sort_order"] or 0),
+                    )
+                    legacy_candidate_key = f"internal:{int(row['snapshot_id'] or 0)}"
+                    if normalized_fee_key in {candidate_key, legacy_candidate_key}:
+                        matched_fee = dict(row)
+                        normalized_fee_key = candidate_key
+                        break
+                if matched_fee is None:
+                    raise ValueError("Fee rule was not found.")
+                normalized_fee_label = str(matched_fee["rule_name_snapshot"])
+                normalized_fee_rate = _decimal(matched_fee["fee_rate_snapshot"])
+                normalized_fee_amount = _loot_floor_amount(
+                    _decimal(payout_row["net_amount"]) * normalized_fee_rate
+                )
+            else:
+                cursor.execute(
+                    """
+                    SELECT
+                        bookkeeper_fee_rate,
+                        bookkeeper_fee_amount,
+                        alliance_fee_rate,
+                        alliance_fee_amount
+                    FROM distribution_batches
+                    WHERE guild_id = %s
+                      AND distribution_id = %s
+                    """,
+                    (guild_id, distribution_id),
+                )
+                distribution_row = cursor.fetchone()
+                if distribution_row is None:
+                    raise ValueError("Distribution was not found.")
+                if normalized_fee_key == "bookkeeper":
+                    normalized_fee_label = "경리 수수료"
+                    normalized_fee_rate = _decimal(distribution_row["bookkeeper_fee_rate"])
+                    normalized_fee_amount = _loot_floor_amount(
+                        distribution_row["bookkeeper_fee_amount"]
+                    )
+                elif normalized_fee_key == "alliance":
+                    normalized_fee_label = "연합 수수료"
+                    normalized_fee_rate = _decimal(distribution_row["alliance_fee_rate"])
+                    normalized_fee_amount = _loot_floor_amount(
+                        distribution_row["alliance_fee_amount"]
+                    )
+                else:
+                    raise ValueError("Fee key was not found.")
+            if normalized_fee_amount <= 0:
+                raise ValueError("Fee amount must be positive.")
             cursor.execute(
                 """
                 INSERT INTO loot_fee_settlements (
@@ -4354,6 +4421,14 @@ def settle_loot_fee(
                 ),
             )
         connection.commit()
+
+
+def _loot_internal_fee_key(rule_name: str, sort_order: int) -> str:
+    return f"internal:{int(sort_order or 0)}:{str(rule_name or '').strip()}"
+
+
+def _loot_floor_amount(value: Any) -> Decimal:
+    return _decimal(value).quantize(Decimal("1"), rounding=ROUND_FLOOR)
 
 
 def _ensure_member_payout_rule_snapshot(
@@ -4432,9 +4507,14 @@ def _member_payout_rule_snapshot_is_locked(
                   is_paid = TRUE
                   OR COALESCE(payout_status, 'unpaid') <> 'unpaid'
               )
+            UNION ALL
+            SELECT 1
+            FROM loot_fee_settlements
+            WHERE distribution_id = %s
+              AND alliance_id = %s
         ) AS is_locked
         """,
-        (distribution_id, alliance_id),
+        (distribution_id, alliance_id, distribution_id, alliance_id),
     )
     row = cursor.fetchone()
     return bool(row and row["is_locked"])

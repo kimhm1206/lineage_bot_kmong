@@ -3329,11 +3329,16 @@ def _member_record_has_completed_status(member_record: dict[str, Any] | None) ->
 def _member_record_fee_rules(
     member_record: dict[str, Any] | None,
     current_rules: list[dict[str, Any]],
+    *,
+    snapshot_locked: bool = False,
 ) -> list[dict[str, Any]]:
     if (
-        _member_record_has_completed_status(member_record)
-        and member_record is not None
+        member_record is not None
         and member_record.get("fee_lines")
+        and (
+            _member_record_has_completed_status(member_record)
+            or snapshot_locked
+        )
     ):
         return member_record["fee_lines"]
     return current_rules
@@ -3378,9 +3383,6 @@ def _decorate_member_fee_lines(
 
 
 def _internal_fee_key(line: dict[str, Any]) -> str:
-    snapshot_id = int(line.get("snapshot_id") or 0)
-    if snapshot_id > 0:
-        return f"internal:{snapshot_id}"
     return "internal:{sort_order}:{rule_name}".format(
         sort_order=int(line.get("sort_order") or 0),
         rule_name=str(line.get("rule_name") or "").strip(),
@@ -3474,6 +3476,10 @@ def _my_alliance_payout_context(
         if int(event.get("distribution_id") or 0) > 0
     ]
     fee_settlements = database.get_loot_fee_settlements(guild_id, distribution_ids)
+    fee_settlement_pairs = {
+        (int(distribution_id), int(alliance_id))
+        for distribution_id, alliance_id, _fee_key in fee_settlements.keys()
+    }
     fee_rule_cache: dict[int, list[dict[str, Any]]] = {}
     member_group_cache: dict[int, dict[int, dict[str, Any]]] = {}
 
@@ -3551,9 +3557,12 @@ def _my_alliance_payout_context(
                 payout.get("participant_count") or 0
             )
             total_amount = _rounded_integer(payout.get("net_amount"))
+            distribution_id = int(event["distribution_id"])
+            has_fee_settlement = (distribution_id, alliance_id) in fee_settlement_pairs
             selected_rules = _member_record_fee_rules(
                 member_record,
                 fee_rules_for(alliance_id),
+                snapshot_locked=has_fee_settlement,
             )
             payout_statuses = (
                 member_record.get("statuses", {})
@@ -3585,6 +3594,14 @@ def _my_alliance_payout_context(
                     alliance_id,
                     fee_key,
                 )
+                snapshot_id = int(line.get("snapshot_id") or 0)
+                if fee_settlement is None and snapshot_id > 0:
+                    fee_settlement = _fee_settlement_lookup(
+                        fee_settlements,
+                        int(event["distribution_id"]),
+                        alliance_id,
+                        f"internal:{snapshot_id}",
+                    )
                 fee_log = _fee_log_row(
                     distribution_id=int(event["distribution_id"]),
                     loot_event_id=int(event.get("loot_event_id") or 0),
@@ -7219,20 +7236,7 @@ async def settle_loot_fee(
     fee_key = str(form_data.get("fee_key") or "").strip()
     fee_label = str(form_data.get("fee_label") or "").strip()
     return_tab = str(form_data.get("return_tab") or "").strip()
-    errors: list[str] = []
-    fee_rate = _decimal_from_form(
-        "수수료율",
-        form_data.get("fee_rate"),
-        errors,
-        default=Decimal("0"),
-    )
-    fee_amount = _decimal_from_form(
-        "수수료 금액",
-        form_data.get("fee_amount"),
-        errors,
-        default=Decimal("0"),
-    )
-    if distribution_id <= 0 or not fee_key or not fee_label or errors:
+    if distribution_id <= 0 or not fee_key:
         return _loot_redirect(
             selected_guild_id,
             saved="error",
@@ -7273,8 +7277,8 @@ async def settle_loot_fee(
             alliance_id=allowed_alliance_id,
             fee_key=fee_key,
             fee_label=fee_label,
-            fee_rate=fee_rate,
-            fee_amount=fee_amount,
+            fee_rate=Decimal("0"),
+            fee_amount=Decimal("0"),
             settled_by_discord_id=int(auth["user"]["id"]),
         )
     except ValueError:
