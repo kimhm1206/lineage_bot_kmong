@@ -1272,8 +1272,8 @@
       {% if my_alliance_payouts.selected_alliance %}
         <section class="loot-overview-grid my-alliance-overview-grid">
           <article class="panel loot-total-card my-alliance-total-card">
-            <span data-currency-label data-adena-label="연합 분배금" data-cash-label="연합 분배 현금">
-              연합 분배금
+            <span class="forfeit-metric-label">
+              <span data-currency-label data-adena-label="연합 분배금" data-cash-label="연합 분배 현금">연합 분배금</span>
               <button class="icon-button forfeit-info-button" type="button" aria-label="연합 분배금 기록 보기" data-simple-modal-open="alliance-distribution-log">i</button>
             </span>
             <strong data-money-value data-adena-text="{{ my_alliance_payouts.summary.total_text }}" data-cash-text="{{ my_alliance_payouts.summary.total_cash_text }}">{{ my_alliance_payouts.summary.total_text }}</strong>
