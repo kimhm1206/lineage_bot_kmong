@@ -3523,6 +3523,8 @@ def _my_alliance_payout_context(
             "summary": {
                 "total_text": "0",
                 "total_cash_text": "0원",
+                "settled_total_text": "0",
+                "settled_total_cash_text": "0원",
                 "fee_text": "0",
                 "fee_cash_text": "0원",
                 "unsettled_text": "0",
@@ -3590,6 +3592,8 @@ def _my_alliance_payout_context(
     recipient_summaries: dict[int, dict[str, Any]] = {}
     total_amount_sum = Decimal("0")
     total_cash_sum = Decimal("0")
+    settled_total_amount_sum = Decimal("0")
+    settled_total_cash_sum = Decimal("0")
     fee_amount_sum = Decimal("0")
     fee_cash_sum = Decimal("0")
     unsettled_amount_sum = Decimal("0")
@@ -3891,6 +3895,8 @@ def _my_alliance_payout_context(
             )
             if status == "paid":
                 settled_count += 1
+                settled_total_amount_sum += total_amount
+                settled_total_cash_sum += _cash_from_adena(total_amount, adena_rate)
                 settled_alliance_distribution_logs.append(
                     {
                         "distribution_id": int(event["distribution_id"]),
@@ -4143,6 +4149,8 @@ def _my_alliance_payout_context(
         "summary": {
             "total_text": _money_text(total_amount_sum),
             "total_cash_text": _cash_text(total_cash_sum),
+            "settled_total_text": _money_text(settled_total_amount_sum),
+            "settled_total_cash_text": _cash_text(settled_total_cash_sum),
             "fee_text": _money_text(fee_amount_sum),
             "fee_cash_text": _cash_text(fee_cash_sum),
             "unsettled_text": _money_text(unsettled_amount_sum),

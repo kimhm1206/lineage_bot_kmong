@@ -1445,6 +1445,14 @@
               </div>
             </section>
             <section class="forfeiture-log-panel" data-modal-panel="settled" hidden>
+              <div class="forfeiture-log-total">
+                <span>완료 연합 분배금</span>
+                <strong
+                  data-money-value
+                  data-adena-text="{{ my_alliance_payouts.summary.settled_total_text }}"
+                  data-cash-text="{{ my_alliance_payouts.summary.settled_total_cash_text }}"
+                >{{ my_alliance_payouts.summary.settled_total_text }}</strong>
+              </div>
               <div class="forfeiture-log-list">
                 {% for row in my_alliance_payouts.summary.settled_alliance_distribution_logs %}
                   <article class="forfeiture-user-row">
