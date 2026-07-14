@@ -760,6 +760,36 @@ class Database:
             settled_by_discord_id=settled_by_discord_id,
         )
 
+    def get_loot_fee_settlements(
+        self,
+        guild_id: int,
+        distribution_ids: list[int],
+    ) -> dict[tuple[int, int, str], dict[str, Any]]:
+        return get_loot_fee_settlements(guild_id, distribution_ids)
+
+    def settle_loot_fee(
+        self,
+        guild_id: int,
+        distribution_id: int,
+        *,
+        alliance_id: int | None,
+        fee_key: str,
+        fee_label: str,
+        fee_rate: Decimal,
+        fee_amount: Decimal,
+        settled_by_discord_id: int | None,
+    ) -> None:
+        settle_loot_fee(
+            guild_id,
+            distribution_id,
+            alliance_id=alliance_id,
+            fee_key=fee_key,
+            fee_label=fee_label,
+            fee_rate=fee_rate,
+            fee_amount=fee_amount,
+            settled_by_discord_id=settled_by_discord_id,
+        )
+
 
 database = Database()
 
@@ -4193,6 +4223,139 @@ def settle_member_forfeitures(
     return settled_count
 
 
+def get_loot_fee_settlements(
+    guild_id: int,
+    distribution_ids: list[int],
+) -> dict[tuple[int, int, str], dict[str, Any]]:
+    normalized_distribution_ids = sorted(
+        {
+            int(distribution_id)
+            for distribution_id in distribution_ids
+            if int(distribution_id or 0) > 0
+        }
+    )
+    if not normalized_distribution_ids:
+        return {}
+    rows = _fetchall(
+        """
+        SELECT
+            lfs.distribution_id,
+            lfs.alliance_id,
+            lfs.fee_key,
+            lfs.fee_label,
+            lfs.fee_rate,
+            lfs.fee_amount,
+            lfs.settled_by_discord_id,
+            lfs.settled_at
+        FROM loot_fee_settlements lfs
+        INNER JOIN distribution_batches db
+            ON db.distribution_id = lfs.distribution_id
+        WHERE db.guild_id = %s
+          AND lfs.distribution_id = ANY(%s::bigint[])
+        """,
+        (guild_id, normalized_distribution_ids),
+    )
+    return {
+        (
+            int(row["distribution_id"]),
+            int(row["alliance_id"] or 0),
+            str(row["fee_key"]),
+        ): {
+            "distribution_id": int(row["distribution_id"]),
+            "alliance_id": int(row["alliance_id"] or 0),
+            "fee_key": str(row["fee_key"]),
+            "fee_label": str(row["fee_label"]),
+            "fee_rate": _decimal(row["fee_rate"]),
+            "fee_amount": _decimal(row["fee_amount"]),
+            "settled_by_discord_id": _optional_int(row["settled_by_discord_id"]),
+            "settled_at": row["settled_at"],
+        }
+        for row in rows
+    }
+
+
+def settle_loot_fee(
+    guild_id: int,
+    distribution_id: int,
+    *,
+    alliance_id: int | None,
+    fee_key: str,
+    fee_label: str,
+    fee_rate: Decimal,
+    fee_amount: Decimal,
+    settled_by_discord_id: int | None,
+) -> None:
+    normalized_fee_key = str(fee_key or "").strip()
+    normalized_fee_label = str(fee_label or "").strip()
+    normalized_alliance_id = int(alliance_id or 0)
+    normalized_fee_rate = _decimal(fee_rate)
+    normalized_fee_amount = _decimal(fee_amount)
+    if int(distribution_id or 0) <= 0:
+        raise ValueError("Distribution id is required.")
+    if not normalized_fee_key or not normalized_fee_label:
+        raise ValueError("Fee key and label are required.")
+    if normalized_fee_amount <= 0:
+        raise ValueError("Fee amount must be positive.")
+
+    with _connect() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT 1
+                FROM distribution_batches
+                WHERE guild_id = %s
+                  AND distribution_id = %s
+                """,
+                (guild_id, distribution_id),
+            )
+            if cursor.fetchone() is None:
+                raise ValueError("Distribution was not found.")
+            if normalized_alliance_id > 0:
+                cursor.execute(
+                    """
+                    SELECT 1
+                    FROM distribution_alliance_payouts
+                    WHERE distribution_id = %s
+                      AND alliance_id = %s
+                    """,
+                    (distribution_id, normalized_alliance_id),
+                )
+                if cursor.fetchone() is None:
+                    raise ValueError("Alliance payout was not found.")
+            cursor.execute(
+                """
+                INSERT INTO loot_fee_settlements (
+                    distribution_id,
+                    alliance_id,
+                    fee_key,
+                    fee_label,
+                    fee_rate,
+                    fee_amount,
+                    settled_by_discord_id,
+                    settled_at
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                ON CONFLICT (distribution_id, alliance_id, fee_key)
+                DO UPDATE SET
+                    fee_label = EXCLUDED.fee_label,
+                    fee_rate = EXCLUDED.fee_rate,
+                    fee_amount = EXCLUDED.fee_amount,
+                    settled_by_discord_id = EXCLUDED.settled_by_discord_id,
+                    settled_at = CURRENT_TIMESTAMP
+                """,
+                (
+                    distribution_id,
+                    normalized_alliance_id,
+                    normalized_fee_key,
+                    normalized_fee_label,
+                    normalized_fee_rate,
+                    normalized_fee_amount,
+                    settled_by_discord_id,
+                ),
+            )
+        connection.commit()
+
+
 def _ensure_member_payout_rule_snapshot(
     cursor: psycopg2.extensions.cursor,
     guild_id: int,
@@ -5192,6 +5355,10 @@ def _ensure_postgres_columns(cursor: psycopg2.extensions.cursor) -> None:
         "ON member_forfeiture_settlements(alliance_id, settled_at)"
     )
     cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_loot_fee_settlements_distribution "
+        "ON loot_fee_settlements(distribution_id, alliance_id, fee_key)"
+    )
+    cursor.execute(
         "CREATE INDEX IF NOT EXISTS idx_alliance_payout_fee_rules_active "
         "ON alliance_payout_fee_rules(guild_id, alliance_id, is_active)"
     )
@@ -5611,6 +5778,18 @@ CREATE TABLE IF NOT EXISTS member_forfeiture_settlements (
     settled_by_discord_id BIGINT,
     settled_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (distribution_id, alliance_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS loot_fee_settlements (
+    distribution_id BIGINT NOT NULL REFERENCES distribution_batches(distribution_id) ON DELETE CASCADE,
+    alliance_id BIGINT NOT NULL DEFAULT 0,
+    fee_key TEXT NOT NULL,
+    fee_label TEXT NOT NULL,
+    fee_rate NUMERIC(8, 6) NOT NULL DEFAULT 0,
+    fee_amount NUMERIC(18, 2) NOT NULL DEFAULT 0,
+    settled_by_discord_id BIGINT,
+    settled_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (distribution_id, alliance_id, fee_key)
 );
 
 CREATE TABLE IF NOT EXISTS websocket_events (

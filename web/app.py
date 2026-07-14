@@ -2651,6 +2651,16 @@ def _decorate_loot_events(
     decorated_events = []
     member_group_cache: dict[int, dict[int, dict[str, Any]]] = {}
     fee_rule_cache: dict[int, list[dict[str, Any]]] = {}
+    distribution_ids = [
+        int(event.get("distribution_id") or 0)
+        for event in events
+        if int(event.get("distribution_id") or 0) > 0
+    ]
+    fee_settlements = (
+        database.get_loot_fee_settlements(guild_id, distribution_ids)
+        if guild_id is not None and distribution_ids
+        else {}
+    )
 
     def member_groups_for(alliance_id: int | None) -> dict[int, dict[str, Any]]:
         if guild_id is None or alliance_id is None:
@@ -2693,6 +2703,61 @@ def _decorate_loot_events(
         alliance_fee_amount_cash = _cash_from_adena(alliance_fee_amount, adena_rate)
         total_net_cash = _cash_from_adena(total_net, adena_rate)
         per_member_cash = _cash_from_adena(per_member, adena_rate)
+        distribution_id = int(event.get("distribution_id") or 0)
+        bookkeeper_fee_settlement = _fee_settlement_lookup(
+            fee_settlements,
+            distribution_id,
+            None,
+            "bookkeeper",
+        )
+        alliance_fee_settlement = _fee_settlement_lookup(
+            fee_settlements,
+            distribution_id,
+            None,
+            "alliance",
+        )
+        bookkeeper_fee_pending = (
+            Decimal("0") if bookkeeper_fee_settlement else bookkeeper_fee_amount
+        )
+        alliance_fee_pending = Decimal("0") if alliance_fee_settlement else alliance_fee_amount
+        fee_pending = bookkeeper_fee_pending + alliance_fee_pending
+        bookkeeper_fee_pending_cash = _cash_from_adena(bookkeeper_fee_pending, adena_rate)
+        alliance_fee_pending_cash = _cash_from_adena(alliance_fee_pending, adena_rate)
+        fee_pending_cash = _cash_from_adena(fee_pending, adena_rate)
+        row["distribution_fee_logs"] = [
+            _fee_log_row(
+                distribution_id=distribution_id,
+                loot_event_id=int(event.get("loot_event_id") or 0),
+                item_name=str(event.get("item_name") or ""),
+                attendance_started_at=str(
+                    event.get("attendance_started_at")
+                    or event.get("event_date")
+                    or ""
+                ),
+                fee_key="bookkeeper",
+                fee_label="경리 수수료",
+                fee_rate=bookkeeper_fee_rate,
+                fee_amount=bookkeeper_fee_amount,
+                adena_rate=adena_rate,
+                settlement=bookkeeper_fee_settlement,
+            ),
+            _fee_log_row(
+                distribution_id=distribution_id,
+                loot_event_id=int(event.get("loot_event_id") or 0),
+                item_name=str(event.get("item_name") or ""),
+                attendance_started_at=str(
+                    event.get("attendance_started_at")
+                    or event.get("event_date")
+                    or ""
+                ),
+                fee_key="alliance",
+                fee_label="연합 수수료",
+                fee_rate=alliance_fee_rate,
+                fee_amount=alliance_fee_amount,
+                adena_rate=adena_rate,
+                settlement=alliance_fee_settlement,
+            ),
+        ]
 
         row["cash_price_input"] = _decimal_input(event.get("cash_price_krw"))
         row["cash_price_text"] = _money_text(event.get("cash_price_krw"), places=0)
@@ -2713,24 +2778,36 @@ def _decorate_loot_events(
         row["per_member_cash_text"] = _cash_text(per_member_cash)
         row["total_sale_amount_display"] = total_sale
         row["total_net_amount_display"] = total_net
-        row["fee_amount_display"] = fee_amount
-        row["bookkeeper_fee_amount_display"] = bookkeeper_fee_amount
-        row["alliance_fee_amount_display"] = alliance_fee_amount
+        row["fee_amount_display"] = fee_pending
+        row["bookkeeper_fee_amount_display"] = bookkeeper_fee_pending
+        row["alliance_fee_amount_display"] = alliance_fee_pending
+        row["fee_amount_total_display"] = fee_amount
+        row["bookkeeper_fee_amount_total_display"] = bookkeeper_fee_amount
+        row["alliance_fee_amount_total_display"] = alliance_fee_amount
         row["total_sale_cash_amount_display"] = total_sale_cash
         row["total_net_cash_amount_display"] = total_net_cash
-        row["fee_amount_cash_amount_display"] = fee_amount_cash
-        row["bookkeeper_fee_amount_cash_amount_display"] = bookkeeper_fee_amount_cash
-        row["alliance_fee_amount_cash_amount_display"] = alliance_fee_amount_cash
+        row["fee_amount_cash_amount_display"] = fee_pending_cash
+        row["bookkeeper_fee_amount_cash_amount_display"] = bookkeeper_fee_pending_cash
+        row["alliance_fee_amount_cash_amount_display"] = alliance_fee_pending_cash
+        row["fee_amount_total_cash_amount_display"] = fee_amount_cash
+        row["bookkeeper_fee_amount_total_cash_amount_display"] = bookkeeper_fee_amount_cash
+        row["alliance_fee_amount_total_cash_amount_display"] = alliance_fee_amount_cash
         row["total_sale_text"] = _money_text(total_sale)
         row["total_net_text"] = _money_text(total_net)
-        row["fee_amount_text"] = _money_text(fee_amount)
-        row["bookkeeper_fee_amount_text"] = _money_text(bookkeeper_fee_amount)
-        row["alliance_fee_amount_text"] = _money_text(alliance_fee_amount)
+        row["fee_amount_text"] = _money_text(fee_pending)
+        row["bookkeeper_fee_amount_text"] = _money_text(bookkeeper_fee_pending)
+        row["alliance_fee_amount_text"] = _money_text(alliance_fee_pending)
+        row["fee_amount_total_text"] = _money_text(fee_amount)
+        row["bookkeeper_fee_amount_total_text"] = _money_text(bookkeeper_fee_amount)
+        row["alliance_fee_amount_total_text"] = _money_text(alliance_fee_amount)
         row["total_sale_cash_text"] = _cash_text(total_sale_cash)
         row["total_net_cash_text"] = _cash_text(total_net_cash)
-        row["fee_amount_cash_text"] = _cash_text(fee_amount_cash)
-        row["bookkeeper_fee_amount_cash_text"] = _cash_text(bookkeeper_fee_amount_cash)
-        row["alliance_fee_amount_cash_text"] = _cash_text(alliance_fee_amount_cash)
+        row["fee_amount_cash_text"] = _cash_text(fee_pending_cash)
+        row["bookkeeper_fee_amount_cash_text"] = _cash_text(bookkeeper_fee_pending_cash)
+        row["alliance_fee_amount_cash_text"] = _cash_text(alliance_fee_pending_cash)
+        row["fee_amount_total_cash_text"] = _cash_text(fee_amount_cash)
+        row["bookkeeper_fee_amount_total_cash_text"] = _cash_text(bookkeeper_fee_amount_cash)
+        row["alliance_fee_amount_total_cash_text"] = _cash_text(alliance_fee_amount_cash)
         row["fee_rate_percent_text"] = _money_text(
             (bookkeeper_fee_rate + alliance_fee_rate) * Decimal("100"),
         )
@@ -3300,6 +3377,59 @@ def _decorate_member_fee_lines(
     return decorated
 
 
+def _internal_fee_key(line: dict[str, Any]) -> str:
+    snapshot_id = int(line.get("snapshot_id") or 0)
+    if snapshot_id > 0:
+        return f"internal:{snapshot_id}"
+    return "internal:{sort_order}:{rule_name}".format(
+        sort_order=int(line.get("sort_order") or 0),
+        rule_name=str(line.get("rule_name") or "").strip(),
+    )
+
+
+def _fee_settlement_lookup(
+    settlements: dict[tuple[int, int, str], dict[str, Any]],
+    distribution_id: int,
+    alliance_id: int | None,
+    fee_key: str,
+) -> dict[str, Any] | None:
+    return settlements.get((int(distribution_id or 0), int(alliance_id or 0), fee_key))
+
+
+def _fee_log_row(
+    *,
+    distribution_id: int,
+    loot_event_id: int,
+    item_name: str,
+    attendance_started_at: str,
+    fee_key: str,
+    fee_label: str,
+    fee_rate: Decimal,
+    fee_amount: Decimal,
+    adena_rate: Decimal,
+    settlement: dict[str, Any] | None,
+    alliance_id: int | None = None,
+) -> dict[str, Any]:
+    amount = _rounded_integer(fee_amount)
+    settled_at = _format_optional_datetime(settlement.get("settled_at")) if settlement else ""
+    return {
+        "distribution_id": int(distribution_id or 0),
+        "loot_event_id": int(loot_event_id or 0),
+        "alliance_id": int(alliance_id or 0),
+        "item_name": item_name,
+        "attendance_started_at": attendance_started_at,
+        "fee_key": fee_key,
+        "fee_label": fee_label,
+        "fee_rate": fee_rate,
+        "fee_percent_text": _money_text(fee_rate * Decimal("100"), places=2),
+        "fee_amount": amount,
+        "fee_amount_text": _money_text(amount),
+        "fee_amount_cash_text": _cash_text(_cash_from_adena(amount, adena_rate)),
+        "is_settled": bool(settlement),
+        "settled_at": settled_at,
+    }
+
+
 def _my_alliance_payout_context(
     guild_id: int,
     selected_alliance: dict[str, Any] | None,
@@ -3338,6 +3468,12 @@ def _my_alliance_payout_context(
         guild_id,
         selected_alliance_ids,
     )
+    distribution_ids = [
+        int(event.get("distribution_id") or 0)
+        for event in events
+        if int(event.get("distribution_id") or 0) > 0
+    ]
+    fee_settlements = database.get_loot_fee_settlements(guild_id, distribution_ids)
     fee_rule_cache: dict[int, list[dict[str, Any]]] = {}
     member_group_cache: dict[int, dict[int, dict[str, Any]]] = {}
 
@@ -3377,6 +3513,10 @@ def _my_alliance_payout_context(
     unsettled_count = 0
     forfeiture_logs: list[dict[str, Any]] = []
     settled_forfeiture_logs: list[dict[str, Any]] = []
+    fee_logs: list[dict[str, Any]] = []
+    settled_fee_logs: list[dict[str, Any]] = []
+    alliance_distribution_logs: list[dict[str, Any]] = []
+    settled_alliance_distribution_logs: list[dict[str, Any]] = []
 
     for event in events:
         for alliance_id in selected_alliance_ids:
@@ -3433,6 +3573,52 @@ def _my_alliance_payout_context(
                 (Decimal(str(line["fee_amount"])) for line in fee_lines_raw),
                 Decimal("0"),
             )
+            fee_unsettled_amount = Decimal("0")
+            fee_unsettled_cash = Decimal("0")
+            decorated_fee_lines = []
+            for line in fee_lines_raw:
+                fee_key = _internal_fee_key(line)
+                fee_line_amount = _rounded_integer(line.get("fee_amount"))
+                fee_settlement = _fee_settlement_lookup(
+                    fee_settlements,
+                    int(event["distribution_id"]),
+                    alliance_id,
+                    fee_key,
+                )
+                fee_log = _fee_log_row(
+                    distribution_id=int(event["distribution_id"]),
+                    loot_event_id=int(event.get("loot_event_id") or 0),
+                    alliance_id=alliance_id,
+                    item_name=str(event.get("item_name") or ""),
+                    attendance_started_at=str(
+                        event.get("attendance_started_at")
+                        or event.get("event_date")
+                        or ""
+                    ),
+                    fee_key=fee_key,
+                    fee_label=str(line.get("rule_name") or ""),
+                    fee_rate=Decimal(str(line.get("fee_rate") or "0")),
+                    fee_amount=fee_line_amount,
+                    adena_rate=adena_rate,
+                    settlement=fee_settlement,
+                )
+                decorated_line = _decorate_member_fee_lines([line], adena_rate)[0]
+                decorated_line["fee_key"] = fee_key
+                decorated_line["is_settled"] = bool(fee_settlement)
+                decorated_line["settled_at"] = fee_log["settled_at"]
+                decorated_line["fee_amount_total_text"] = decorated_line["fee_amount_text"]
+                decorated_line["fee_amount_total_cash_text"] = decorated_line[
+                    "fee_amount_cash_text"
+                ]
+                if fee_settlement:
+                    decorated_line["fee_amount_text"] = "0"
+                    decorated_line["fee_amount_cash_text"] = "0원"
+                    settled_fee_logs.append(fee_log)
+                else:
+                    fee_unsettled_amount += fee_line_amount
+                    fee_unsettled_cash += _cash_from_adena(fee_line_amount, adena_rate)
+                    fee_logs.append(fee_log)
+                decorated_fee_lines.append(decorated_line)
             distributable_amount = total_amount - fee_amount
             member_amounts = _rounded_allocation(distributable_amount, participant_count)
             fallback_member_amount = (
@@ -3440,7 +3626,7 @@ def _my_alliance_payout_context(
                 if member_amounts
                 else _rounded_divide(distributable_amount, participant_count)
             )
-            fee_lines = _decorate_member_fee_lines(fee_lines_raw, adena_rate)
+            fee_lines = decorated_fee_lines
             recipients = []
             paid_recipient_count = 0
             forfeited_recipient_count = 0
@@ -3584,10 +3770,44 @@ def _my_alliance_payout_context(
             status = "paid" if recipient_total_count > 0 and completed_recipient_count == recipient_total_count else "unpaid"
             if status == "paid":
                 settled_count += 1
+                settled_alliance_distribution_logs.append(
+                    {
+                        "distribution_id": int(event["distribution_id"]),
+                        "loot_event_id": int(event.get("loot_event_id") or 0),
+                        "item_name": str(event.get("item_name") or ""),
+                        "attendance_started_at": event["attendance_started_at"]
+                        or event["event_date"],
+                        "amount": total_amount,
+                        "amount_text": _money_text(total_amount),
+                        "amount_cash_text": _cash_text(
+                            _cash_from_adena(total_amount, adena_rate)
+                        ),
+                        "completed_count": completed_recipient_count,
+                        "recipient_count": recipient_total_count,
+                    }
+                )
             else:
                 unsettled_count += 1
                 unsettled_amount_sum += unpaid_amount
                 unsettled_cash_sum += _cash_from_adena(unpaid_amount, adena_rate)
+                total_amount_sum += total_amount
+                total_cash_sum += _cash_from_adena(total_amount, adena_rate)
+                alliance_distribution_logs.append(
+                    {
+                        "distribution_id": int(event["distribution_id"]),
+                        "loot_event_id": int(event.get("loot_event_id") or 0),
+                        "item_name": str(event.get("item_name") or ""),
+                        "attendance_started_at": event["attendance_started_at"]
+                        or event["event_date"],
+                        "amount": total_amount,
+                        "amount_text": _money_text(total_amount),
+                        "amount_cash_text": _cash_text(
+                            _cash_from_adena(total_amount, adena_rate)
+                        ),
+                        "completed_count": completed_recipient_count,
+                        "recipient_count": recipient_total_count,
+                    }
+                )
             forfeited_amount_sum += forfeited_amount
             forfeited_cash_sum += _cash_from_adena(forfeited_amount, adena_rate)
             settled_forfeited_amount_sum += settled_forfeited_amount
@@ -3596,10 +3816,8 @@ def _my_alliance_payout_context(
                 adena_rate,
             )
 
-            total_amount_sum += total_amount
-            total_cash_sum += _cash_from_adena(total_amount, adena_rate)
-            fee_amount_sum += fee_amount
-            fee_cash_sum += _cash_from_adena(fee_amount, adena_rate)
+            fee_amount_sum += fee_unsettled_amount
+            fee_cash_sum += fee_unsettled_cash
             rows.append(
                 {
                     "alliance_id": alliance_id,
@@ -3613,8 +3831,10 @@ def _my_alliance_payout_context(
                     "total_amount_cash_text": _cash_text(
                         _cash_from_adena(total_amount, adena_rate)
                     ),
-                    "fee_amount_text": _money_text(fee_amount),
-                    "fee_amount_cash_text": _cash_text(
+                    "fee_amount_text": _money_text(fee_unsettled_amount),
+                    "fee_amount_cash_text": _cash_text(fee_unsettled_cash),
+                    "fee_amount_total_text": _money_text(fee_amount),
+                    "fee_amount_total_cash_text": _cash_text(
                         _cash_from_adena(fee_amount, adena_rate)
                     ),
                     "distributable_amount_text": _money_text(distributable_amount),
@@ -3691,6 +3911,22 @@ def _my_alliance_payout_context(
         key=lambda item: str(item.get("settled_at") or item.get("forfeited_at") or ""),
         reverse=True,
     )
+    fee_logs.sort(
+        key=lambda item: str(item.get("attendance_started_at") or ""),
+        reverse=True,
+    )
+    settled_fee_logs.sort(
+        key=lambda item: str(item.get("settled_at") or item.get("attendance_started_at") or ""),
+        reverse=True,
+    )
+    alliance_distribution_logs.sort(
+        key=lambda item: str(item.get("attendance_started_at") or ""),
+        reverse=True,
+    )
+    settled_alliance_distribution_logs.sort(
+        key=lambda item: str(item.get("attendance_started_at") or ""),
+        reverse=True,
+    )
 
     def forfeiture_user_rows(logs: list[dict[str, Any]]) -> list[dict[str, Any]]:
         grouped: dict[int, dict[str, Any]] = {}
@@ -3756,6 +3992,10 @@ def _my_alliance_payout_context(
             "settled_forfeiture_logs": settled_forfeiture_logs,
             "forfeiture_users": forfeiture_user_rows(forfeiture_logs),
             "settled_forfeiture_users": forfeiture_user_rows(settled_forfeiture_logs),
+            "fee_logs": fee_logs,
+            "settled_fee_logs": settled_fee_logs,
+            "alliance_distribution_logs": alliance_distribution_logs,
+            "settled_alliance_distribution_logs": settled_alliance_distribution_logs,
         },
     }
 
@@ -6955,6 +7195,100 @@ async def settle_member_forfeitures(
         selected_guild_id,
         saved="member_forfeiture",
         alliance_id=alliance_id,
+    )
+
+
+@app.post("/loot/fee-settlements/settle")
+async def settle_loot_fee(
+    request: Request,
+    guild_id: str | None = None,
+):
+    auth = _auth_context(request, guild_id)
+    if not auth:
+        return _auth_redirect(request)
+    selected_guild_id = int(auth["selected_guild_id"])
+    form_data = await _urlencoded_form_data(request)
+    try:
+        distribution_id = int(form_data.get("distribution_id") or "")
+    except ValueError:
+        distribution_id = 0
+    try:
+        alliance_id = int(form_data.get("alliance_id") or "0")
+    except ValueError:
+        alliance_id = 0
+    fee_key = str(form_data.get("fee_key") or "").strip()
+    fee_label = str(form_data.get("fee_label") or "").strip()
+    return_tab = str(form_data.get("return_tab") or "").strip()
+    errors: list[str] = []
+    fee_rate = _decimal_from_form(
+        "수수료율",
+        form_data.get("fee_rate"),
+        errors,
+        default=Decimal("0"),
+    )
+    fee_amount = _decimal_from_form(
+        "수수료 금액",
+        form_data.get("fee_amount"),
+        errors,
+        default=Decimal("0"),
+    )
+    if distribution_id <= 0 or not fee_key or not fee_label or errors:
+        return _loot_redirect(
+            selected_guild_id,
+            saved="error",
+            alliance_id=alliance_id if alliance_id > 0 else None,
+            tab=return_tab if return_tab in LOOT_TABS else "my-alliance-payouts",
+        )
+
+    if alliance_id > 0:
+        if not _can_edit_my_alliance_payouts(auth):
+            return _loot_redirect(
+                selected_guild_id,
+                saved="forbidden",
+                alliance_id=alliance_id,
+                tab="my-alliance-payouts",
+            )
+        allowed_alliance_id = _allowed_loot_alliance_id(auth, alliance_id)
+        if allowed_alliance_id is None:
+            return _loot_redirect(
+                selected_guild_id,
+                saved="forbidden",
+                alliance_id=alliance_id,
+                tab="my-alliance-payouts",
+            )
+        redirect_tab = "my-alliance-payouts"
+    else:
+        if not _can_edit_alliance_payouts(auth):
+            return RedirectResponse(
+                f"/loot?guild_id={selected_guild_id}&saved=forbidden&tab=alliance-payouts#alliance-payouts",
+                status_code=303,
+            )
+        allowed_alliance_id = None
+        redirect_tab = "alliance-payouts"
+
+    try:
+        database.settle_loot_fee(
+            selected_guild_id,
+            distribution_id,
+            alliance_id=allowed_alliance_id,
+            fee_key=fee_key,
+            fee_label=fee_label,
+            fee_rate=fee_rate,
+            fee_amount=fee_amount,
+            settled_by_discord_id=int(auth["user"]["id"]),
+        )
+    except ValueError:
+        return _loot_redirect(
+            selected_guild_id,
+            saved="error",
+            alliance_id=alliance_id if alliance_id > 0 else None,
+            tab=redirect_tab,
+        )
+    return _loot_redirect(
+        selected_guild_id,
+        saved="fee_settled",
+        alliance_id=alliance_id if alliance_id > 0 else None,
+        tab=redirect_tab,
     )
 
 
