@@ -1260,7 +1260,25 @@
                         <article class="my-payout-fee-card">
                           <span>
                             {{ fee.rule_name }}
-                            <button class="icon-button forfeit-info-button" type="button" aria-label="{{ fee.rule_name }} 정산 내역 보기" data-lazy-modal-url="/loot/modal?guild_id={{ auth.selected_guild_id }}&period={{ loot_period.active }}&modal=my-fee&alliance_id={{ my_alliance_payouts.selected_alliance.alliance_id }}&distribution_id={{ payout.distribution_id }}&fee_key={{ fee.fee_key | urlencode }}">i</button>
+                            <button
+                              class="icon-button forfeit-info-button"
+                              type="button"
+                              aria-label="{{ fee.rule_name }} 정산 내역 보기"
+                              data-inline-fee-modal
+                              data-fee-title="{{ fee.rule_name }}"
+                              data-fee-caption="#{{ payout.loot_event_id }} {{ payout.item_name }} · {{ payout.attendance_started_at }}"
+                              data-fee-percent="{{ fee.fee_percent_text }}%"
+                              data-fee-amount="{{ fee.fee_amount_total_text }}"
+                              data-fee-status="{% if fee.is_settled %}정산 완료 · {{ fee.settled_at or '-' }}{% else %}정산 대기{% endif %}"
+                              data-fee-settled="{{ fee.is_settled | tojson }}"
+                              data-can-settle="{{ (can_edit_my_alliance_payouts and not fee.is_settled and fee.fee_amount > 0 and not my_alliance_payouts.selected_alliance.is_other) | tojson }}"
+                              data-distribution-id="{{ payout.distribution_id }}"
+                              data-alliance-id="{{ payout.alliance_id }}"
+                              data-fee-key="{{ fee.fee_key }}"
+                              data-fee-label="{{ fee.rule_name }}"
+                              data-fee-rate="{{ fee.fee_rate }}"
+                              data-return-tab="my-alliance-payouts"
+                            >i</button>
                           </span>
                           <strong data-money-value data-adena-text="{{ fee.fee_amount_text }}" data-cash-text="{{ fee.fee_amount_cash_text }}">{{ fee.fee_amount_text }}</strong>
                           <small>
@@ -2110,6 +2128,11 @@
       return `[data-fee-settle-row][data-fee-distribution-id="${distributionId}"][data-fee-alliance-id="${allianceId}"][data-fee-key="${safeFeeKey}"]`;
     }
 
+    function inlineFeeButtonSelector(distributionId, allianceId, feeKey) {
+      const safeFeeKey = String(feeKey || "").replace(/\\/g, "\\\\").replace(/"/g, "\\\"");
+      return `[data-inline-fee-modal][data-distribution-id="${distributionId}"][data-alliance-id="${allianceId}"][data-fee-key="${safeFeeKey}"]`;
+    }
+
     function markFeeRowsSettled(distributionId, allianceId, feeKey) {
       document.querySelectorAll(feeRowSelector(distributionId, allianceId, feeKey)).forEach((row) => {
         row.classList.add("is-paid");
@@ -2123,6 +2146,16 @@
             button.textContent = "완료됨";
           }
         });
+      });
+      document.querySelectorAll(inlineFeeButtonSelector(distributionId, allianceId, feeKey)).forEach((button) => {
+        button.dataset.feeSettled = "true";
+        button.dataset.canSettle = "false";
+        button.dataset.feeStatus = "정산 완료";
+        const card = button.closest(".my-payout-fee-card");
+        const statusText = card?.querySelector("small");
+        if (statusText) {
+          statusText.textContent = `${button.dataset.feePercent || ""} · 정산 완료`;
+        }
       });
     }
 
@@ -3128,6 +3161,79 @@
       });
     }
 
+    function escapeModalText(value) {
+      return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
+    function openInlineFeeModal(button) {
+      if (!lazyModal || !lazyModalContent || !button) {
+        return;
+      }
+      const title = button.dataset.feeTitle || "수수료";
+      const caption = button.dataset.feeCaption || "";
+      const percent = button.dataset.feePercent || "";
+      const amount = button.dataset.feeAmount || "0";
+      const status = button.dataset.feeStatus || "정산 대기";
+      const distributionId = button.dataset.distributionId || "";
+      const allianceId = button.dataset.allianceId || "0";
+      const feeKey = button.dataset.feeKey || "";
+      const feeLabel = button.dataset.feeLabel || title;
+      const feeRate = button.dataset.feeRate || "0";
+      const canSettle = button.dataset.canSettle === "true";
+      const settleForm = canSettle ? `
+        <form method="post" action="/loot/fee-settlements/settle?guild_id=${escapeModalText(selectedGuildId)}" data-fee-settle-form>
+          <input type="hidden" name="distribution_id" value="${escapeModalText(distributionId)}">
+          <input type="hidden" name="alliance_id" value="${escapeModalText(allianceId)}">
+          <input type="hidden" name="fee_key" value="${escapeModalText(feeKey)}">
+          <input type="hidden" name="fee_label" value="${escapeModalText(feeLabel)}">
+          <input type="hidden" name="fee_rate" value="${escapeModalText(feeRate)}">
+          <input type="hidden" name="fee_amount" value="0">
+          <input type="hidden" name="return_tab" value="${escapeModalText(button.dataset.returnTab || "my-alliance-payouts")}">
+          <button class="tiny-button" type="submit" data-fee-settle-button>정산 완료</button>
+        </form>
+      ` : "";
+      lazyModalContent.innerHTML = `
+        <div class="modal-card forfeiture-log-modal-card" role="dialog" aria-modal="true">
+          <header class="panel-header">
+            <div>
+              <h2>${escapeModalText(title)}</h2>
+              <span class="panel-caption">${escapeModalText(caption)}</span>
+            </div>
+            <button class="icon-button" type="button" aria-label="닫기" data-lazy-modal-close>&times;</button>
+          </header>
+          <div class="forfeiture-log-total">
+            <span>수수료 금액</span>
+            <strong>${escapeModalText(amount)}</strong>
+          </div>
+          <div class="forfeiture-log-list">
+            <article
+              class="forfeiture-user-row"
+              data-fee-settle-row
+              data-fee-distribution-id="${escapeModalText(distributionId)}"
+              data-fee-alliance-id="${escapeModalText(allianceId)}"
+              data-fee-key="${escapeModalText(feeKey)}"
+            >
+              <div>
+                <strong>${escapeModalText(title)} ${escapeModalText(percent)}</strong>
+                <span data-fee-status>${escapeModalText(status)}</span>
+              </div>
+              <div class="inline-actions">
+                <strong>${escapeModalText(amount)}</strong>
+                ${settleForm}
+              </div>
+            </article>
+          </div>
+        </div>
+      `;
+      bindFeeSettleForms(lazyModal);
+      setLazyModalOpen(true);
+    }
+
     async function openLazyModal(url) {
       if (!lazyModal || !lazyModalContent || !url) {
         return;
@@ -3205,6 +3311,10 @@
       if (event.target === feeRuleModal) {
         setFeeRuleModalOpen(false);
       }
+    });
+
+    document.querySelectorAll("[data-inline-fee-modal]").forEach((button) => {
+      button.addEventListener("click", () => openInlineFeeModal(button));
     });
 
     document.querySelectorAll("[data-lazy-modal-url]").forEach((button) => {

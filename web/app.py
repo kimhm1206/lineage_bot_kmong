@@ -5839,40 +5839,6 @@ def _loot_modal_html(
             body,
         )
 
-    if modal == "my-fee":
-        payout = next(
-            (item for item in context["events"] if int(item.get("distribution_id") or 0) == int(distribution_id or 0)),
-            None,
-        )
-        if payout is None:
-            raise ValueError("distribution")
-        fee = next(
-            (item for item in payout.get("fee_lines", []) if str(item.get("fee_key") or "") == fee_key),
-            None,
-        )
-        fee_alliance_id = int(payout.get("alliance_id") or 0)
-        return_tab = "my-alliance-payouts"
-        can_edit = can_edit_my and not selected_alliance.get("is_other")
-        caption = f"#{payout.get('loot_event_id')} {payout.get('item_name')} · {payout.get('attendance_started_at')}"
-        if fee is None:
-            raise ValueError("fee")
-        if "fee_label" not in fee:
-            fee = {**fee, "fee_label": fee.get("rule_name") or "수수료"}
-        body = (
-            _modal_total_html("수수료 금액", str(fee.get("fee_amount_total_text") or fee.get("fee_amount_text") or "0"))
-            + "<div class=\"forfeiture-log-list\">"
-            + _fee_row_html(
-                guild_id,
-                fee,
-                alliance_id=fee_alliance_id,
-                return_tab=return_tab,
-                can_edit=can_edit,
-                title=f"{fee.get('fee_label') or fee.get('rule_name')} {fee.get('fee_percent_text')}%",
-            )
-            + "</div>"
-        )
-        return _modal_card_html(str(fee.get("fee_label") or fee.get("rule_name") or "수수료"), caption, body)
-
     raise ValueError("modal")
 
 
