@@ -1146,6 +1146,14 @@ def _can_owner_manage_selected_server(auth: dict[str, Any]) -> bool:
     )
 
 
+def _can_edit_alliance_payouts(auth: dict[str, Any]) -> bool:
+    return _can_owner_manage_selected_server(auth)
+
+
+def _can_edit_my_alliance_payouts(auth: dict[str, Any]) -> bool:
+    return _can_bookkeep_selected_server(auth)
+
+
 def _can_manage_bookkeepers(auth: dict[str, Any]) -> bool:
     return bool(auth["selected_server"].get("can_manage_bookkeepers"))
 
@@ -4112,7 +4120,13 @@ def _normalize_loot_tab(tab: str | None, auth: dict[str, Any]) -> str:
         return "distribution"
     if normalized == "my-alliance-payouts":
         my_alliance = selected_server.get("my_alliance") or {}
-        if not selected_server.get("can_manage") or not my_alliance.get("can_view"):
+        if (
+            not (
+                selected_server.get("can_manage")
+                or selected_server.get("can_bookkeep")
+            )
+            or not my_alliance.get("can_view")
+        ):
             return "distribution"
     return normalized
 
@@ -4831,6 +4845,8 @@ def _loot_template_context(
         "loot_alliance_options": alliance_options,
         "active_loot_tab": active_loot_tab,
         "loot_tab_hrefs": tab_hrefs,
+        "can_edit_alliance_payouts": _can_edit_alliance_payouts(auth),
+        "can_edit_my_alliance_payouts": _can_edit_my_alliance_payouts(auth),
         "loot_period": {
             "active": active_period,
             "label": period_label,
@@ -6390,10 +6406,10 @@ async def update_loot_payout_status(
         return _auth_redirect(request)
 
     selected_guild_id = int(auth["selected_guild_id"])
-    if not _can_manage_selected_server(auth):
+    if not _can_edit_alliance_payouts(auth):
         if _wants_json(request):
             return JSONResponse(
-                {"ok": False, "message": "관리자 권한이 필요합니다."},
+                {"ok": False, "message": "서버 오너 권한이 필요합니다."},
                 status_code=403,
             )
         return RedirectResponse(
@@ -6458,9 +6474,9 @@ async def update_all_loot_payout_status(
         return _auth_redirect(request)
 
     selected_guild_id = int(auth["selected_guild_id"])
-    if not _can_manage_selected_server(auth):
+    if not _can_edit_alliance_payouts(auth):
         if _wants_json(request):
-            return JSONResponse({"ok": False, "message": "관리자 권한이 필요합니다."}, status_code=403)
+            return JSONResponse({"ok": False, "message": "서버 오너 권한이 필요합니다."}, status_code=403)
         return RedirectResponse(
             f"/loot?guild_id={selected_guild_id}&saved=forbidden#alliance-payouts",
             status_code=303,
@@ -6513,9 +6529,9 @@ async def settle_alliance_payout_group(
         return _auth_redirect(request)
 
     selected_guild_id = int(auth["selected_guild_id"])
-    if not _can_manage_selected_server(auth):
+    if not _can_edit_alliance_payouts(auth):
         if _wants_json(request):
-            return JSONResponse({"ok": False, "message": "관리자 권한이 필요합니다."}, status_code=403)
+            return JSONResponse({"ok": False, "message": "서버 오너 권한이 필요합니다."}, status_code=403)
         return RedirectResponse(
             f"/loot?guild_id={selected_guild_id}&saved=forbidden#alliance-payouts",
             status_code=303,
@@ -6594,7 +6610,7 @@ async def create_alliance_fee_rule(
     if not auth:
         return _auth_redirect(request)
     selected_guild_id = int(auth["selected_guild_id"])
-    if not _can_manage_selected_server(auth):
+    if not _can_edit_my_alliance_payouts(auth):
         return _loot_redirect(selected_guild_id, saved="forbidden")
 
     body = (await request.body()).decode("utf-8")
@@ -6636,7 +6652,7 @@ async def delete_alliance_fee_rule(
     if not auth:
         return _auth_redirect(request)
     selected_guild_id = int(auth["selected_guild_id"])
-    if not _can_manage_selected_server(auth):
+    if not _can_edit_my_alliance_payouts(auth):
         return _loot_redirect(selected_guild_id, saved="forbidden")
 
     body = (await request.body()).decode("utf-8")
@@ -6675,9 +6691,9 @@ async def settle_member_payout(
             return JSONResponse({"ok": False, "message": "로그인이 필요합니다."}, status_code=401)
         return _auth_redirect(request)
     selected_guild_id = int(auth["selected_guild_id"])
-    if not _can_manage_selected_server(auth):
+    if not _can_edit_my_alliance_payouts(auth):
         if _wants_json(request):
-            return JSONResponse({"ok": False, "message": "관리자 권한이 필요합니다."}, status_code=403)
+            return JSONResponse({"ok": False, "message": "경리 권한이 필요합니다."}, status_code=403)
         return _loot_redirect(selected_guild_id, saved="forbidden")
 
     body = (await request.body()).decode("utf-8")
@@ -6726,9 +6742,9 @@ async def update_member_payout_recipient_status(
             return JSONResponse({"ok": False, "message": "로그인이 필요합니다."}, status_code=401)
         return _auth_redirect(request)
     selected_guild_id = int(auth["selected_guild_id"])
-    if not _can_manage_selected_server(auth):
+    if not _can_edit_my_alliance_payouts(auth):
         if _wants_json(request):
-            return JSONResponse({"ok": False, "message": "관리자 권한이 필요합니다."}, status_code=403)
+            return JSONResponse({"ok": False, "message": "경리 권한이 필요합니다."}, status_code=403)
         return _loot_redirect(selected_guild_id, saved="forbidden")
 
     body = (await request.body()).decode("utf-8")
@@ -6782,9 +6798,9 @@ async def settle_member_payout_recipient_all(
             return JSONResponse({"ok": False, "message": "로그인이 필요합니다."}, status_code=401)
         return _auth_redirect(request)
     selected_guild_id = int(auth["selected_guild_id"])
-    if not _can_manage_selected_server(auth):
+    if not _can_edit_my_alliance_payouts(auth):
         if _wants_json(request):
-            return JSONResponse({"ok": False, "message": "관리자 권한이 필요합니다."}, status_code=403)
+            return JSONResponse({"ok": False, "message": "경리 권한이 필요합니다."}, status_code=403)
         return _loot_redirect(selected_guild_id, saved="forbidden")
 
     form_data = await _urlencoded_form_data(request)
@@ -6874,7 +6890,7 @@ async def settle_all_member_payouts(
     if not auth:
         return _auth_redirect(request)
     selected_guild_id = int(auth["selected_guild_id"])
-    if not _can_manage_selected_server(auth):
+    if not _can_edit_my_alliance_payouts(auth):
         return _loot_redirect(selected_guild_id, saved="forbidden")
 
     body = (await request.body()).decode("utf-8")
@@ -6909,7 +6925,7 @@ async def settle_member_forfeitures(
     if not auth:
         return _auth_redirect(request)
     selected_guild_id = int(auth["selected_guild_id"])
-    if not _can_manage_selected_server(auth):
+    if not _can_edit_my_alliance_payouts(auth):
         return _loot_redirect(selected_guild_id, saved="forbidden")
 
     body = (await request.body()).decode("utf-8")
