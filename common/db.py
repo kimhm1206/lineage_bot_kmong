@@ -5442,8 +5442,16 @@ def _ensure_postgres_columns(cursor: psycopg2.extensions.cursor) -> None:
         "ON loot_events(guild_id, updated_at)"
     )
     cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_loot_events_guild_date_order "
+        "ON loot_events(guild_id, event_date DESC, event_time_label DESC, loot_event_id DESC)"
+    )
+    cursor.execute(
         "CREATE INDEX IF NOT EXISTS idx_distribution_batches_guild "
         "ON distribution_batches(guild_id)"
+    )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_distribution_batches_guild_distribution "
+        "ON distribution_batches(guild_id, distribution_id)"
     )
     cursor.execute(
         "CREATE INDEX IF NOT EXISTS idx_distribution_batches_loot_event "
@@ -5462,8 +5470,16 @@ def _ensure_postgres_columns(cursor: psycopg2.extensions.cursor) -> None:
         "ON loot_event_participants(loot_event_id)"
     )
     cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_loot_event_participants_event_alliance "
+        "ON loot_event_participants(loot_event_id, alliance_id)"
+    )
+    cursor.execute(
         "CREATE INDEX IF NOT EXISTS idx_member_payout_rule_snapshots_distribution_alliance "
         "ON member_payout_rule_snapshots(distribution_id, alliance_id)"
+    )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_member_payout_rule_snapshots_alliance_distribution "
+        "ON member_payout_rule_snapshots(alliance_id, distribution_id)"
     )
     cursor.execute(
         """
@@ -5489,8 +5505,16 @@ def _ensure_postgres_columns(cursor: psycopg2.extensions.cursor) -> None:
         "ON member_payout_statuses(alliance_id, payout_status)"
     )
     cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_member_payout_statuses_alliance_distribution "
+        "ON member_payout_statuses(alliance_id, distribution_id)"
+    )
+    cursor.execute(
         "CREATE INDEX IF NOT EXISTS idx_member_forfeiture_settlements_alliance "
         "ON member_forfeiture_settlements(alliance_id, settled_at)"
+    )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_member_forfeiture_settlements_alliance_distribution "
+        "ON member_forfeiture_settlements(alliance_id, distribution_id)"
     )
     cursor.execute(
         "CREATE INDEX IF NOT EXISTS idx_loot_fee_settlements_distribution "
@@ -5981,8 +6005,19 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_bid_results_unique_cycle ON bid_item_resul
 CREATE INDEX IF NOT EXISTS idx_bid_results_item_cycle ON bid_item_results(guild_id, bid_item_id, cycle_no);
 CREATE INDEX IF NOT EXISTS idx_loot_events_guild_attendance ON loot_events(guild_id, attendance_id);
 CREATE INDEX IF NOT EXISTS idx_loot_events_date ON loot_events(event_date);
+CREATE INDEX IF NOT EXISTS idx_loot_events_guild_date_order ON loot_events(guild_id, event_date DESC, event_time_label DESC, loot_event_id DESC);
+CREATE INDEX IF NOT EXISTS idx_distribution_batches_guild ON distribution_batches(guild_id);
+CREATE INDEX IF NOT EXISTS idx_distribution_batches_guild_distribution ON distribution_batches(guild_id, distribution_id);
 CREATE INDEX IF NOT EXISTS idx_distribution_batches_loot_event ON distribution_batches(loot_event_id);
 CREATE INDEX IF NOT EXISTS idx_distribution_alliance_payouts_distribution ON distribution_alliance_payouts(distribution_id);
 CREATE INDEX IF NOT EXISTS idx_loot_event_items_event ON loot_event_items(loot_event_id);
 CREATE INDEX IF NOT EXISTS idx_loot_event_participants_event ON loot_event_participants(loot_event_id);
+CREATE INDEX IF NOT EXISTS idx_loot_event_participants_event_alliance ON loot_event_participants(loot_event_id, alliance_id);
+CREATE INDEX IF NOT EXISTS idx_member_payout_rule_snapshots_distribution_alliance ON member_payout_rule_snapshots(distribution_id, alliance_id);
+CREATE INDEX IF NOT EXISTS idx_member_payout_rule_snapshots_alliance_distribution ON member_payout_rule_snapshots(alliance_id, distribution_id);
+CREATE INDEX IF NOT EXISTS idx_member_payout_statuses_alliance_status ON member_payout_statuses(alliance_id, payout_status);
+CREATE INDEX IF NOT EXISTS idx_member_payout_statuses_alliance_distribution ON member_payout_statuses(alliance_id, distribution_id);
+CREATE INDEX IF NOT EXISTS idx_member_forfeiture_settlements_alliance ON member_forfeiture_settlements(alliance_id, settled_at);
+CREATE INDEX IF NOT EXISTS idx_member_forfeiture_settlements_alliance_distribution ON member_forfeiture_settlements(alliance_id, distribution_id);
+CREATE INDEX IF NOT EXISTS idx_loot_fee_settlements_distribution ON loot_fee_settlements(distribution_id, alliance_id, fee_key);
 """

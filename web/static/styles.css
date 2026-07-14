@@ -2081,6 +2081,9 @@ button:disabled {
 }
 
 .inner-tab-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-height: 38px;
   padding: 0 14px;
   border: 1px solid var(--line);
@@ -2089,6 +2092,7 @@ button:disabled {
   color: var(--muted);
   font-size: 13px;
   font-weight: 900;
+  text-decoration: none;
 }
 
 .inner-tab-button.is-active,

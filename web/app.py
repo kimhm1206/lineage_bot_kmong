@@ -4408,6 +4408,10 @@ def _loot_url(
     status: str | None = None,
     alliance_id: int | str | None = None,
     loot_page: int | None = None,
+    alliance_page: int | None = None,
+    alliance_view: str | None = None,
+    my_page: int | None = None,
+    payout_view: str | None = None,
     tab: str = "distribution",
 ) -> str:
     params: dict[str, Any] = {"guild_id": guild_id}
@@ -4425,6 +4429,14 @@ def _loot_url(
         params["alliance_id"] = alliance_id
     if loot_page and loot_page > 1:
         params["loot_page"] = loot_page
+    if tab == "alliance-payouts" and alliance_page and alliance_page > 1:
+        params["alliance_page"] = alliance_page
+    if tab == "alliance-payouts" and alliance_view in {"events", "alliances"}:
+        params["alliance_view"] = alliance_view
+    if tab == "my-alliance-payouts" and my_page and my_page > 1:
+        params["my_page"] = my_page
+    if tab == "my-alliance-payouts" and payout_view in {"recipients", "events"}:
+        params["payout_view"] = payout_view
     return f"/loot?{urlencode(params)}#{tab}"
 
 
@@ -4471,6 +4483,246 @@ def _loot_pagination_items(
         )
         previous_page = page
     return items
+
+
+def _my_payout_pagination_items(
+    guild_id: int,
+    current_page: int,
+    total_pages: int,
+    *,
+    period: str,
+    mine_only: bool,
+    status: str,
+    alliance_id: int | str | None,
+    payout_view: str,
+) -> list[dict[str, Any]]:
+    if total_pages <= 1:
+        return []
+
+    pages = {1, total_pages, current_page}
+    for page in range(current_page - 2, current_page + 3):
+        if 1 <= page <= total_pages:
+            pages.add(page)
+
+    items: list[dict[str, Any]] = []
+    previous_page = 0
+    for page in sorted(pages):
+        if previous_page and page - previous_page > 1:
+            items.append({"type": "ellipsis", "label": "..."})
+        items.append(
+            {
+                "type": "page",
+                "label": str(page),
+                "page": page,
+                "href": _loot_url(
+                    guild_id,
+                    period=period,
+                    mine=mine_only,
+                    status=status,
+                    alliance_id=alliance_id,
+                    my_page=page,
+                    tab="my-alliance-payouts",
+                    payout_view=payout_view,
+                ),
+                "active": page == current_page,
+            }
+        )
+        previous_page = page
+    return items
+
+
+def _my_payout_pagination(
+    guild_id: int,
+    *,
+    current_page: int,
+    total_count: int,
+    page_size: int,
+    active_period: str,
+    mine_only: bool,
+    status: str,
+    alliance_id: int | str | None,
+    payout_view: str,
+) -> dict[str, Any]:
+    total_pages = max(1, (total_count + page_size - 1) // page_size)
+    page = max(1, min(int(current_page or 1), total_pages))
+    return {
+        "current_page": page,
+        "total_pages": total_pages,
+        "total_count": total_count,
+        "page_size": page_size,
+        "first_href": _loot_url(
+            guild_id,
+            period=active_period,
+            mine=mine_only,
+            status=status,
+            alliance_id=alliance_id,
+            my_page=1,
+            tab="my-alliance-payouts",
+            payout_view=payout_view,
+        ),
+        "prev_href": _loot_url(
+            guild_id,
+            period=active_period,
+            mine=mine_only,
+            status=status,
+            alliance_id=alliance_id,
+            my_page=max(1, page - 1),
+            tab="my-alliance-payouts",
+            payout_view=payout_view,
+        ),
+        "next_href": _loot_url(
+            guild_id,
+            period=active_period,
+            mine=mine_only,
+            status=status,
+            alliance_id=alliance_id,
+            my_page=min(total_pages, page + 1),
+            tab="my-alliance-payouts",
+            payout_view=payout_view,
+        ),
+        "last_href": _loot_url(
+            guild_id,
+            period=active_period,
+            mine=mine_only,
+            status=status,
+            alliance_id=alliance_id,
+            my_page=total_pages,
+            tab="my-alliance-payouts",
+            payout_view=payout_view,
+        ),
+        "has_previous": page > 1,
+        "has_next": page < total_pages,
+        "items": _my_payout_pagination_items(
+            guild_id,
+            page,
+            total_pages,
+            period=active_period,
+            mine_only=mine_only,
+            status=status,
+            alliance_id=alliance_id,
+            payout_view=payout_view,
+        ),
+    }
+
+
+def _alliance_payout_pagination_items(
+    guild_id: int,
+    current_page: int,
+    total_pages: int,
+    *,
+    period: str,
+    mine_only: bool,
+    status: str,
+    alliance_id: int | str | None,
+    alliance_view: str,
+) -> list[dict[str, Any]]:
+    if total_pages <= 1:
+        return []
+
+    pages = {1, total_pages, current_page}
+    for page in range(current_page - 2, current_page + 3):
+        if 1 <= page <= total_pages:
+            pages.add(page)
+
+    items: list[dict[str, Any]] = []
+    previous_page = 0
+    for page in sorted(pages):
+        if previous_page and page - previous_page > 1:
+            items.append({"type": "ellipsis", "label": "..."})
+        items.append(
+            {
+                "type": "page",
+                "label": str(page),
+                "page": page,
+                "href": _loot_url(
+                    guild_id,
+                    period=period,
+                    mine=mine_only,
+                    status=status,
+                    alliance_id=alliance_id,
+                    alliance_page=page,
+                    tab="alliance-payouts",
+                    alliance_view=alliance_view,
+                ),
+                "active": page == current_page,
+            }
+        )
+        previous_page = page
+    return items
+
+
+def _alliance_payout_pagination(
+    guild_id: int,
+    *,
+    current_page: int,
+    total_count: int,
+    page_size: int,
+    active_period: str,
+    mine_only: bool,
+    status: str,
+    alliance_id: int | str | None,
+    alliance_view: str,
+) -> dict[str, Any]:
+    total_pages = max(1, (total_count + page_size - 1) // page_size)
+    page = max(1, min(int(current_page or 1), total_pages))
+    return {
+        "current_page": page,
+        "total_pages": total_pages,
+        "total_count": total_count,
+        "page_size": page_size,
+        "first_href": _loot_url(
+            guild_id,
+            period=active_period,
+            mine=mine_only,
+            status=status,
+            alliance_id=alliance_id,
+            alliance_page=1,
+            tab="alliance-payouts",
+            alliance_view=alliance_view,
+        ),
+        "prev_href": _loot_url(
+            guild_id,
+            period=active_period,
+            mine=mine_only,
+            status=status,
+            alliance_id=alliance_id,
+            alliance_page=max(1, page - 1),
+            tab="alliance-payouts",
+            alliance_view=alliance_view,
+        ),
+        "next_href": _loot_url(
+            guild_id,
+            period=active_period,
+            mine=mine_only,
+            status=status,
+            alliance_id=alliance_id,
+            alliance_page=min(total_pages, page + 1),
+            tab="alliance-payouts",
+            alliance_view=alliance_view,
+        ),
+        "last_href": _loot_url(
+            guild_id,
+            period=active_period,
+            mine=mine_only,
+            status=status,
+            alliance_id=alliance_id,
+            alliance_page=total_pages,
+            tab="alliance-payouts",
+            alliance_view=alliance_view,
+        ),
+        "has_previous": page > 1,
+        "has_next": page < total_pages,
+        "items": _alliance_payout_pagination_items(
+            guild_id,
+            page,
+            total_pages,
+            period=active_period,
+            mine_only=mine_only,
+            status=status,
+            alliance_id=alliance_id,
+            alliance_view=alliance_view,
+        ),
+    }
 
 
 def _loot_period_filters(
@@ -5535,11 +5787,19 @@ def _loot_template_context(
     mine: str | None = None,
     status: str | None = None,
     loot_page: int = 1,
+    alliance_page: int = 1,
+    alliance_view: str | None = None,
+    my_page: int = 1,
     tab: str | None = None,
+    payout_view: str | None = None,
 ) -> dict[str, Any]:
     active_loot_tab = _normalize_loot_tab(tab, auth)
     active_period, period_start, period_label = _loot_period_bounds(period)
     active_status = _normalize_loot_status_filter(status)
+    active_alliance_payout_tab = (
+        "alliances" if alliance_view == "alliances" else "events"
+    )
+    active_my_payout_tab = "events" if payout_view == "events" else "recipients"
     mine_only = (
         True
         if mine is None
@@ -5708,11 +5968,108 @@ def _loot_template_context(
             },
         }
     )
+    alliance_payout_page_size = 20
+    alliance_payout_events = loot_events
+    alliance_payout_pagination = _alliance_payout_pagination(
+        guild_id,
+        current_page=alliance_page,
+        total_count=0,
+        page_size=alliance_payout_page_size,
+        active_period=active_period,
+        mine_only=mine_only,
+        status=active_status,
+        alliance_id=alliance_id,
+        alliance_view=active_alliance_payout_tab,
+    )
+    if active_loot_tab == "alliance-payouts":
+        if active_alliance_payout_tab == "alliances":
+            alliance_rows = list(alliance_payout_groups.get("alliances") or [])
+            alliance_payout_pagination = _alliance_payout_pagination(
+                guild_id,
+                current_page=alliance_page,
+                total_count=len(alliance_rows),
+                page_size=alliance_payout_page_size,
+                active_period=active_period,
+                mine_only=mine_only,
+                status=active_status,
+                alliance_id=alliance_id,
+                alliance_view=active_alliance_payout_tab,
+            )
+            page_start = (
+                int(alliance_payout_pagination["current_page"]) - 1
+            ) * alliance_payout_page_size
+            alliance_payout_groups = {
+                **alliance_payout_groups,
+                "alliances": alliance_rows[
+                    page_start : page_start + alliance_payout_page_size
+                ],
+            }
+            alliance_payout_events = []
+        else:
+            event_rows = list(loot_events)
+            alliance_payout_pagination = _alliance_payout_pagination(
+                guild_id,
+                current_page=alliance_page,
+                total_count=len(event_rows),
+                page_size=alliance_payout_page_size,
+                active_period=active_period,
+                mine_only=mine_only,
+                status=active_status,
+                alliance_id=alliance_id,
+                alliance_view=active_alliance_payout_tab,
+            )
+            page_start = (
+                int(alliance_payout_pagination["current_page"]) - 1
+            ) * alliance_payout_page_size
+            alliance_payout_events = event_rows[
+                page_start : page_start + alliance_payout_page_size
+            ]
     my_alliance_payouts = (
         _my_alliance_payout_context(guild_id, selected_alliance, loot_events)
         if active_loot_tab == "my-alliance-payouts"
         else _my_alliance_payout_context(guild_id, None, [])
     )
+    my_payout_page_size = 20
+    my_payout_pagination = _my_payout_pagination(
+        guild_id,
+        current_page=my_page,
+        total_count=0,
+        page_size=my_payout_page_size,
+        active_period=active_period,
+        mine_only=mine_only,
+        status=active_status,
+        alliance_id=(
+            selected_alliance.get("alliance_id")
+            if selected_alliance
+            else alliance_id
+        ),
+        payout_view=active_my_payout_tab,
+    )
+    if active_loot_tab == "my-alliance-payouts":
+        paged_key = "events" if active_my_payout_tab == "events" else "recipients"
+        all_rows = list(my_alliance_payouts.get(paged_key) or [])
+        my_payout_pagination = _my_payout_pagination(
+            guild_id,
+            current_page=my_page,
+            total_count=len(all_rows),
+            page_size=my_payout_page_size,
+            active_period=active_period,
+            mine_only=mine_only,
+            status=active_status,
+            alliance_id=(
+                selected_alliance.get("alliance_id")
+                if selected_alliance
+                else alliance_id
+            ),
+            payout_view=active_my_payout_tab,
+        )
+        page_start = (
+            int(my_payout_pagination["current_page"]) - 1
+        ) * my_payout_page_size
+        my_alliance_payouts = {
+            **my_alliance_payouts,
+            paged_key: all_rows[page_start : page_start + my_payout_page_size],
+        }
     loot_form_value = (
         loot_form
         or (_default_loot_form(guild_id) if active_loot_tab == "create" else _blank_loot_form())
@@ -5732,7 +6089,60 @@ def _loot_template_context(
         "distribution_pagination": distribution_pagination,
         "bid_dashboard": bid_dashboard,
         "alliance_payout_groups": alliance_payout_groups,
+        "alliance_payout_events": alliance_payout_events,
+        "active_alliance_payout_tab": active_alliance_payout_tab,
+        "alliance_payout_pagination": alliance_payout_pagination,
+        "alliance_payout_tab_hrefs": {
+            "events": _loot_url(
+                guild_id,
+                period=active_period,
+                mine=mine_only,
+                status=active_status,
+                alliance_id=alliance_id,
+                tab="alliance-payouts",
+                alliance_view="events",
+            ),
+            "alliances": _loot_url(
+                guild_id,
+                period=active_period,
+                mine=mine_only,
+                status=active_status,
+                alliance_id=alliance_id,
+                tab="alliance-payouts",
+                alliance_view="alliances",
+            ),
+        },
         "my_alliance_payouts": my_alliance_payouts,
+        "active_my_payout_tab": active_my_payout_tab,
+        "my_payout_pagination": my_payout_pagination,
+        "my_payout_tab_hrefs": {
+            "recipients": _loot_url(
+                guild_id,
+                period=active_period,
+                mine=mine_only,
+                status=active_status,
+                alliance_id=(
+                    selected_alliance.get("alliance_id")
+                    if selected_alliance
+                    else alliance_id
+                ),
+                tab="my-alliance-payouts",
+                payout_view="recipients",
+            ),
+            "events": _loot_url(
+                guild_id,
+                period=active_period,
+                mine=mine_only,
+                status=active_status,
+                alliance_id=(
+                    selected_alliance.get("alliance_id")
+                    if selected_alliance
+                    else alliance_id
+                ),
+                tab="my-alliance-payouts",
+                payout_view="events",
+            ),
+        },
         "loot_modal_data": _loot_modal_payload(
             guild_id,
             alliance_payout_groups,
@@ -6290,21 +6700,21 @@ def dashboard(
     )
     query_alliance_value = None if is_other_alliance_filter else alliance_value or None
 
-    filtered_rows = database.get_attendance_export_rows(
-        selected_guild_id,
-        start_at,
-        end_at,
-        search_value or None,
-        query_alliance_value,
-    )
-    if is_other_alliance_filter:
-        filtered_rows = [
-            row
-            for row in filtered_rows
-            if str(row.get("alliance_name") or "미분류") in other_alliance_names
-        ]
     should_compute_filtered_totals = bool(search_value or alliance_value)
     if should_compute_filtered_totals:
+        filtered_rows = database.get_attendance_export_rows(
+            selected_guild_id,
+            start_at,
+            end_at,
+            search_value or None,
+            query_alliance_value,
+        )
+        if is_other_alliance_filter:
+            filtered_rows = [
+                row
+                for row in filtered_rows
+                if str(row.get("alliance_name") or "미분류") in other_alliance_names
+            ]
         overview = _overview_from_attendance_rows(filtered_rows)
         daily_stats = _daily_stats_from_attendance_rows(filtered_rows)[:60]
         alliance_stats = _alliance_stats_from_attendance_rows(filtered_rows)
@@ -6670,17 +7080,6 @@ def attendance_status(
         end_at,
     )
     can_manage_status = _can_manage_selected_server(auth)
-    edit_candidates = (
-        {
-            int(session["attendance_id"]): database.get_attendance_edit_candidates(
-                selected_guild_id,
-                int(session["attendance_id"]),
-            )
-            for session in sessions
-        }
-        if can_manage_status
-        else {}
-    )
     return _render(
         request,
         "status.html",
@@ -6688,7 +7087,6 @@ def attendance_status(
             "auth": auth,
             "sessions": sessions,
             "can_manage_status": can_manage_status,
-            "edit_candidates": edit_candidates,
             "status_period": {
                 "active": active_period,
                 "filters": _status_period_filters(selected_guild_id, active_period),
@@ -6722,6 +7120,36 @@ def attendance_status(
             "active_page": "status",
         },
     )
+
+
+@app.get("/status/edit-candidates")
+def attendance_status_edit_candidates(
+    request: Request,
+    guild_id: str | None = None,
+    attendance_id: int = 0,
+):
+    auth = _auth_context(request, guild_id)
+    if not auth:
+        return JSONResponse({"candidates": []}, status_code=401)
+
+    selected_guild_id = int(auth["selected_guild_id"])
+    if attendance_id <= 0 or not _can_manage_selected_server(auth):
+        return JSONResponse({"candidates": []}, status_code=403)
+
+    candidates = database.get_attendance_edit_candidates(
+        selected_guild_id,
+        attendance_id,
+    )
+    return {
+        "candidates": [
+            {
+                "user_id": int(candidate.get("user_id") or 0),
+                "discord_nickname": str(candidate.get("discord_nickname") or ""),
+                "alliance_name": str(candidate.get("alliance_name") or "미분류"),
+            }
+            for candidate in candidates
+        ]
+    }
 
 
 @app.post("/status/add-entry")
@@ -6824,7 +7252,11 @@ def loot_drops(
     mine: str | None = None,
     status: str | None = None,
     loot_page: int = 1,
+    alliance_page: int = 1,
+    alliance_view: str | None = None,
+    my_page: int = 1,
     tab: str | None = None,
+    payout_view: str | None = None,
 ):
     auth = _auth_context(request, guild_id)
     if not auth:
@@ -6844,7 +7276,11 @@ def loot_drops(
             mine=mine,
             status=status,
             loot_page=loot_page,
+            alliance_page=alliance_page,
+            alliance_view=alliance_view,
+            my_page=my_page,
             tab=tab,
+            payout_view=payout_view,
         ),
     )
 

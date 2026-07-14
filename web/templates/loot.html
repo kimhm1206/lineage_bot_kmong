@@ -109,7 +109,8 @@
     {% endif %}
   </nav>
 
-  <section class="loot-tab-panel" data-loot-panel="distribution" {% if active_loot_tab != 'distribution' %}hidden{% endif %}>
+  {% if active_loot_tab == 'distribution' %}
+  <section class="loot-tab-panel" data-loot-panel="distribution">
     <section class="loot-overview-grid loot-distribution-overview-grid">
       <article class="panel loot-total-card">
         <span>기간 내 총 분배금</span>
@@ -233,8 +234,10 @@
 
     {{ pagination_controls(distribution_pagination) }}
   </section>
+  {% endif %}
 
-  <section class="loot-tab-panel" data-loot-panel="item-bids" {% if active_loot_tab != 'item-bids' %}hidden{% endif %}>
+  {% if active_loot_tab == 'item-bids' %}
+  <section class="loot-tab-panel" data-loot-panel="item-bids">
     <section class="bid-overview-grid">
       <article class="panel bid-stat-card">
         <span>입찰 아이템</span>
@@ -495,9 +498,10 @@
       </div>
     </section>
   </section>
+  {% endif %}
 
-  {% if auth.selected_server.can_bookkeep %}
-    <section class="loot-tab-panel" data-loot-panel="create" {% if active_loot_tab != 'create' %}hidden{% endif %}>
+  {% if auth.selected_server.can_bookkeep and active_loot_tab == 'create' %}
+    <section class="loot-tab-panel" data-loot-panel="create">
       <section class="loot-layout">
         <form class="panel loot-create-panel" method="post" action="/loot?guild_id={{ auth.selected_guild_id }}" data-loot-form>
           <input
@@ -633,11 +637,19 @@
     </section>
   {% endif %}
 
-  {% if auth.selected_server.can_manage %}
-    <section class="loot-tab-panel" data-loot-panel="alliance-payouts" {% if active_loot_tab != 'alliance-payouts' %}hidden{% endif %}>
+  {% if auth.selected_server.can_manage and active_loot_tab == 'alliance-payouts' %}
+    <section class="loot-tab-panel" data-loot-panel="alliance-payouts">
       <div class="inner-tab-row" data-alliance-payout-tabs>
-        <button class="inner-tab-button is-active" type="button" data-alliance-payout-tab="events">아이템 건별</button>
-        <button class="inner-tab-button" type="button" data-alliance-payout-tab="alliances">혈맹별</button>
+        <a
+          class="inner-tab-button {% if active_alliance_payout_tab == 'events' %}is-active{% endif %}"
+          href="{{ alliance_payout_tab_hrefs.events }}"
+          data-alliance-payout-tab="events"
+        >아이템 건별</a>
+        <a
+          class="inner-tab-button {% if active_alliance_payout_tab == 'alliances' %}is-active{% endif %}"
+          href="{{ alliance_payout_tab_hrefs.alliances }}"
+          data-alliance-payout-tab="alliances"
+        >혈맹별</a>
       </div>
 
       {% if can_edit_alliance_payouts %}
@@ -670,8 +682,10 @@
 
       {% endif %}
 
+      {% if active_alliance_payout_tab == 'events' %}
       <section class="loot-event-list" aria-label="각혈 분배 현황" data-alliance-payout-panel="events">
-        {% for event in loot_events %}
+        {{ pagination_controls(alliance_payout_pagination) }}
+        {% for event in alliance_payout_events %}
           <details
             class="panel loot-event-card payout-card"
             data-loot-event-card
@@ -924,9 +938,12 @@
             <div class="empty report-empty">등록된 드랍 기록이 없습니다.</div>
           </article>
         {% endfor %}
+        {{ pagination_controls(alliance_payout_pagination) }}
       </section>
+      {% endif %}
 
-      <section class="panel my-recipient-payout-panel" data-alliance-payout-panel="alliances" hidden>
+      {% if active_alliance_payout_tab == 'alliances' %}
+      <section class="panel my-recipient-payout-panel" data-alliance-payout-panel="alliances">
         <header class="panel-header">
           <div>
             <h2>혈맹별 분배 현황</h2>
@@ -959,6 +976,7 @@
         </div>
 
         <section class="recipient-payout-card-list" data-alliance-payout-list>
+          {{ pagination_controls(alliance_payout_pagination) }}
           {% for alliance in alliance_payout_groups.alliances %}
             <details
               class="panel loot-event-card recipient-payout-card alliance-payout-group-card"
@@ -1074,13 +1092,15 @@
               <div class="empty report-empty">혈맹별 분배 기록이 없습니다.</div>
             </article>
           {% endfor %}
+          {{ pagination_controls(alliance_payout_pagination) }}
         </section>
       </section>
+      {% endif %}
     </section>
   {% endif %}
 
-  {% if (auth.selected_server.can_manage or auth.selected_server.can_bookkeep) and auth.selected_server.my_alliance.can_view %}
-    <section class="loot-tab-panel" data-loot-panel="my-alliance-payouts" {% if active_loot_tab != 'my-alliance-payouts' %}hidden{% endif %}>
+  {% if (auth.selected_server.can_manage or auth.selected_server.can_bookkeep) and auth.selected_server.my_alliance.can_view and active_loot_tab == 'my-alliance-payouts' %}
+    <section class="loot-tab-panel" data-loot-panel="my-alliance-payouts">
       {% if my_alliance_payouts.selected_alliance %}
         <section class="loot-overview-grid my-alliance-overview-grid">
           <article class="panel loot-total-card my-alliance-total-card">
@@ -1212,12 +1232,22 @@
         {% endif %}
 
         <div class="inner-tab-row" data-my-payout-tabs>
-          <button class="inner-tab-button is-active" type="button" data-my-payout-tab="recipients">인원별</button>
-          <button class="inner-tab-button" type="button" data-my-payout-tab="events">아이템 건별</button>
+          <a
+            class="inner-tab-button {% if active_my_payout_tab == 'recipients' %}is-active{% endif %}"
+            href="{{ my_payout_tab_hrefs.recipients }}"
+            data-my-payout-tab="recipients"
+          >인원별</a>
+          <a
+            class="inner-tab-button {% if active_my_payout_tab == 'events' %}is-active{% endif %}"
+            href="{{ my_payout_tab_hrefs.events }}"
+            data-my-payout-tab="events"
+          >아이템 건별</a>
         </div>
 
-        <section class="my-payout-layout" data-my-payout-panel="events" hidden>
+        {% if active_my_payout_tab == 'events' %}
+        <section class="my-payout-layout" data-my-payout-panel="events">
           <section class="loot-event-list" aria-label="내 혈맹 분배 현황">
+            {{ pagination_controls(my_payout_pagination) }}
             {% for payout in my_alliance_payouts.events %}
               <details class="panel loot-event-card payout-card my-payout-card" data-loot-event-card data-member-payout-card>
                 <summary>
@@ -1357,9 +1387,12 @@
                 <div class="empty report-empty">내 혈맹 분배 기록이 없습니다.</div>
               </article>
             {% endfor %}
+            {{ pagination_controls(my_payout_pagination) }}
           </section>
         </section>
+        {% endif %}
 
+        {% if active_my_payout_tab == 'recipients' %}
         <section class="panel my-recipient-payout-panel" data-my-payout-panel="recipients">
           <header class="panel-header">
             <div>
@@ -1394,6 +1427,7 @@
           </div>
 
           <section class="recipient-payout-card-list" data-recipient-payout-list>
+            {{ pagination_controls(my_payout_pagination) }}
             {% for recipient in my_alliance_payouts.recipients %}
               <details
                 class="panel loot-event-card recipient-payout-card"
@@ -1569,8 +1603,10 @@
                 <div class="empty report-empty">인원별 분배 대상자가 없습니다.</div>
               </article>
             {% endfor %}
+            {{ pagination_controls(my_payout_pagination) }}
           </section>
         </section>
+        {% endif %}
       {% else %}
         <article class="panel">
           <div class="empty report-empty">매핑된 혈맹이 없습니다.</div>
@@ -1579,8 +1615,8 @@
     </section>
   {% endif %}
 
-  {% if auth.selected_server.can_bookkeep %}
-    <section class="loot-tab-panel" data-loot-panel="item-settings" {% if active_loot_tab != 'item-settings' %}hidden{% endif %}>
+  {% if auth.selected_server.can_bookkeep and active_loot_tab == 'item-settings' %}
+    <section class="loot-tab-panel" data-loot-panel="item-settings">
       <section class="loot-item-settings-layout">
         <article class="panel settings-form">
           <header class="panel-header">
@@ -2226,9 +2262,7 @@
           meta: settledFeeMeta(formData),
           form: null,
         };
-        if (row.fee) {
-          settledRow.fee = { ...row.fee, is_settled: true };
-        }
+        delete settledRow.fee;
         settled.rows = settled.rows || [];
         settled.rows.unshift(settledRow);
         adjustModalTotal(settled, amount);

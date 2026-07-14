@@ -143,22 +143,15 @@
               <span>추가할 유저 검색</span>
               <input type="search" placeholder="닉네임 또는 혈맹 검색" data-status-search="candidate-{{ session.attendance_id }}">
             </label>
-            <div class="status-modal-list" data-status-list="candidate-{{ session.attendance_id }}">
-              {% for candidate in edit_candidates.get(session.attendance_id, []) %}
-                <div class="status-member-row" data-status-row data-search-text="{{ (candidate.alliance_name ~ ' ' ~ candidate.discord_nickname)|lower }}">
-                  <div>
-                    <strong>{{ candidate.discord_nickname }}</strong>
-                    <span>{{ candidate.alliance_name }}</span>
-                  </div>
-                  <form method="post" action="/status/add-entry?guild_id={{ auth.selected_guild_id }}&page={{ pagination.current_page }}&period={{ status_period.active }}">
-                    <input type="hidden" name="attendance_id" value="{{ session.attendance_id }}">
-                    <input type="hidden" name="user_id" value="{{ candidate.user_id }}">
-                    <button class="tiny-button" type="submit">추가</button>
-                  </form>
-                </div>
-              {% else %}
-                <div class="empty status-empty">추가 가능한 유저가 없습니다.</div>
-              {% endfor %}
+            <div
+              class="status-modal-list"
+              data-status-list="candidate-{{ session.attendance_id }}"
+              data-status-candidate-list
+              data-status-candidate-url="/status/edit-candidates?guild_id={{ auth.selected_guild_id }}&attendance_id={{ session.attendance_id }}"
+              data-status-add-action="/status/add-entry?guild_id={{ auth.selected_guild_id }}&page={{ pagination.current_page }}&period={{ status_period.active }}"
+              data-status-attendance-id="{{ session.attendance_id }}"
+            >
+              <div class="empty status-empty">누락 유저 추가를 누르면 후보를 불러옵니다.</div>
             </div>
           </div>
         </div>
@@ -181,12 +174,85 @@
         document.body.classList.toggle("has-status-modal-open", hasOpenModal);
       };
 
+      const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#039;",
+      }[char]));
+
+      const applyStatusSearch = (input) => {
+        const list = document.querySelector(`[data-status-list="${input.dataset.statusSearch}"]`);
+        if (!list) {
+          return;
+        }
+        const query = input.value.trim().toLowerCase();
+        list.querySelectorAll("[data-status-row]").forEach((row) => {
+          row.hidden = query && !row.dataset.searchText.includes(query);
+        });
+      };
+
+      const candidateRowHtml = (candidate, list) => {
+        const nickname = escapeHtml(candidate.discord_nickname || "");
+        const alliance = escapeHtml(candidate.alliance_name || "미분류");
+        const userId = escapeHtml(candidate.user_id || "");
+        const attendanceId = escapeHtml(list.dataset.statusAttendanceId || "");
+        const action = escapeHtml(list.dataset.statusAddAction || "");
+        const searchText = `${candidate.alliance_name || ""} ${candidate.discord_nickname || ""}`.toLowerCase();
+        return `
+          <div class="status-member-row" data-status-row data-search-text="${escapeHtml(searchText)}">
+            <div>
+              <strong>${nickname}</strong>
+              <span>${alliance}</span>
+            </div>
+            <form method="post" action="${action}">
+              <input type="hidden" name="attendance_id" value="${attendanceId}">
+              <input type="hidden" name="user_id" value="${userId}">
+              <button class="tiny-button" type="submit">추가</button>
+            </form>
+          </div>
+        `;
+      };
+
+      const loadCandidateList = async (modal) => {
+        const list = modal?.querySelector("[data-status-candidate-list]");
+        if (!list || list.dataset.loaded === "1" || list.dataset.loading === "1") {
+          return;
+        }
+        list.dataset.loading = "1";
+        list.innerHTML = '<div class="empty status-empty">후보를 불러오는 중입니다.</div>';
+        try {
+          const response = await fetch(list.dataset.statusCandidateUrl || "", {
+            headers: { "Accept": "application/json" },
+          });
+          if (!response.ok) {
+            throw new Error("candidate request failed");
+          }
+          const data = await response.json();
+          const candidates = Array.isArray(data.candidates) ? data.candidates : [];
+          list.innerHTML = candidates.length
+            ? candidates.map((candidate) => candidateRowHtml(candidate, list)).join("")
+            : '<div class="empty status-empty">추가 가능한 유저가 없습니다.</div>';
+          list.dataset.loaded = "1";
+          const search = modal.querySelector("[data-status-search]");
+          if (search) {
+            applyStatusSearch(search);
+          }
+        } catch (error) {
+          list.innerHTML = '<div class="empty status-empty">후보를 불러오지 못했습니다.</div>';
+        } finally {
+          delete list.dataset.loading;
+        }
+      };
+
       const openModal = (id) => {
         const modal = document.getElementById(id);
         if (!modal) {
           return;
         }
         modal.hidden = false;
+        loadCandidateList(modal);
         syncModalScrollLock();
         const search = modal.querySelector("[data-status-search]");
         if (search) {
@@ -226,16 +292,7 @@
       });
 
       document.querySelectorAll("[data-status-search]").forEach((input) => {
-        input.addEventListener("input", () => {
-          const list = document.querySelector(`[data-status-list="${input.dataset.statusSearch}"]`);
-          if (!list) {
-            return;
-          }
-          const query = input.value.trim().toLowerCase();
-          list.querySelectorAll("[data-status-row]").forEach((row) => {
-            row.hidden = query && !row.dataset.searchText.includes(query);
-          });
-        });
+        input.addEventListener("input", () => applyStatusSearch(input));
       });
     })();
   </script>
