@@ -975,8 +975,8 @@
           </label>
         </div>
 
+        {{ pagination_controls(alliance_payout_pagination) }}
         <section class="recipient-payout-card-list" data-alliance-payout-list>
-          {{ pagination_controls(alliance_payout_pagination) }}
           {% for alliance in alliance_payout_groups.alliances %}
             <details
               class="panel loot-event-card recipient-payout-card alliance-payout-group-card"
@@ -1092,8 +1092,8 @@
               <div class="empty report-empty">혈맹별 분배 기록이 없습니다.</div>
             </article>
           {% endfor %}
-          {{ pagination_controls(alliance_payout_pagination) }}
         </section>
+        {{ pagination_controls(alliance_payout_pagination) }}
       </section>
       {% endif %}
     </section>
@@ -1426,8 +1426,8 @@
             </label>
           </div>
 
+          {{ pagination_controls(my_payout_pagination) }}
           <section class="recipient-payout-card-list" data-recipient-payout-list>
-            {{ pagination_controls(my_payout_pagination) }}
             {% for recipient in my_alliance_payouts.recipients %}
               <details
                 class="panel loot-event-card recipient-payout-card"
@@ -1603,8 +1603,8 @@
                 <div class="empty report-empty">인원별 분배 대상자가 없습니다.</div>
               </article>
             {% endfor %}
-            {{ pagination_controls(my_payout_pagination) }}
           </section>
+          {{ pagination_controls(my_payout_pagination) }}
         </section>
         {% endif %}
       {% else %}
