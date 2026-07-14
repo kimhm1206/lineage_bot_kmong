@@ -3444,6 +3444,24 @@ def _sum_fee_logs(logs: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _fee_group_percent_text(
+    logs: list[dict[str, Any]],
+    fallback: str,
+) -> str:
+    values = sorted(
+        {
+            str(log.get("fee_percent_text") or "").strip()
+            for log in logs
+            if str(log.get("fee_percent_text") or "").strip()
+        }
+    )
+    if len(values) == 1:
+        return values[0]
+    if len(values) > 1:
+        return "변동"
+    return fallback
+
+
 def _my_alliance_payout_context(
     guild_id: int,
     selected_alliance: dict[str, Any] | None,
@@ -3453,6 +3471,7 @@ def _my_alliance_payout_context(
         return {
             "selected_alliance": None,
             "fee_rules": [],
+            "fee_rule_groups": [],
             "events": [],
             "recipients": [],
             "summary": {
@@ -3949,6 +3968,8 @@ def _my_alliance_payout_context(
         reverse=True,
     )
     fee_rule_rows = []
+    fee_rule_groups = []
+    seen_fee_keys: set[str] = set()
     for rule in fee_rules:
         fee_key = _internal_fee_key(rule)
         pending_rule_logs = [
@@ -3959,12 +3980,71 @@ def _my_alliance_payout_context(
         ]
         pending_summary = _sum_fee_logs(pending_rule_logs)
         settled_summary = _sum_fee_logs(settled_rule_logs)
-        fee_rule_rows.append(
+        row = {
+            **rule,
+            "fee_key": fee_key,
+            "modal_id": f"rule-{int(rule.get('rule_id') or 0)}",
+            "is_legacy": False,
+            "display_fee_percent_text": _fee_group_percent_text(
+                [*pending_rule_logs, *settled_rule_logs],
+                str(rule.get("fee_percent_text") or "0"),
+            ),
+            "pending_fee_logs": pending_rule_logs,
+            "settled_fee_logs": settled_rule_logs,
+            "pending_fee_amount": pending_summary["amount"],
+            "pending_fee_amount_text": pending_summary["amount_text"],
+            "pending_fee_count": pending_summary["count"],
+            "settled_fee_amount": settled_summary["amount"],
+            "settled_fee_amount_text": settled_summary["amount_text"],
+            "settled_fee_count": settled_summary["count"],
+        }
+        fee_rule_rows.append(row)
+        fee_rule_groups.append(row)
+        seen_fee_keys.add(fee_key)
+
+    all_fee_logs_by_key: dict[str, dict[str, Any]] = {}
+    for fee in [*fee_logs, *settled_fee_logs]:
+        fee_key = str(fee.get("fee_key") or "")
+        if not fee_key or fee_key in seen_fee_keys:
+            continue
+        group = all_fee_logs_by_key.setdefault(
+            fee_key,
             {
-                **rule,
                 "fee_key": fee_key,
-                "pending_fee_logs": pending_rule_logs,
-                "settled_fee_logs": settled_rule_logs,
+                "rule_name": str(fee.get("fee_label") or "이전 수수료"),
+                "fee_percent_text": str(fee.get("fee_percent_text") or "0"),
+                "fee_rate": Decimal(str(fee.get("fee_rate") or "0")),
+                "pending_fee_logs": [],
+                "settled_fee_logs": [],
+            },
+        )
+        if fee.get("is_settled"):
+            group["settled_fee_logs"].append(fee)
+        else:
+            group["pending_fee_logs"].append(fee)
+
+    for index, group in enumerate(
+        sorted(all_fee_logs_by_key.values(), key=lambda item: str(item["rule_name"])),
+        start=1,
+    ):
+        pending_summary = _sum_fee_logs(group["pending_fee_logs"])
+        settled_summary = _sum_fee_logs(group["settled_fee_logs"])
+        fee_rule_groups.append(
+            {
+                "rule_id": 0,
+                "rule_name": group["rule_name"],
+                "fee_key": group["fee_key"],
+                "modal_id": f"legacy-{index}",
+                "is_legacy": True,
+                "fee_rate": group["fee_rate"],
+                "fee_percent_text": group["fee_percent_text"],
+                "display_fee_percent_text": _fee_group_percent_text(
+                    [*group["pending_fee_logs"], *group["settled_fee_logs"]],
+                    str(group["fee_percent_text"] or "0"),
+                ),
+                "fee_percent_input": "",
+                "pending_fee_logs": group["pending_fee_logs"],
+                "settled_fee_logs": group["settled_fee_logs"],
                 "pending_fee_amount": pending_summary["amount"],
                 "pending_fee_amount_text": pending_summary["amount_text"],
                 "pending_fee_count": pending_summary["count"],
@@ -4026,6 +4106,7 @@ def _my_alliance_payout_context(
     return {
         "selected_alliance": selected_alliance,
         "fee_rules": fee_rule_rows,
+        "fee_rule_groups": fee_rule_groups,
         "events": rows,
         "recipients": recipient_rows,
         "summary": {

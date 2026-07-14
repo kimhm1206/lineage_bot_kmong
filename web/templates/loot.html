@@ -1288,7 +1288,6 @@
           <article class="panel loot-total-card is-muted my-alliance-fee-total-card">
             <span>
               수수료 전체
-              <button class="icon-button forfeit-info-button" type="button" aria-label="수수료 정산 내역 보기" data-simple-modal-open="my-alliance-fee-log">i</button>
             </span>
             <div class="my-alliance-split-metrics">
               <div>
@@ -1320,13 +1319,13 @@
                 <button class="tiny-button" type="button" data-fee-rule-modal-open>수수료 설정</button>
               </div>
               <div class="fee-rule-list">
-                {% for rule in my_alliance_payouts.fee_rules %}
+                {% for rule in my_alliance_payouts.fee_rule_groups %}
                   <div class="fee-rule-card">
                     <div>
                       <strong>{{ rule.rule_name }}</strong>
-                      <span>{{ rule.fee_percent_text }}% · 미정산 {{ rule.pending_fee_amount_text }}</span>
+                      <span>{{ rule.display_fee_percent_text }}{% if rule.display_fee_percent_text != "변동" %}%{% endif %} · 미정산 {{ rule.pending_fee_amount_text }}{% if rule.is_legacy %} · 이전 룰{% endif %}</span>
                     </div>
-                    <button class="icon-button forfeit-info-button" type="button" aria-label="{{ rule.rule_name }} 수수료 내역 보기" data-simple-modal-open="my-fee-rule-{{ rule.rule_id }}">i</button>
+                    <button class="icon-button forfeit-info-button" type="button" aria-label="{{ rule.rule_name }} 수수료 내역 보기" data-simple-modal-open="my-fee-rule-{{ rule.modal_id }}">i</button>
                   </div>
                 {% else %}
                   <div class="empty report-empty">등록된 내부 수수료가 없습니다.</div>
@@ -1337,17 +1336,17 @@
         </section>
 
         {% if can_edit_my_alliance_payouts and not my_alliance_payouts.selected_alliance.is_other %}
-          {% for rule in my_alliance_payouts.fee_rules %}
-            <div class="modal-backdrop" data-simple-modal="my-fee-rule-{{ rule.rule_id }}" hidden>
-              <div class="modal-card forfeiture-log-modal-card" role="dialog" aria-modal="true" aria-labelledby="my-fee-rule-title-{{ rule.rule_id }}">
+          {% for rule in my_alliance_payouts.fee_rule_groups %}
+            <div class="modal-backdrop" data-simple-modal="my-fee-rule-{{ rule.modal_id }}" hidden>
+              <div class="modal-card forfeiture-log-modal-card" role="dialog" aria-modal="true" aria-labelledby="my-fee-rule-title-{{ rule.modal_id }}">
                 <header class="panel-header">
                   <div>
-                    <h2 id="my-fee-rule-title-{{ rule.rule_id }}">{{ rule.rule_name }}</h2>
-                    <span class="panel-caption">{{ rule.fee_percent_text }}% · 미정산 {{ rule.pending_fee_amount_text }}</span>
+                    <h2 id="my-fee-rule-title-{{ rule.modal_id }}">{{ rule.rule_name }}</h2>
+                    <span class="panel-caption">{{ rule.display_fee_percent_text }}{% if rule.display_fee_percent_text != "변동" %}%{% endif %} · 미정산 {{ rule.pending_fee_amount_text }}{% if rule.is_legacy %} · 이전 룰{% endif %}</span>
                   </div>
                   <button class="icon-button" type="button" aria-label="닫기" data-simple-modal-close>&times;</button>
                 </header>
-                <div class="forfeiture-log-tabs" data-modal-tabs="my-fee-rule-{{ rule.rule_id }}">
+                <div class="forfeiture-log-tabs" data-modal-tabs="my-fee-rule-{{ rule.modal_id }}">
                   <button class="inner-tab-button is-active" type="button" data-modal-tab="pending">정산 대기</button>
                   <button class="inner-tab-button" type="button" data-modal-tab="settled">정산 완료</button>
                 </div>
