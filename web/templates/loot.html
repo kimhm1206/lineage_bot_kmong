@@ -1402,10 +1402,30 @@
           </header>
 
           <div class="recipient-payout-controls">
-            <label class="field">
+            <form class="field recipient-search-form" method="get" action="/loot">
+              <input type="hidden" name="guild_id" value="{{ auth.selected_guild_id }}">
+              <input type="hidden" name="tab" value="my-alliance-payouts">
+              <input type="hidden" name="payout_view" value="recipients">
+              <input type="hidden" name="period" value="{{ loot_period.active }}">
+              <input type="hidden" name="mine" value="{% if loot_period.mine_only %}1{% else %}0{% endif %}">
+              <input type="hidden" name="status" value="{{ loot_period.status }}">
+              {% if my_alliance_payouts.selected_alliance %}
+                <input type="hidden" name="alliance_id" value="{{ my_alliance_payouts.selected_alliance.alliance_id }}">
+              {% endif %}
               <span>닉네임 검색</span>
-              <input type="search" placeholder="닉네임 검색" data-recipient-payout-search>
-            </label>
+              <div class="recipient-search-row">
+                <input
+                  type="search"
+                  name="my_search"
+                  value="{{ my_payout_search.value }}"
+                  placeholder="전체 닉네임 검색"
+                >
+                <button class="tiny-button" type="submit">검색</button>
+                {% if my_payout_search.value %}
+                  <a class="tiny-button ghost-button" href="{{ my_payout_search.clear_href }}">초기화</a>
+                {% endif %}
+              </div>
+            </form>
             <label class="field">
               <span>필터</span>
               <select data-recipient-payout-filter>

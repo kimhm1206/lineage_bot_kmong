@@ -4412,6 +4412,7 @@ def _loot_url(
     alliance_view: str | None = None,
     my_page: int | None = None,
     payout_view: str | None = None,
+    my_search: str | None = None,
     tab: str = "distribution",
 ) -> str:
     params: dict[str, Any] = {"guild_id": guild_id}
@@ -4437,6 +4438,10 @@ def _loot_url(
         params["my_page"] = my_page
     if tab == "my-alliance-payouts" and payout_view in {"recipients", "events"}:
         params["payout_view"] = payout_view
+    if tab == "my-alliance-payouts" and my_search:
+        search_value = str(my_search).strip()
+        if search_value:
+            params["my_search"] = search_value
     return f"/loot?{urlencode(params)}#{tab}"
 
 
@@ -4495,6 +4500,7 @@ def _my_payout_pagination_items(
     status: str,
     alliance_id: int | str | None,
     payout_view: str,
+    my_search: str,
 ) -> list[dict[str, Any]]:
     if total_pages <= 1:
         return []
@@ -4523,6 +4529,7 @@ def _my_payout_pagination_items(
                     my_page=page,
                     tab="my-alliance-payouts",
                     payout_view=payout_view,
+                    my_search=my_search,
                 ),
                 "active": page == current_page,
             }
@@ -4542,6 +4549,7 @@ def _my_payout_pagination(
     status: str,
     alliance_id: int | str | None,
     payout_view: str,
+    my_search: str = "",
 ) -> dict[str, Any]:
     total_pages = max(1, (total_count + page_size - 1) // page_size)
     page = max(1, min(int(current_page or 1), total_pages))
@@ -4559,6 +4567,7 @@ def _my_payout_pagination(
             my_page=1,
             tab="my-alliance-payouts",
             payout_view=payout_view,
+            my_search=my_search,
         ),
         "prev_href": _loot_url(
             guild_id,
@@ -4569,6 +4578,7 @@ def _my_payout_pagination(
             my_page=max(1, page - 1),
             tab="my-alliance-payouts",
             payout_view=payout_view,
+            my_search=my_search,
         ),
         "next_href": _loot_url(
             guild_id,
@@ -4579,6 +4589,7 @@ def _my_payout_pagination(
             my_page=min(total_pages, page + 1),
             tab="my-alliance-payouts",
             payout_view=payout_view,
+            my_search=my_search,
         ),
         "last_href": _loot_url(
             guild_id,
@@ -4589,6 +4600,7 @@ def _my_payout_pagination(
             my_page=total_pages,
             tab="my-alliance-payouts",
             payout_view=payout_view,
+            my_search=my_search,
         ),
         "has_previous": page > 1,
         "has_next": page < total_pages,
@@ -4601,6 +4613,7 @@ def _my_payout_pagination(
             status=status,
             alliance_id=alliance_id,
             payout_view=payout_view,
+            my_search=my_search,
         ),
     }
 
@@ -5792,6 +5805,7 @@ def _loot_template_context(
     my_page: int = 1,
     tab: str | None = None,
     payout_view: str | None = None,
+    my_search: str | None = None,
 ) -> dict[str, Any]:
     active_loot_tab = _normalize_loot_tab(tab, auth)
     active_period, period_start, period_label = _loot_period_bounds(period)
@@ -5800,6 +5814,7 @@ def _loot_template_context(
         "alliances" if alliance_view == "alliances" else "events"
     )
     active_my_payout_tab = "events" if payout_view == "events" else "recipients"
+    my_search_value = (my_search or "").strip()
     mine_only = (
         True
         if mine is None
@@ -6044,10 +6059,18 @@ def _loot_template_context(
             else alliance_id
         ),
         payout_view=active_my_payout_tab,
+        my_search=my_search_value,
     )
     if active_loot_tab == "my-alliance-payouts":
         paged_key = "events" if active_my_payout_tab == "events" else "recipients"
         all_rows = list(my_alliance_payouts.get(paged_key) or [])
+        if active_my_payout_tab == "recipients" and my_search_value:
+            lowered_search = my_search_value.casefold()
+            all_rows = [
+                row
+                for row in all_rows
+                if lowered_search in str(row.get("display_name") or "").casefold()
+            ]
         my_payout_pagination = _my_payout_pagination(
             guild_id,
             current_page=my_page,
@@ -6062,6 +6085,7 @@ def _loot_template_context(
                 else alliance_id
             ),
             payout_view=active_my_payout_tab,
+            my_search=my_search_value if active_my_payout_tab == "recipients" else "",
         )
         page_start = (
             int(my_payout_pagination["current_page"]) - 1
@@ -6128,6 +6152,7 @@ def _loot_template_context(
                 ),
                 tab="my-alliance-payouts",
                 payout_view="recipients",
+                my_search=my_search_value,
             ),
             "events": _loot_url(
                 guild_id,
@@ -6141,6 +6166,22 @@ def _loot_template_context(
                 ),
                 tab="my-alliance-payouts",
                 payout_view="events",
+            ),
+        },
+        "my_payout_search": {
+            "value": my_search_value,
+            "clear_href": _loot_url(
+                guild_id,
+                period=active_period,
+                mine=mine_only,
+                status=active_status,
+                alliance_id=(
+                    selected_alliance.get("alliance_id")
+                    if selected_alliance
+                    else alliance_id
+                ),
+                tab="my-alliance-payouts",
+                payout_view="recipients",
             ),
         },
         "loot_modal_data": _loot_modal_payload(
@@ -7257,6 +7298,7 @@ def loot_drops(
     my_page: int = 1,
     tab: str | None = None,
     payout_view: str | None = None,
+    my_search: str | None = None,
 ):
     auth = _auth_context(request, guild_id)
     if not auth:
@@ -7281,6 +7323,7 @@ def loot_drops(
             my_page=my_page,
             tab=tab,
             payout_view=payout_view,
+            my_search=my_search,
         ),
     )
 

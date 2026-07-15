@@ -3782,6 +3782,21 @@ button:disabled {
   margin: 0;
 }
 
+.recipient-search-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.recipient-search-row .tiny-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 58px;
+  text-decoration: none;
+}
+
 .recipient-payout-card-list {
   display: grid;
   gap: 8px;
@@ -5204,6 +5219,14 @@ button:disabled {
 
   .recipient-payout-controls {
     grid-template-columns: 1fr;
+  }
+
+  .recipient-search-row {
+    grid-template-columns: 1fr;
+  }
+
+  .recipient-search-row .tiny-button {
+    width: 100%;
   }
 
   .recipient-payout-card-list {
