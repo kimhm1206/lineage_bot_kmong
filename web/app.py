@@ -4413,6 +4413,7 @@ def _loot_url(
     my_page: int | None = None,
     payout_view: str | None = None,
     my_search: str | None = None,
+    my_payout_scope: str | None = None,
     tab: str = "distribution",
 ) -> str:
     params: dict[str, Any] = {"guild_id": guild_id}
@@ -4438,6 +4439,8 @@ def _loot_url(
         params["my_page"] = my_page
     if tab == "my-alliance-payouts" and payout_view in {"recipients", "events"}:
         params["payout_view"] = payout_view
+    if tab == "my-alliance-payouts" and my_payout_scope == "all":
+        params["my_payout_scope"] = "all"
     if tab == "my-alliance-payouts" and my_search:
         search_value = str(my_search).strip()
         if search_value:
@@ -5806,6 +5809,7 @@ def _loot_template_context(
     tab: str | None = None,
     payout_view: str | None = None,
     my_search: str | None = None,
+    my_payout_scope: str | None = None,
 ) -> dict[str, Any]:
     active_loot_tab = _normalize_loot_tab(tab, auth)
     active_period, period_start, period_label = _loot_period_bounds(period)
@@ -5814,6 +5818,11 @@ def _loot_template_context(
         "alliances" if alliance_view == "alliances" else "events"
     )
     active_my_payout_tab = "events" if payout_view == "events" else "recipients"
+    active_my_payout_scope = (
+        "all"
+        if active_my_payout_tab == "events" and my_payout_scope == "all"
+        else "open"
+    )
     my_search_value = (my_search or "").strip()
     mine_only = (
         True
@@ -6064,35 +6073,53 @@ def _loot_template_context(
     if active_loot_tab == "my-alliance-payouts":
         paged_key = "events" if active_my_payout_tab == "events" else "recipients"
         all_rows = list(my_alliance_payouts.get(paged_key) or [])
-        if active_my_payout_tab == "recipients" and my_search_value:
-            lowered_search = my_search_value.casefold()
-            all_rows = [
-                row
-                for row in all_rows
-                if lowered_search in str(row.get("display_name") or "").casefold()
-            ]
-        my_payout_pagination = _my_payout_pagination(
-            guild_id,
-            current_page=my_page,
-            total_count=len(all_rows),
-            page_size=my_payout_page_size,
-            active_period=active_period,
-            mine_only=mine_only,
-            status=active_status,
-            alliance_id=(
-                selected_alliance.get("alliance_id")
-                if selected_alliance
-                else alliance_id
-            ),
-            payout_view=active_my_payout_tab,
-            my_search=my_search_value if active_my_payout_tab == "recipients" else "",
-        )
-        page_start = (
-            int(my_payout_pagination["current_page"]) - 1
-        ) * my_payout_page_size
+        if active_my_payout_scope != "all":
+            filtered_rows = []
+            for row in all_rows:
+                if str(row.get("status") or "") == "paid":
+                    continue
+                if active_my_payout_tab == "recipients":
+                    open_items = [
+                        item
+                        for item in row.get("items", [])
+                        if _normalize_member_payout_status(item.get("status")) != "paid"
+                    ]
+                    open_total = sum(
+                        (Decimal(str(item.get("amount") or "0")) for item in open_items),
+                        Decimal("0"),
+                    )
+                    row = {
+                        **row,
+                        "items": open_items,
+                        "total_amount": open_total,
+                        "total_amount_text": _money_text(open_total),
+                        "paid_amount": Decimal("0"),
+                        "paid_amount_text": "0",
+                        "paid_count": 0,
+                        "total_count": len(open_items),
+                    }
+                else:
+                    row = {
+                        **row,
+                        "recipients": [
+                            recipient
+                            for recipient in row.get("recipients", [])
+                            if _normalize_member_payout_status(
+                                recipient.get("payout_status")
+                            )
+                            != "paid"
+                        ],
+                        "fee_lines": [
+                            fee
+                            for fee in row.get("fee_lines", [])
+                            if not fee.get("is_settled")
+                        ],
+                    }
+                filtered_rows.append(row)
+            all_rows = filtered_rows
         my_alliance_payouts = {
             **my_alliance_payouts,
-            paged_key: all_rows[page_start : page_start + my_payout_page_size],
+            paged_key: all_rows,
         }
     loot_form_value = (
         loot_form
@@ -6152,7 +6179,6 @@ def _loot_template_context(
                 ),
                 tab="my-alliance-payouts",
                 payout_view="recipients",
-                my_search=my_search_value,
             ),
             "events": _loot_url(
                 guild_id,
@@ -6166,10 +6192,42 @@ def _loot_template_context(
                 ),
                 tab="my-alliance-payouts",
                 payout_view="events",
+                my_payout_scope=active_my_payout_scope,
+            ),
+        },
+        "my_payout_scope": {
+            "active": active_my_payout_scope,
+            "open_href": _loot_url(
+                guild_id,
+                period=active_period,
+                mine=mine_only,
+                status=active_status,
+                alliance_id=(
+                    selected_alliance.get("alliance_id")
+                    if selected_alliance
+                    else alliance_id
+                ),
+                tab="my-alliance-payouts",
+                payout_view=active_my_payout_tab,
+                my_payout_scope="open",
+            ),
+            "all_href": _loot_url(
+                guild_id,
+                period=active_period,
+                mine=mine_only,
+                status=active_status,
+                alliance_id=(
+                    selected_alliance.get("alliance_id")
+                    if selected_alliance
+                    else alliance_id
+                ),
+                tab="my-alliance-payouts",
+                payout_view=active_my_payout_tab,
+                my_payout_scope="all",
             ),
         },
         "my_payout_search": {
-            "value": my_search_value,
+            "value": "",
             "clear_href": _loot_url(
                 guild_id,
                 period=active_period,
@@ -7299,6 +7357,7 @@ def loot_drops(
     tab: str | None = None,
     payout_view: str | None = None,
     my_search: str | None = None,
+    my_payout_scope: str | None = None,
 ):
     auth = _auth_context(request, guild_id)
     if not auth:
@@ -7324,6 +7383,7 @@ def loot_drops(
             tab=tab,
             payout_view=payout_view,
             my_search=my_search,
+            my_payout_scope=my_payout_scope,
         ),
     )
 
@@ -7348,6 +7408,98 @@ def loot_attendance_detail(
     if session is None:
         return JSONResponse({"ok": False, "error": "not_found"}, status_code=404)
     return JSONResponse({"ok": True, "session": session})
+
+
+@app.get("/loot/member-payouts/recipient-history")
+def loot_member_payout_recipient_history(
+    request: Request,
+    guild_id: str | None = None,
+    alliance_id: str | None = None,
+    user_id: int = 0,
+):
+    auth = _auth_context(request, guild_id)
+    if not auth:
+        return JSONResponse({"ok": False, "message": "로그인이 필요합니다."}, status_code=401)
+
+    selected_guild_id = int(auth["selected_guild_id"])
+    selected_alliance, _alliance_options = _loot_alliance_selection(auth, alliance_id)
+    if selected_alliance is None or user_id <= 0:
+        return JSONResponse(
+            {"ok": False, "message": "조회할 혈맹 또는 유저 정보가 없습니다."},
+            status_code=400,
+        )
+
+    try:
+        viewer_discord_id = int(auth["user"]["id"])
+    except (KeyError, TypeError, ValueError):
+        viewer_discord_id = None
+    viewer_current_alliance_ids = (
+        {
+            int(option["alliance_id"])
+            for option in _member_alliance_options(selected_guild_id, str(viewer_discord_id))
+            if str(option.get("alliance_id") or "").isdigit()
+        }
+        if viewer_discord_id is not None
+        else set()
+    )
+
+    events = _decorate_loot_events(
+        database.get_loot_drop_events(selected_guild_id, limit=5000),
+        viewer_discord_id,
+        selected_guild_id,
+        viewer_current_alliance_ids,
+    )
+    payout_context = _my_alliance_payout_context(
+        selected_guild_id,
+        selected_alliance,
+        events,
+    )
+    recipient = next(
+        (
+            row
+            for row in payout_context.get("recipients", [])
+            if int(row.get("user_id") or 0) == int(user_id)
+        ),
+        None,
+    )
+    if recipient is None:
+        return JSONResponse(
+            {
+                "ok": True,
+                "title": "과거 기록",
+                "caption": "완료 또는 귀속된 분배 기록이 없습니다.",
+                "total_text": "0",
+                "rows": [],
+            }
+        )
+
+    rows = []
+    total_amount = Decimal("0")
+    for item in recipient.get("items", []):
+        status = _normalize_member_payout_status(item.get("status"))
+        if status not in {"paid", "forfeited"}:
+            continue
+        amount = Decimal(str(item.get("amount") or "0"))
+        total_amount += amount
+        rows.append(
+            {
+                "item_name": str(item.get("item_name") or ""),
+                "attendance_started_at": str(item.get("attendance_started_at") or ""),
+                "amount_text": str(item.get("amount_text") or _money_text(amount)),
+                "status": status,
+                "status_label": "귀속" if status == "forfeited" else "완료",
+            }
+        )
+    rows.sort(key=lambda item: str(item.get("attendance_started_at") or ""), reverse=True)
+    return JSONResponse(
+        {
+            "ok": True,
+            "title": f"{recipient.get('display_name') or '유저'} 과거 기록",
+            "caption": "완료 또는 귀속된 분배 기록입니다.",
+            "total_text": _money_text(total_amount),
+            "rows": rows,
+        }
+    )
 
 
 @app.post("/loot", response_class=HTMLResponse)

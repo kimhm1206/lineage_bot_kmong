@@ -1245,9 +1245,21 @@
         </div>
 
         {% if active_my_payout_tab == 'events' %}
-        <section class="my-payout-layout" data-my-payout-panel="events">
+        <section class="my-payout-layout" data-my-payout-panel="events" data-my-payout-scope="{{ my_payout_scope.active }}">
           <section class="loot-event-list" aria-label="내 혈맹 분배 현황">
-            {{ pagination_controls(my_payout_pagination) }}
+            <div class="my-payout-list-toolbar">
+              <span class="panel-caption">표시 범위</span>
+              <div class="quick-filter-row">
+                <a
+                  class="quick-filter {% if my_payout_scope.active == 'open' %}is-active{% endif %}"
+                  href="{{ my_payout_scope.open_href }}"
+                >정산 중</a>
+                <a
+                  class="quick-filter {% if my_payout_scope.active == 'all' %}is-active{% endif %}"
+                  href="{{ my_payout_scope.all_href }}"
+                >전체</a>
+              </div>
+            </div>
             {% for payout in my_alliance_payouts.events %}
               <details class="panel loot-event-card payout-card my-payout-card" data-loot-event-card data-member-payout-card>
                 <summary>
@@ -1387,7 +1399,6 @@
                 <div class="empty report-empty">내 혈맹 분배 기록이 없습니다.</div>
               </article>
             {% endfor %}
-            {{ pagination_controls(my_payout_pagination) }}
           </section>
         </section>
         {% endif %}
@@ -1402,37 +1413,21 @@
           </header>
 
           <div class="recipient-payout-controls">
-            <form class="field recipient-search-form" method="get" action="/loot">
-              <input type="hidden" name="guild_id" value="{{ auth.selected_guild_id }}">
-              <input type="hidden" name="tab" value="my-alliance-payouts">
-              <input type="hidden" name="payout_view" value="recipients">
-              <input type="hidden" name="period" value="{{ loot_period.active }}">
-              <input type="hidden" name="mine" value="{% if loot_period.mine_only %}1{% else %}0{% endif %}">
-              <input type="hidden" name="status" value="{{ loot_period.status }}">
-              {% if my_alliance_payouts.selected_alliance %}
-                <input type="hidden" name="alliance_id" value="{{ my_alliance_payouts.selected_alliance.alliance_id }}">
-              {% endif %}
+            <label class="field">
               <span>닉네임 검색</span>
-              <div class="recipient-search-row">
-                <input
-                  type="search"
-                  name="my_search"
-                  value="{{ my_payout_search.value }}"
-                  placeholder="전체 닉네임 검색"
-                >
-                <button class="tiny-button" type="submit">검색</button>
-                {% if my_payout_search.value %}
-                  <a class="tiny-button ghost-button" href="{{ my_payout_search.clear_href }}">초기화</a>
-                {% endif %}
-              </div>
-            </form>
+              <input
+                type="search"
+                value="{{ my_payout_search.value }}"
+                placeholder="닉네임 자동검색"
+                data-recipient-payout-search
+              >
+            </label>
             <label class="field">
               <span>필터</span>
               <select data-recipient-payout-filter>
                 <option value="all">전체</option>
                 <option value="unpaid">미완료 있는 사람만</option>
                 <option value="forfeited">귀속 있는 사람만</option>
-                <option value="paid">전체 완료만</option>
               </select>
             </label>
             <label class="field">
@@ -1446,8 +1441,7 @@
             </label>
           </div>
 
-          {{ pagination_controls(my_payout_pagination) }}
-          <section class="recipient-payout-card-list" data-recipient-payout-list>
+          <section class="recipient-payout-card-list" data-recipient-payout-list data-recipient-payout-scope="{{ my_payout_scope.active }}">
             {% for recipient in my_alliance_payouts.recipients %}
               <details
                 class="panel loot-event-card recipient-payout-card"
@@ -1516,10 +1510,6 @@
                 <div class="loot-event-body recipient-payout-body">
                   <div class="recipient-payout-detail-summary">
                     <div>
-                      <span>총 분배</span>
-                      <strong>{{ recipient.total_amount_text }}</strong>
-                    </div>
-                    <div>
                       <span>미분배</span>
                       <strong data-recipient-detail-unpaid-text>{{ recipient.unpaid_amount_text }}</strong>
                     </div>
@@ -1542,6 +1532,15 @@
                     <div>
                       <span>전체 건수</span>
                       <strong data-recipient-detail-total-count>{{ recipient.total_count }}건</strong>
+                    </div>
+                    <div>
+                      <span>과거 기록</span>
+                      <button
+                        class="tiny-button"
+                        type="button"
+                        data-recipient-history-open
+                        data-history-url="/loot/member-payouts/recipient-history?guild_id={{ auth.selected_guild_id }}&alliance_id={{ my_alliance_payouts.selected_alliance.alliance_id }}&user_id={{ recipient.user_id }}"
+                      >보기</button>
                     </div>
                   </div>
                   <div class="recipient-detail-list">
@@ -1624,7 +1623,6 @@
               </article>
             {% endfor %}
           </section>
-          {{ pagination_controls(my_payout_pagination) }}
         </section>
         {% endif %}
       {% else %}
@@ -2494,6 +2492,11 @@
         settleForm.hidden = allClosed;
       }
       applyMemberPayoutFilter(card);
+      const panel = card.closest("[data-my-payout-panel='events']");
+      const hasPendingFeeCards = card.querySelectorAll(".my-payout-fee-card").length > 0;
+      if (panel?.dataset.myPayoutScope === "open" && allClosed && !hasPendingFeeCards) {
+        card.hidden = true;
+      }
     }
 
     function activateMyPayoutInnerTab(tabName) {
@@ -2742,11 +2745,13 @@
       }
       const query = (searchInput?.value || "").trim().toLowerCase();
       const filter = filterSelect?.value || "all";
+      const scope = list.dataset.recipientPayoutScope || "open";
       const rows = Array.from(list.querySelectorAll("[data-recipient-payout-row]"));
       rows.forEach((row) => {
         const matchesSearch = !query || (row.dataset.searchText || "").includes(query);
         const matchesFilter = filter === "all" || row.dataset.status === filter;
-        row.hidden = !(matchesSearch && matchesFilter);
+        const matchesScope = scope !== "open" || row.dataset.status !== "paid";
+        row.hidden = !(matchesScope && matchesSearch && matchesFilter);
       });
 
       const sort = sortSelect?.value || "unpaid_desc";
@@ -2850,6 +2855,96 @@
             form.hidden = statusButtonHidden(form.dataset.recipientTargetStatus, normalized);
           });
         });
+    }
+
+    function updateRecipientSummaryFromDetailItems(summaryRow) {
+      if (!summaryRow) {
+        return;
+      }
+      const scope = summaryRow.closest("[data-recipient-payout-list]")?.dataset.recipientPayoutScope || "open";
+      const allItems = Array.from(summaryRow.querySelectorAll("[data-recipient-detail-item]"));
+      allItems.forEach((item) => {
+        item.hidden = scope === "open" && normalizeMemberStatus(item.dataset.recipientDetailStatus) === "paid";
+      });
+      const items = allItems.filter(
+        (item) => scope !== "open" || normalizeMemberStatus(item.dataset.recipientDetailStatus) !== "paid",
+      );
+      let unpaidAmount = 0;
+      let unpaidCount = 0;
+      let paidCount = 0;
+      let forfeitedAmount = 0;
+      let forfeitedCount = 0;
+      const unpaidDistributionIds = [];
+      items.forEach((item) => {
+        const status = normalizeMemberStatus(item.dataset.recipientDetailStatus);
+        const amount = Number.parseFloat(item.dataset.recipientDetailAmount || "0") || 0;
+        if (status === "paid") {
+          paidCount += 1;
+        } else if (status === "forfeited") {
+          forfeitedAmount += amount;
+          forfeitedCount += 1;
+        } else {
+          unpaidAmount += amount;
+          unpaidCount += 1;
+          unpaidDistributionIds.push(item.dataset.distributionId);
+        }
+      });
+      const totalCount = items.length;
+      const totalAmount = unpaidAmount + forfeitedAmount;
+      const summaryStatus = unpaidCount > 0 ? "unpaid" : forfeitedCount > 0 ? "forfeited" : "paid";
+      summaryRow.dataset.status = summaryStatus;
+      summaryRow.dataset.unpaidAmount = String(unpaidAmount);
+      summaryRow.dataset.unpaidCount = String(unpaidCount);
+      summaryRow.dataset.forfeitedAmount = String(forfeitedAmount);
+      summaryRow.dataset.forfeitedCount = String(forfeitedCount);
+      summaryRow.dataset.totalAmount = String(totalAmount);
+      summaryRow.dataset.totalCount = String(totalCount);
+      const unpaidText = summaryRow.querySelector("[data-recipient-unpaid-text]");
+      if (unpaidText) {
+        unpaidText.textContent = formatAdenaNumber(unpaidAmount);
+      }
+      const detailUnpaidText = summaryRow.querySelector("[data-recipient-detail-unpaid-text]");
+      if (detailUnpaidText) {
+        detailUnpaidText.textContent = formatAdenaNumber(unpaidAmount);
+      }
+      const detailForfeitedText = summaryRow.querySelector("[data-recipient-detail-forfeited-text]");
+      if (detailForfeitedText) {
+        detailForfeitedText.textContent = formatAdenaNumber(forfeitedAmount);
+      }
+      const countText = summaryRow.querySelector("[data-recipient-count-text]");
+      if (countText) {
+        countText.textContent =
+          unpaidCount > 0 ? `미완료 ${unpaidCount}건` : forfeitedCount > 0 ? `귀속 ${forfeitedCount}건` : "완료";
+      }
+      const detailPaidCount = summaryRow.querySelector("[data-recipient-detail-paid-count]");
+      if (detailPaidCount) {
+        detailPaidCount.textContent = `${paidCount}건`;
+      }
+      const detailUnpaidCount = summaryRow.querySelector("[data-recipient-detail-unpaid-count]");
+      if (detailUnpaidCount) {
+        detailUnpaidCount.textContent = `${unpaidCount}건`;
+      }
+      const detailForfeitedCount = summaryRow.querySelector("[data-recipient-detail-forfeited-count]");
+      if (detailForfeitedCount) {
+        detailForfeitedCount.textContent = `${forfeitedCount}건`;
+      }
+      const detailTotalCount = summaryRow.querySelector("[data-recipient-detail-total-count]");
+      if (detailTotalCount) {
+        detailTotalCount.textContent = `${totalCount}건`;
+      }
+      const statusCard = summaryRow.querySelector("[data-recipient-status-card]");
+      if (statusCard) {
+        toggleStatusClasses(statusCard, summaryStatus);
+      }
+      summaryRow.querySelectorAll("[data-recipient-settle-all-form]").forEach((form) => {
+        form.hidden = unpaidCount === 0;
+        const distributionInput = form.querySelector("[data-recipient-distribution-ids]");
+        if (distributionInput) {
+          distributionInput.value = unpaidDistributionIds.join(",");
+        }
+      });
+      updateMyAllianceUnsettledTotal();
+      updateMyAllianceForfeitedTotal();
     }
 
     function updateRecipientSummaryFromMemberRow(memberRow) {
@@ -3092,8 +3187,10 @@
               updateMemberPayoutCard(card);
             }
             updateRecipientSummaryFromMemberRow(memberRow);
-            applyRecipientPayoutFilters();
+          } else {
+            updateRecipientSummaryFromDetailItems(detailItem.closest("[data-recipient-payout-row]"));
           }
+          applyRecipientPayoutFilters();
         } catch (error) {
           alert(error.message);
           button.textContent = originalText;
@@ -3208,6 +3305,40 @@
       });
     });
 
+    async function settleFeeForm(form, { alertOnError = true } = {}) {
+      const button = form.querySelector("[data-fee-settle-button]");
+      if (!button || button.disabled || form.dataset.submitting === "true") {
+        return false;
+      }
+      const formData = new FormData(form);
+      const distributionId = formData.get("distribution_id") || "";
+      const allianceId = formData.get("alliance_id") || "0";
+      const feeKey = formData.get("fee_key") || "";
+      const originalText = button.textContent;
+      form.dataset.submitting = "true";
+      button.disabled = true;
+      button.textContent = "처리중";
+      try {
+        const payload = await submitJsonForm(form);
+        markFeeRowsSettled(
+          payload.distribution_id || distributionId,
+          payload.alliance_id ?? allianceId,
+          payload.fee_key || feeKey,
+        );
+        settleFeeInModalData(form, formData);
+        form.dataset.submitting = "false";
+        return true;
+      } catch (error) {
+        if (alertOnError) {
+          alert(error.message);
+        }
+        button.disabled = false;
+        button.textContent = originalText;
+        form.dataset.submitting = "false";
+        throw error;
+      }
+    }
+
     function bindFeeSettleForms(root = document) {
       root.querySelectorAll("[data-fee-settle-form]").forEach((form) => {
         if (form.dataset.bound === "true") {
@@ -3216,34 +3347,42 @@
         form.dataset.bound = "true";
         form.addEventListener("submit", async (event) => {
           event.preventDefault();
-          const button = form.querySelector("[data-fee-settle-button]");
-          if (!button || button.disabled || form.dataset.submitting === "true") {
+          try {
+            await settleFeeForm(form);
+          } catch {
             return;
           }
-          const formData = new FormData(form);
-          const distributionId = formData.get("distribution_id") || "";
-          const allianceId = formData.get("alliance_id") || "0";
-          const feeKey = formData.get("fee_key") || "";
+        });
+      });
+    }
+
+    function bindFeeSettleAllButtons(root = document) {
+      root.querySelectorAll("[data-fee-settle-all-modal]").forEach((button) => {
+        if (button.dataset.bound === "true") {
+          return;
+        }
+        button.dataset.bound = "true";
+        button.addEventListener("click", async () => {
+          const modal = button.closest("[data-modal-root]");
+          const activePanel = modal?.querySelector('[data-modal-panel="pending"]:not([hidden])');
+          const forms = Array.from(activePanel?.querySelectorAll("[data-fee-settle-form]") || [])
+            .sort((a, b) => Number.parseInt(b.dataset.rowIndex || "0", 10) - Number.parseInt(a.dataset.rowIndex || "0", 10));
+          if (!forms.length || button.disabled) {
+            return;
+          }
           const originalText = button.textContent;
-          form.dataset.submitting = "true";
           button.disabled = true;
           button.textContent = "처리중";
           try {
-            const payload = await submitJsonForm(form);
-            markFeeRowsSettled(
-              payload.distribution_id || distributionId,
-              payload.alliance_id ?? allianceId,
-              payload.fee_key || feeKey,
-            );
-            settleFeeInModalData(form, formData);
+            for (const form of forms) {
+              await settleFeeForm(form, { alertOnError: false });
+            }
           } catch (error) {
             alert(error.message);
+          } finally {
             button.disabled = false;
             button.textContent = originalText;
-            form.dataset.submitting = "false";
-            return;
           }
-          form.dataset.submitting = "false";
         });
       });
     }
@@ -3342,6 +3481,9 @@
             });
             panels.forEach((panel) => {
               panel.hidden = panel.dataset.modalPanel !== target;
+            });
+            modal.querySelectorAll("[data-fee-settle-all-modal-wrap]").forEach((wrapper) => {
+              wrapper.hidden = target !== "pending";
             });
           });
         });
@@ -3451,8 +3593,18 @@
         .join("");
       let body = "";
       const tabs = modalData.tabs || [];
+      const selectedTab = activeTab || tabs[0]?.key || "";
+      const pendingFeeRows = (tabs.find((tab) => tab.key === "pending")?.rows || [])
+        .filter((row) => row.form?.fields?.fee_key);
+      const feeSettleAllLabel = String(modalData.bulk_label || modalData.title || "수수료").replace(/\s*기록$/, "");
+      const feeSettleAllAction = pendingFeeRows.length > 0 ? `
+        <div class="forfeiture-modal-actions" data-fee-settle-all-modal-wrap ${selectedTab === "pending" ? "" : "hidden"}>
+          <button class="tiny-button" type="button" data-fee-settle-all-modal>
+            전체 ${escapeModalText(feeSettleAllLabel)} 정산 완료
+          </button>
+        </div>
+      ` : "";
       if (tabs.length > 0) {
-        const selectedTab = activeTab || tabs[0].key;
         body += `
           <div class="forfeiture-log-tabs" data-modal-tabs="${escapeModalText(modalKey)}">
             ${tabs.map((tab) => `
@@ -3486,13 +3638,99 @@
             <button class="icon-button" type="button" aria-label="닫기" data-lazy-modal-close>&times;</button>
           </header>
           ${actions}
+          ${feeSettleAllAction}
           ${body}
         </div>
       `;
       bindModalTabs(lazyModal);
       bindFeeSettleForms(lazyModal);
+      bindFeeSettleAllButtons(lazyModal);
       bindForfeitureSettleForms(lazyModal);
       setLazyModalOpen(true);
+    }
+
+    function renderRecipientHistoryModal(payload) {
+      if (!lazyModal || !lazyModalContent) {
+        return;
+      }
+      const rows = (payload.rows || []).map((row) => `
+        <article class="forfeiture-user-row">
+          <div>
+            <strong>${escapeModalText(row.item_name)}</strong>
+            <span>${escapeModalText(row.attendance_started_at || "")}</span>
+          </div>
+          <div class="inline-actions">
+            <span class="payout-status-badge ${row.status === "forfeited" ? "is-forfeited" : "is-paid"}">
+              ${escapeModalText(row.status_label)}
+            </span>
+            <strong>${escapeModalText(row.amount_text)}</strong>
+          </div>
+        </article>
+      `).join("") || `<div class="empty report-empty">완료 또는 귀속된 분배 기록이 없습니다.</div>`;
+      lazyModalContent.innerHTML = `
+        <div class="modal-card forfeiture-log-modal-card" role="dialog" aria-modal="true">
+          <header class="panel-header">
+            <div>
+              <h2>${escapeModalText(payload.title || "과거 기록")}</h2>
+              <span class="panel-caption">${escapeModalText(payload.caption || "")}</span>
+            </div>
+            <button class="icon-button" type="button" aria-label="닫기" data-lazy-modal-close>&times;</button>
+          </header>
+          <div class="forfeiture-log-total">
+            <span>총 금액</span>
+            <strong>${escapeModalText(payload.total_text || "0")}</strong>
+          </div>
+          <div class="forfeiture-log-list">${rows}</div>
+        </div>
+      `;
+      setLazyModalOpen(true);
+    }
+
+    function openRecipientHistory(button) {
+      if (!button.dataset.historyUrl || !lazyModal || !lazyModalContent) {
+        return;
+      }
+      lazyModalContent.innerHTML = `
+        <div class="modal-card forfeiture-log-modal-card" role="dialog" aria-modal="true">
+          <header class="panel-header">
+            <div>
+              <h2>과거 기록</h2>
+              <span class="panel-caption">기록을 불러오는 중입니다.</span>
+            </div>
+            <button class="icon-button" type="button" aria-label="닫기" data-lazy-modal-close>&times;</button>
+          </header>
+          <div class="empty report-empty">불러오는 중...</div>
+        </div>
+      `;
+      setLazyModalOpen(true);
+      fetch(button.dataset.historyUrl, {
+        headers: {
+          "Accept": "application/json",
+          "X-Requested-With": "fetch",
+        },
+      })
+        .then(async (response) => {
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok || payload.ok === false) {
+            throw new Error(payload.message || "과거 기록을 불러오지 못했습니다.");
+          }
+          renderRecipientHistoryModal(payload);
+        })
+        .catch((error) => {
+          lazyModalContent.innerHTML = `
+            <div class="modal-card forfeiture-log-modal-card" role="dialog" aria-modal="true">
+              <header class="panel-header">
+                <div>
+                  <h2>과거 기록</h2>
+                  <span class="panel-caption">요청 실패</span>
+                </div>
+                <button class="icon-button" type="button" aria-label="닫기" data-lazy-modal-close>&times;</button>
+              </header>
+              <div class="empty report-empty">${escapeModalText(error.message)}</div>
+            </div>
+          `;
+          setLazyModalOpen(true);
+        });
     }
 
     openLootPeriodModalButton?.addEventListener("click", () => setLootPeriodModalOpen(true));
@@ -3512,6 +3750,9 @@
 
     document.querySelectorAll("[data-modal-key]").forEach((button) => {
       button.addEventListener("click", () => renderPreloadedModal(button.dataset.modalKey || ""));
+    });
+    document.querySelectorAll("[data-recipient-history-open]").forEach((button) => {
+      button.addEventListener("click", () => openRecipientHistory(button));
     });
     lazyModal?.addEventListener("click", (event) => {
       const target = event.target;

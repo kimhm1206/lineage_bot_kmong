@@ -3770,6 +3770,18 @@ button:disabled {
   overflow: hidden;
 }
 
+.my-payout-list-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.my-payout-list-toolbar .quick-filter {
+  text-decoration: none;
+}
+
 .recipient-payout-controls {
   display: grid;
   grid-template-columns: minmax(220px, 1.2fr) minmax(180px, 0.8fr) minmax(210px, 0.9fr);
@@ -3780,21 +3792,6 @@ button:disabled {
 
 .recipient-payout-controls .field {
   margin: 0;
-}
-
-.recipient-search-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  gap: 8px;
-  align-items: center;
-}
-
-.recipient-search-row .tiny-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 58px;
-  text-decoration: none;
 }
 
 .recipient-payout-card-list {
@@ -3937,6 +3934,12 @@ button:disabled {
   font-size: 15px;
   font-weight: 900;
   overflow-wrap: anywhere;
+}
+
+.recipient-payout-detail-summary .tiny-button {
+  width: 100%;
+  min-height: 34px;
+  margin-top: 6px;
 }
 
 .recipient-detail-list {
@@ -5219,14 +5222,6 @@ button:disabled {
 
   .recipient-payout-controls {
     grid-template-columns: 1fr;
-  }
-
-  .recipient-search-row {
-    grid-template-columns: 1fr;
-  }
-
-  .recipient-search-row .tiny-button {
-    width: 100%;
   }
 
   .recipient-payout-card-list {
