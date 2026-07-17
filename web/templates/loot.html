@@ -1459,7 +1459,15 @@
                 <summary class="loot-event-summary recipient-payout-summary">
                   <div class="loot-event-main">
                     <strong>{{ recipient.display_name }}</strong>
-                    <span class="panel-caption">{{ recipient["items"]|length }}건 참여</span>
+                    <span class="panel-caption">
+                      {% if recipient["items"]|length > 0 %}
+                        {{ recipient["items"]|length }}건 참여
+                      {% elif recipient.paid_items_hidden_count %}
+                        전부 완료
+                      {% else %}
+                        기록 없음
+                      {% endif %}
+                    </span>
                   </div>
                   <div class="recipient-payout-metrics">
                     <div class="{{ recipient.status_class }}" data-recipient-status-card>
@@ -2745,13 +2753,11 @@
       }
       const query = (searchInput?.value || "").trim().toLowerCase();
       const filter = filterSelect?.value || "all";
-      const scope = list.dataset.recipientPayoutScope || "open";
       const rows = Array.from(list.querySelectorAll("[data-recipient-payout-row]"));
       rows.forEach((row) => {
         const matchesSearch = !query || (row.dataset.searchText || "").includes(query);
         const matchesFilter = filter === "all" || row.dataset.status === filter;
-        const matchesScope = scope !== "open" || row.dataset.status !== "paid";
-        row.hidden = !(matchesScope && matchesSearch && matchesFilter);
+        row.hidden = !(matchesSearch && matchesFilter);
       });
 
       const sort = sortSelect?.value || "unpaid_desc";

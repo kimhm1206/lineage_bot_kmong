@@ -6417,12 +6417,11 @@ def _loot_template_context(
         if active_my_payout_scope != "all":
             filtered_rows = []
             for row in all_rows:
-                if str(row.get("status") or "") == "paid":
-                    continue
                 if active_my_payout_tab == "recipients":
+                    original_items = list(row.get("items", []) or [])
                     open_items = [
                         item
-                        for item in row.get("items", [])
+                        for item in original_items
                         if _normalize_member_payout_status(item.get("status")) != "paid"
                     ]
                     open_total = sum(
@@ -6438,8 +6437,12 @@ def _loot_template_context(
                         "paid_amount_text": "0",
                         "paid_count": 0,
                         "total_count": len(open_items),
+                        "paid_items_hidden_count": len(original_items)
+                        - len(open_items),
                     }
                 else:
+                    if str(row.get("status") or "") == "paid":
+                        continue
                     row = {
                         **row,
                         "recipients": [
