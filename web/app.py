@@ -158,6 +158,7 @@ REPORT_OPTIONS = {
 DEVELOPER_VIEW_MODE_SESSION_KEY = "developer_view_mode"
 DEVELOPER_VIEW_MODE_OPTIONS = (
     {"value": "developer", "label": "디벨로퍼"},
+    {"value": "viewer", "label": "뷰어"},
     {"value": "owner", "label": "오너"},
     {"value": "bookkeeper", "label": "경리 유저"},
     {"value": "admin", "label": "어드민 유저"},
@@ -605,7 +606,7 @@ def _developer_view_options(include_developer: bool) -> tuple[dict[str, str], ..
     return tuple(
         option
         for option in DEVELOPER_VIEW_MODE_OPTIONS
-        if str(option["value"]) != "developer"
+        if str(option["value"]) not in {"developer", "viewer"}
     )
 
 
@@ -666,7 +667,24 @@ def _apply_developer_view_mode(
     mode: str,
 ) -> None:
     normalized = mode if mode in DEVELOPER_VIEW_MODE_VALUES else "developer"
+    selected_server["viewer_mode"] = normalized == "viewer"
     if normalized == "developer":
+        return
+    if normalized == "viewer":
+        selected_server["role"] = "developer"
+        selected_server["is_owner"] = True
+        selected_server["is_bookkeeper"] = True
+        selected_server["can_manage"] = True
+        selected_server["can_bookkeep"] = True
+        selected_server["can_manage_bookkeepers"] = True
+        selected_server["member_display_name"] = "뷰어"
+        selected_server["my_alliance"] = _my_alliance_access(
+            guild_id,
+            discord_user_id,
+            "developer",
+            True,
+        )
+        selected_server["role_label"] = "viewer"
         return
 
     role = (
@@ -1175,6 +1193,262 @@ def _safe_redirect_path(value: str | None) -> str | None:
     return value
 
 
+VIEWER_ANON_ALLIANCE_SKIP = {"", "미분류", OTHER_ALLIANCE_LABEL}
+VIEWER_ANON_USER_NAME_KEYS = {
+    "discord_nickname",
+    "display_name",
+    "member_display_name",
+    "started_by_name",
+    "created_by_name",
+    "updated_by_name",
+    "actor_display_name",
+}
+VIEWER_ANON_USER_ID_KEYS = (
+    "user_id",
+    "discord_id",
+    "started_by_discord_id",
+    "created_by_discord_id",
+    "updated_by_discord_id",
+    "actor_discord_id",
+)
+VIEWER_ANON_RAW_STRING_KEYS = {
+    "href",
+    "action",
+    "url",
+    "next_url",
+    "value",
+    "guild_id",
+    "role_id",
+    "channel_id",
+    "item_id",
+    "attendance_id",
+    "distribution_id",
+    "distribution_ids",
+    "excluded_alliance_ids",
+    "mode",
+    "tab",
+    "status",
+    "frequency",
+    "dataset",
+    "period",
+    "period_type",
+    "group_by",
+    "rank_target",
+    "metric",
+    "output",
+    "run_time",
+    "item_name",
+    "memo",
+}
+
+
+def _viewer_alliance_label(
+    state: dict[str, Any],
+    *,
+    alliance_id: Any = None,
+    alliance_name: Any = None,
+) -> str | None:
+    name = str(alliance_name or "").strip()
+    if name in VIEWER_ANON_ALLIANCE_SKIP:
+        return name or None
+    normalized_id = str(alliance_id or "").strip()
+    if normalized_id and normalized_id in state["alliance_by_id"]:
+        return state["alliance_by_id"][normalized_id]
+    if name and name in state["alliance_by_name"]:
+        return state["alliance_by_name"][name]
+    if not normalized_id and not name:
+        return None
+
+    state["alliance_counter"] += 1
+    label = f"혈맹{state['alliance_counter']}"
+    if normalized_id:
+        state["alliance_by_id"][normalized_id] = label
+    if name:
+        state["alliance_by_name"][name] = label
+    return label
+
+
+def _viewer_user_identity(row: dict[str, Any], raw_name: str) -> str:
+    for key in VIEWER_ANON_USER_ID_KEYS:
+        value = str(row.get(key) or "").strip()
+        if value and value != "0":
+            return f"{key}:{value}"
+    return f"name:{raw_name}"
+
+
+def _viewer_user_label(
+    state: dict[str, Any],
+    row: dict[str, Any],
+    raw_name: Any,
+    alliance_label: str | None,
+) -> str:
+    name = str(raw_name or "").strip()
+    if not name:
+        return ""
+    if name == "뷰어":
+        return name
+    alliance_prefix = (
+        alliance_label
+        if alliance_label and alliance_label.startswith("혈맹")
+        else "유저"
+    )
+    identity = _viewer_user_identity(row, name)
+    key = (alliance_prefix, identity)
+    if key in state["user_by_identity"]:
+        return state["user_by_identity"][key]
+
+    state["user_counter_by_alliance"][alliance_prefix] = (
+        state["user_counter_by_alliance"].get(alliance_prefix, 0) + 1
+    )
+    user_index = state["user_counter_by_alliance"][alliance_prefix]
+    label = (
+        f"{alliance_prefix}-유저{user_index}"
+        if alliance_prefix.startswith("혈맹")
+        else f"유저{user_index}"
+    )
+    state["user_by_identity"][key] = label
+    state["user_by_name"].setdefault(name, label)
+    return label
+
+
+def _viewer_known_label_replacements(state: dict[str, Any]) -> list[tuple[str, str]]:
+    pairs = [*state["user_by_name"].items(), *state["alliance_by_name"].items()]
+    return sorted(
+        ((str(original), str(masked)) for original, masked in pairs if original and masked),
+        key=lambda item: len(item[0]),
+        reverse=True,
+    )
+
+
+def _viewer_replace_known_labels(value: str, state: dict[str, Any]) -> str:
+    result = value
+    for original, masked in _viewer_known_label_replacements(state):
+        result = result.replace(original, masked)
+    return result
+
+
+def _viewer_collect_aliases(
+    value: Any,
+    state: dict[str, Any],
+    current_alliance_label: str | None = None,
+) -> None:
+    if isinstance(value, dict):
+        row_alliance_label = current_alliance_label
+        if "alliance_name" in value or "alliance_id" in value:
+            row_alliance_label = (
+                _viewer_alliance_label(
+                    state,
+                    alliance_id=value.get("alliance_id"),
+                    alliance_name=value.get("alliance_name"),
+                )
+                or current_alliance_label
+            )
+
+        for key in VIEWER_ANON_USER_NAME_KEYS:
+            if key in value:
+                _viewer_user_label(state, value, value.get(key), row_alliance_label)
+
+        for child in value.values():
+            _viewer_collect_aliases(child, state, row_alliance_label)
+        return
+
+    if isinstance(value, (list, tuple, set)):
+        for item in value:
+            _viewer_collect_aliases(item, state, current_alliance_label)
+
+
+def _viewer_anonymize_value(
+    value: Any,
+    state: dict[str, Any],
+    key_name: str = "",
+    current_alliance_label: str | None = None,
+) -> Any:
+    if isinstance(value, dict):
+        row_alliance_label = current_alliance_label
+        if "alliance_name" in value or "alliance_id" in value:
+            row_alliance_label = (
+                _viewer_alliance_label(
+                    state,
+                    alliance_id=value.get("alliance_id"),
+                    alliance_name=value.get("alliance_name"),
+                )
+                or current_alliance_label
+            )
+
+        result: dict[Any, Any] = {}
+        for key, child in value.items():
+            child_key = str(key)
+            if child_key == "alliance_name":
+                result[key] = (
+                    _viewer_alliance_label(
+                        state,
+                        alliance_id=value.get("alliance_id"),
+                        alliance_name=child,
+                    )
+                    or child
+                )
+            elif child_key in VIEWER_ANON_USER_NAME_KEYS:
+                result[key] = _viewer_user_label(
+                    state,
+                    value,
+                    child,
+                    row_alliance_label,
+                )
+            elif child_key.endswith("alliance_names") and isinstance(child, list):
+                result[key] = [
+                    _viewer_alliance_label(state, alliance_name=item) or item
+                    for item in child
+                ]
+            else:
+                result[key] = _viewer_anonymize_value(
+                    child,
+                    state,
+                    child_key,
+                    row_alliance_label,
+                )
+        return result
+
+    if isinstance(value, list):
+        return [
+            _viewer_anonymize_value(item, state, key_name, current_alliance_label)
+            for item in value
+        ]
+    if isinstance(value, tuple):
+        return tuple(
+            _viewer_anonymize_value(item, state, key_name, current_alliance_label)
+            for item in value
+        )
+    if isinstance(value, set):
+        return {
+            _viewer_anonymize_value(item, state, key_name, current_alliance_label)
+            for item in value
+        }
+    if isinstance(value, str):
+        if key_name in VIEWER_ANON_RAW_STRING_KEYS:
+            return value
+        if key_name == "label":
+            return (
+                state["alliance_by_name"].get(value)
+                or state["user_by_name"].get(value)
+                or value
+            )
+        return _viewer_replace_known_labels(value, state)
+    return value
+
+
+def _viewer_anonymize_context(context: dict[str, Any]) -> dict[str, Any]:
+    state: dict[str, Any] = {
+        "alliance_by_id": {},
+        "alliance_by_name": {},
+        "alliance_counter": 0,
+        "user_by_identity": {},
+        "user_by_name": {},
+        "user_counter_by_alliance": {},
+    }
+    _viewer_collect_aliases(context, state)
+    return _viewer_anonymize_value(context, state)
+
+
 def _request_path_with_query(request: Request) -> str:
     path = request.url.path
     return f"{path}?{request.url.query}" if request.url.query else path
@@ -1200,6 +1474,9 @@ def _render(
         "page_required_role",
         PAGE_REQUIRED_ROLES.get(active_page, "user"),
     )
+    selected_server = (context.get("auth") or {}).get("selected_server") or {}
+    if selected_server.get("viewer_mode"):
+        context = _viewer_anonymize_context(context)
     return templates.TemplateResponse(
         request,
         template_name,
