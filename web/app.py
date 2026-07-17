@@ -1281,6 +1281,30 @@ def _viewer_alliance_label(
     return label
 
 
+def _viewer_server_label(
+    state: dict[str, Any],
+    *,
+    guild_id: Any = None,
+    server_name: Any = None,
+) -> str | None:
+    name = str(server_name or "").strip()
+    normalized_id = str(guild_id or "").strip()
+    if normalized_id and normalized_id in state["server_by_id"]:
+        return state["server_by_id"][normalized_id]
+    if name and name in state["server_by_name"]:
+        return state["server_by_name"][name]
+    if not normalized_id and not name:
+        return None
+
+    state["server_counter"] += 1
+    label = f"서버{state['server_counter']}"
+    if normalized_id:
+        state["server_by_id"][normalized_id] = label
+    if name:
+        state["server_by_name"][name] = label
+    return label
+
+
 def _viewer_user_identity(row: dict[str, Any], raw_name: str) -> str:
     for key in VIEWER_ANON_USER_ID_KEYS:
         value = str(row.get(key) or "").strip()
@@ -1325,7 +1349,11 @@ def _viewer_user_label(
 
 
 def _viewer_known_label_replacements(state: dict[str, Any]) -> list[tuple[str, str]]:
-    pairs = [*state["user_by_name"].items(), *state["alliance_by_name"].items()]
+    pairs = [
+        *state["user_by_name"].items(),
+        *state["alliance_by_name"].items(),
+        *state["server_by_name"].items(),
+    ]
     return sorted(
         ((str(original), str(masked)) for original, masked in pairs if original and masked),
         key=lambda item: len(item[0]),
@@ -1346,6 +1374,13 @@ def _viewer_collect_aliases(
     current_alliance_label: str | None = None,
 ) -> None:
     if isinstance(value, dict):
+        if "guild_id" in value and "name" in value:
+            _viewer_server_label(
+                state,
+                guild_id=value.get("guild_id"),
+                server_name=value.get("name"),
+            )
+
         row_alliance_label = current_alliance_label
         if "alliance_name" in value or "alliance_id" in value:
             row_alliance_label = (
@@ -1391,7 +1426,16 @@ def _viewer_anonymize_value(
         result: dict[Any, Any] = {}
         for key, child in value.items():
             child_key = str(key)
-            if child_key == "alliance_name":
+            if child_key == "name" and "guild_id" in value:
+                result[key] = (
+                    _viewer_server_label(
+                        state,
+                        guild_id=value.get("guild_id"),
+                        server_name=child,
+                    )
+                    or child
+                )
+            elif child_key == "alliance_name":
                 result[key] = (
                     _viewer_alliance_label(
                         state,
@@ -1459,6 +1503,9 @@ def _viewer_anonymize_context(context: dict[str, Any]) -> dict[str, Any]:
         "user_by_identity": {},
         "user_by_name": {},
         "user_counter_by_alliance": {},
+        "server_by_id": {},
+        "server_by_name": {},
+        "server_counter": 0,
         "label_replacements": [],
     }
     _viewer_collect_aliases(context, state)
