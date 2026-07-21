@@ -144,34 +144,15 @@ def selected_ids(
     cursor: RealDictCursor,
     cutoff_text: str,
     cutoff_date: str,
-    cutoff_utc: datetime,
 ) -> dict[str, set[int]]:
     cursor.execute(
         """
-        SELECT DISTINCT db.distribution_id
+        SELECT db.distribution_id
         FROM distribution_batches db
-        LEFT JOIN loot_events le ON le.loot_event_id = db.loot_event_id
-        WHERE le.event_date >= %s OR le.updated_at >= %s
-        UNION
-        SELECT distribution_id FROM distribution_alliance_payouts WHERE updated_at >= %s
-        UNION
-        SELECT distribution_id FROM member_payout_rule_snapshots WHERE created_at >= %s
-        UNION
-        SELECT distribution_id FROM member_payout_statuses WHERE updated_at >= %s
-        UNION
-        SELECT distribution_id FROM member_forfeiture_settlements WHERE settled_at >= %s
-        UNION
-        SELECT distribution_id FROM loot_fee_settlements WHERE settled_at >= %s
+        INNER JOIN loot_events le ON le.loot_event_id = db.loot_event_id
+        WHERE le.event_date >= %s
         """,
-        (
-            cutoff_date,
-            cutoff_utc,
-            cutoff_utc,
-            cutoff_utc,
-            cutoff_utc,
-            cutoff_utc,
-            cutoff_utc,
-        ),
+        (cutoff_date,),
     )
     distribution_ids = {int(row["distribution_id"]) for row in cursor.fetchall()}
 
@@ -179,9 +160,9 @@ def selected_ids(
         """
         SELECT loot_event_id
         FROM loot_events
-        WHERE event_date >= %s OR updated_at >= %s
+        WHERE event_date >= %s
         """,
-        (cutoff_date, cutoff_utc),
+        (cutoff_date,),
     )
     loot_event_ids = {int(row["loot_event_id"]) for row in cursor.fetchall()}
     if distribution_ids:
@@ -441,7 +422,7 @@ def main() -> None:
         with pg_connection.cursor() as cursor:
             cursor.execute("SET TRANSACTION READ ONLY")
             metadata = fetch_metadata(cursor)
-            ids = selected_ids(cursor, cutoff_text, cutoff_date, cutoff_utc)
+            ids = selected_ids(cursor, cutoff_text, cutoff_date)
             create_schema(sqlite_connection, metadata)
             copied = copy_rows(
                 cursor,
