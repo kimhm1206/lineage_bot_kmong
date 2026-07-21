@@ -24,7 +24,6 @@ FULL_COPY_TABLES = {
     "alliance_item_bid_statuses",
     "alliance_payout_fee_rules",
     "alliances",
-    "bid_item_results",
     "bid_items",
     "guild_alliance_role_mappings",
     "guild_bookkeepers",
@@ -181,16 +180,6 @@ def selected_ids(
         (cutoff_text,),
     )
     attendance_ids = {int(row["attendance_id"]) for row in cursor.fetchall()}
-    if loot_event_ids:
-        cursor.execute(
-            "SELECT attendance_id FROM loot_events WHERE loot_event_id = ANY(%s)",
-            (list(loot_event_ids),),
-        )
-        attendance_ids.update(
-            int(row["attendance_id"])
-            for row in cursor.fetchall()
-            if row["attendance_id"] is not None
-        )
 
     cursor.execute(
         "SELECT live_session_id FROM attendance_live_sessions WHERE started_at >= %s",
@@ -235,6 +224,8 @@ def selection_for_table(
             f'WHERE "{column_name}" = ANY(%s)' if values else "WHERE FALSE",
             (sorted(values),) if values else (),
         )
+    if table_name == "bid_item_results":
+        return 'WHERE "selected_at" >= %s', (cutoff_text,)
     timestamp_filters = {
         "bot_command_queue": ("created_at", cutoff_utc),
         "discord_message_links": ("created_at", cutoff_utc),
@@ -368,6 +359,18 @@ def copy_rows(
         )
         pg_cursor.execute(f'SELECT * FROM "{table_name}" {where_sql}', params)
         rows = pg_cursor.fetchall()
+        if table_name == "loot_events":
+            rows = [
+                {
+                    **dict(row),
+                    "attendance_id": (
+                        row["attendance_id"]
+                        if row["attendance_id"] in ids["attendance"]
+                        else None
+                    ),
+                }
+                for row in rows
+            ]
         copied[table_name] = len(rows)
         if not rows:
             continue
@@ -412,8 +415,9 @@ def main() -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
 
     cutoff_kst = datetime.now(KST) - timedelta(days=args.days)
-    cutoff_text = cutoff_kst.strftime("%Y-%m-%d %H:%M:%S")
     cutoff_date = cutoff_kst.strftime("%Y-%m-%d")
+    cutoff_kst = datetime.strptime(cutoff_date, "%Y-%m-%d").replace(tzinfo=KST)
+    cutoff_text = f"{cutoff_date} 00:00:00"
     cutoff_utc = cutoff_kst.astimezone(timezone.utc)
 
     pg_connection = postgres_connection()
