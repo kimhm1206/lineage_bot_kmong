@@ -1,0 +1,21 @@
+{% from "components/icons.html" import icon %}
+
+<header class="topbar">
+  <div class="topbar-search" aria-label="검색 자리">
+    {{ icon("search") }}
+    <span>페이지, 유저, 아이템 검색</span>
+  </div>
+
+  <div class="topbar-actions">
+    <span class="environment-pill">{{ environment | upper }}</span>
+    <button class="theme-toggle" type="button" data-theme-toggle aria-label="테마 변경">
+      <span class="theme-icon theme-icon-moon">{{ icon("moon") }}</span>
+      <span class="theme-icon theme-icon-sun">{{ icon("sun") }}</span>
+      <span data-theme-label>Dark</span>
+    </button>
+    <div class="profile-chip">
+      <span class="profile-dot"></span>
+      <strong>Developer</strong>
+    </div>
+  </div>
+</header>

@@ -1,0 +1,83 @@
+{% extends "layouts/app_shell.html" %}
+{% from "components/icons.html" import icon %}
+
+{% block title %}{{ page_title }} · {{ app_name }}{% endblock %}
+
+{% block content %}
+<section class="page-heading">
+  <div>
+    <p class="page-kicker">{{ page_kicker }}</p>
+    <h1>{{ page_title }}</h1>
+    <p>{{ page_description }}</p>
+  </div>
+  <span class="page-badge">{{ page_badge }}</span>
+</section>
+
+<section class="dashboard-split">
+  <article class="panel" id="personal-dashboard">
+    <div class="panel-header">
+      <div>
+        <span class="panel-kicker">Personal</span>
+        <h2>본인 대시보드</h2>
+      </div>
+      <button class="icon-button" type="button" aria-label="본인 대시보드 이동">
+        {{ icon("chevron-right") }}
+      </button>
+    </div>
+    <div class="compact-stat-grid">
+      {% for card in personal_cards %}
+      <div class="stat-tile">
+        <span>{{ card.label }}</span>
+        <strong>{{ card.value }}</strong>
+        <small>{{ card.meta }}</small>
+      </div>
+      {% endfor %}
+    </div>
+  </article>
+
+  <article class="panel" id="alliance-dashboard">
+    <div class="panel-header">
+      <div>
+        <span class="panel-kicker">Alliance</span>
+        <h2>내 혈맹 대시보드</h2>
+      </div>
+      <button class="icon-button" type="button" aria-label="내 혈맹 대시보드 이동">
+        {{ icon("chevron-right") }}
+      </button>
+    </div>
+    <div class="compact-stat-grid">
+      {% for card in alliance_cards %}
+      <div class="stat-tile">
+        <span>{{ card.label }}</span>
+        <strong>{{ card.value }}</strong>
+        <small>{{ card.meta }}</small>
+      </div>
+      {% endfor %}
+    </div>
+  </article>
+</section>
+
+<section class="panel">
+  <div class="panel-header">
+    <div>
+      <span class="panel-kicker">Structure</span>
+      <h2>운영툴 화면 구조</h2>
+    </div>
+    <span class="soft-label">기능 연결 전 UI 베이스</span>
+  </div>
+
+  <div class="module-grid">
+    {% for module in workspace_modules %}
+    <article class="module-card">
+      <h3>{{ module.title }}</h3>
+      <p>{{ module.description }}</p>
+      <div class="module-tags">
+        {% for item in module.links %}
+        <span>{{ item }}</span>
+        {% endfor %}
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

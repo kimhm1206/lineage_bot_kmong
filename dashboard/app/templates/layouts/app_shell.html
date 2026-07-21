@@ -1,0 +1,13 @@
+{% extends "layouts/base.html" %}
+
+{% block body %}
+<div class="app-shell">
+  {% include "partials/sidebar.html" %}
+  <div class="app-main">
+    {% include "partials/topbar.html" %}
+    <main class="content-shell">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</div>
+{% endblock %}

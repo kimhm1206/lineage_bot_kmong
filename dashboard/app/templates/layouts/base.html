@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="ko" data-theme="light">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <title>{% block title %}{{ app_name | default("Dashboard V2") }}{% endblock %}</title>
+    <script>
+      (() => {
+        const storedTheme = localStorage.getItem("dashboard-theme");
+        const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+        document.documentElement.dataset.theme = storedTheme || (prefersDark ? "dark" : "light");
+      })();
+    </script>
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/dashboard.css') }}">
+  </head>
+  <body>
+    {% block body %}{% endblock %}
+    <script src="{{ url_for('static', path='/js/theme.js') }}" defer></script>
+  </body>
+</html>

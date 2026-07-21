@@ -1,0 +1,34 @@
+{% from "components/icons.html" import icon %}
+
+<aside class="sidebar-shell" aria-label="주요 메뉴">
+  <div class="brand-block">
+    <div class="brand-mark">{{ icon("layout-dashboard") }}</div>
+    <div>
+      <strong>Lineage Ops</strong>
+      <span>Settlement Console</span>
+    </div>
+  </div>
+
+  <nav class="side-nav">
+    {% for group in navigation %}
+    <section class="nav-section" aria-labelledby="nav-{{ group.id }}">
+      <div class="nav-section-title" id="nav-{{ group.id }}">
+        {{ icon(group.icon) }}
+        <span>{{ group.label }}</span>
+      </div>
+      <div class="nav-list">
+        {% for item in group.nav_items %}
+        <a class="nav-link{% if item.is_active %} is-active{% endif %}" href="{{ item.href }}" {% if item.is_active %}aria-current="page"{% endif %}>
+          <span class="nav-link-icon">{{ icon(item.icon) }}</span>
+          <span class="nav-link-text">
+            <strong>{{ item.label }}</strong>
+            {% if item.description %}<small>{{ item.description }}</small>{% endif %}
+          </span>
+          {% if item.badge %}<span class="nav-badge">{{ item.badge }}</span>{% endif %}
+        </a>
+        {% endfor %}
+      </div>
+    </section>
+    {% endfor %}
+  </nav>
+</aside>
