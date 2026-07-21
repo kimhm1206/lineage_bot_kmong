@@ -6,12 +6,12 @@ import sys
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, ROUND_FLOOR
+from pathlib import Path
 from typing import Any
-from urllib.parse import quote
 
-import psycopg2
 from dotenv import load_dotenv
-from psycopg2.extras import Json, RealDictCursor
+
+from common.sqlite_backend import Json, SQLiteConnection, SQLiteCursor, connect_sqlite
 
 
 load_dotenv()
@@ -19,6 +19,8 @@ load_dotenv()
 DEFAULT_DISTRIBUTION_FEE_RATE = Decimal("0.10")
 TEST_DB_FLAG = "--test"
 KST = timezone(timedelta(hours=9))
+BASE_DIR = Path(__file__).resolve().parent.parent
+DEFAULT_SQLITE_DB_PATH = BASE_DIR / "data" / "new_server_workspace.sqlite3"
 
 
 def is_test_database_mode() -> bool:
@@ -69,7 +71,7 @@ class Database:
     def url(self) -> str:
         return _database_url()
 
-    def connect(self) -> psycopg2.extensions.connection:
+    def connect(self) -> SQLiteConnection:
         return _connect()
 
     def fetchone(
@@ -812,41 +814,25 @@ database = Database()
 
 
 def _database_url() -> str:
-    test_mode = is_test_database_mode()
-    url = os.getenv("DATABASE_URL") if test_mode else os.getenv("LOCAL_DATABASE_URL")
-    if url:
-        return url
-
-    host = os.getenv("PGHOST") if test_mode else os.getenv("PGLOCALHOST", "127.0.0.1")
-    database = (
-        os.getenv("PGDATABASE")
-        if test_mode
-        else os.getenv("PGLOCALDATABASE", os.getenv("PGDATABASE"))
-    )
-    user = os.getenv("PGUSER") if test_mode else os.getenv("PGLOCALUSER", os.getenv("PGUSER"))
-    password = (
-        os.getenv("PGPASSWORD")
-        if test_mode
-        else os.getenv("PGLOCALPASSWORD", os.getenv("PGPASSWORD"))
-    )
-    port = os.getenv("PGPORT", "5432") if test_mode else os.getenv("PGLOCALPORT", "5432")
-    if all((host, database, user, password)):
-        encoded_user = quote(str(user), safe="")
-        encoded_password = quote(str(password), safe="")
-        encoded_database = quote(str(database), safe="")
-        return f"postgresql://{encoded_user}:{encoded_password}@{host}:{port}/{encoded_database}"
-
-    raise RuntimeError(
-        "PostgreSQL 접속 정보가 없습니다. 기본 실행은 로컬 DB(PGLOCAL* 또는 PG*)를 사용하고, --test 실행은 .env의 PGHOST/PGDATABASE/PGUSER/PGPASSWORD를 사용합니다."
-    )
+    return f"sqlite:///{_sqlite_database_path()}"
 
 
-def _connect() -> psycopg2.extensions.connection:
-    return psycopg2.connect(
-        _database_url(),
-        connect_timeout=10,
-        cursor_factory=RealDictCursor,
-    )
+def _sqlite_database_path() -> Path:
+    configured_path = os.getenv("SQLITE_DATABASE_PATH", "").strip()
+    if not configured_path:
+        return DEFAULT_SQLITE_DB_PATH
+    path = Path(configured_path).expanduser()
+    return path if path.is_absolute() else BASE_DIR / path
+
+
+def _connect() -> SQLiteConnection:
+    path = _sqlite_database_path()
+    if not path.exists():
+        raise RuntimeError(
+            f"SQLite 테스트 DB가 없습니다: {path}. "
+            "scripts/clone_recent_postgres_to_sqlite.py를 먼저 실행하세요."
+        )
+    return connect_sqlite(path)
 
 
 def _fetchone(sql: str, params: tuple[Any, ...] = ()) -> dict[str, Any] | None:
@@ -866,14 +852,14 @@ def _fetchall(sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
 
 
 def init_db() -> None:
+    # The branch-local DB is generated from the production schema by the clone
+    # script. Startup only validates that the isolated SQLite database exists.
     with _connect() as connection:
-        with connection.cursor() as cursor:
-            cursor.execute(SCHEMA_SQL)
-            _ensure_postgres_columns(cursor)
-            _drop_redundant_timestamp_columns(cursor)
-            _drop_obsolete_member_payout_tables(cursor)
-            _drop_obsolete_loot_boss_schema(cursor)
-        connection.commit()
+        row = connection.execute(
+            "SELECT 1 AS ok FROM sqlite_master WHERE type = 'table' LIMIT 1"
+        ).fetchone()
+        if row is None:
+            raise RuntimeError("SQLite 테스트 DB에 테이블이 없습니다. 복제를 다시 실행하세요.")
 
 
 def ensure_guild(guild_id: int) -> None:
@@ -1414,11 +1400,16 @@ def is_guild_bookkeeper(guild_id: int, discord_id: int) -> bool:
 def resolve_alliance_by_role_ids(guild_id: int, role_ids: list[int]) -> Alliance | None:
     if not role_ids:
         return None
+    priority_sql = " UNION ALL ".join(
+        "SELECT %s AS role_id, %s AS ordinality" for _ in role_ids
+    )
+    priority_params: list[Any] = []
+    for ordinality, role_id in enumerate(role_ids, start=1):
+        priority_params.extend((int(role_id), ordinality))
     row = _fetchone(
-        """
+        f"""
         WITH role_priority AS (
-            SELECT role_id, ordinality
-            FROM unnest(%s::bigint[]) WITH ORDINALITY AS role_ids(role_id, ordinality)
+            {priority_sql}
         )
         SELECT a.alliance_id, a.alliance_name
         FROM role_priority rp
@@ -1429,7 +1420,7 @@ def resolve_alliance_by_role_ids(guild_id: int, role_ids: list[int]) -> Alliance
         ORDER BY rp.ordinality ASC
         LIMIT 1
         """,
-        (role_ids, guild_id),
+        tuple(priority_params + [guild_id]),
     )
     if row is None:
         return None
@@ -2220,30 +2211,46 @@ def claim_bot_commands(
 
     with _connect() as connection:
         with connection.cursor() as cursor:
+            cursor.execute("BEGIN IMMEDIATE")
             cursor.execute(
                 f"""
-                WITH picked AS (
-                    SELECT command_id
-                    FROM bot_command_queue
-                    WHERE status = 'pending'
-                      {guild_filter}
-                    ORDER BY created_at ASC
-                    LIMIT %s
-                    FOR UPDATE SKIP LOCKED
-                )
-                UPDATE bot_command_queue q
-                SET status = 'processing'
-                FROM picked
-                WHERE q.command_id = picked.command_id
-                RETURNING
-                    q.command_id,
-                    q.guild_id,
-                    q.command_type,
-                    q.payload_json,
-                    q.requested_by_discord_id,
-                    q.created_at
+                SELECT command_id
+                FROM bot_command_queue
+                WHERE status = 'pending'
+                  {guild_filter}
+                ORDER BY created_at ASC
+                LIMIT %s
                 """,
                 tuple(params),
+            )
+            command_ids = [int(row["command_id"]) for row in cursor.fetchall()]
+            if not command_ids:
+                connection.commit()
+                return []
+            cursor.execute(
+                """
+                UPDATE bot_command_queue
+                SET status = 'processing'
+                WHERE command_id = ANY(%s)
+                  AND status = 'pending'
+                """,
+                (command_ids,),
+            )
+            cursor.execute(
+                """
+                SELECT
+                    command_id,
+                    guild_id,
+                    command_type,
+                    payload_json,
+                    requested_by_discord_id,
+                    created_at
+                FROM bot_command_queue
+                WHERE command_id = ANY(%s)
+                  AND status = 'processing'
+                ORDER BY created_at ASC
+                """,
+                (command_ids,),
             )
             rows = cursor.fetchall()
         connection.commit()
@@ -2470,9 +2477,8 @@ def get_live_attendance_state(guild_id: int) -> dict[str, Any]:
 def get_item_price_settings(guild_id: int) -> list[dict[str, Any]]:
     rows = _fetchall(
         """
-        SELECT *
-        FROM (
-            SELECT DISTINCT ON (LOWER(item_name))
+        WITH ranked_items AS (
+            SELECT
                 item_id,
                 guild_id,
                 item_name,
@@ -2482,16 +2488,31 @@ def get_item_price_settings(guild_id: int) -> list[dict[str, Any]]:
                 is_active,
                 memo,
                 sort_order,
-                updated_at
+                updated_at,
+                ROW_NUMBER() OVER (
+                    PARTITION BY LOWER(item_name)
+                    ORDER BY
+                        CASE WHEN guild_id IS NULL THEN 0 ELSE 1 END,
+                        updated_at DESC,
+                        sort_order ASC NULLS LAST,
+                        item_name ASC
+                ) AS item_rank
             FROM items
             WHERE is_active = TRUE
-            ORDER BY
-                LOWER(item_name),
-                CASE WHEN guild_id IS NULL THEN 0 ELSE 1 END,
-                updated_at DESC,
-                sort_order ASC NULLS LAST,
-                item_name ASC
-        ) picked
+        )
+        SELECT
+            item_id,
+            guild_id,
+            item_name,
+            category,
+            default_price,
+            is_bid_item,
+            is_active,
+            memo,
+            sort_order,
+            updated_at
+        FROM ranked_items
+        WHERE item_rank = 1
         ORDER BY sort_order ASC NULLS LAST, item_name ASC
         """,
     )
@@ -2657,7 +2678,7 @@ def deactivate_item_price(guild_id: int, item_id: int) -> None:
         connection.commit()
 
 
-def _bid_candidate_alliances(cursor: psycopg2.extensions.cursor, guild_id: int) -> list[dict[str, Any]]:
+def _bid_candidate_alliances(cursor: SQLiteCursor, guild_id: int) -> list[dict[str, Any]]:
     cursor.execute(
         """
         SELECT DISTINCT
@@ -2682,7 +2703,7 @@ def _bid_candidate_alliances(cursor: psycopg2.extensions.cursor, guild_id: int) 
     ]
 
 
-def _bid_items(cursor: psycopg2.extensions.cursor, guild_id: int) -> list[dict[str, Any]]:
+def _bid_items(cursor: SQLiteCursor, guild_id: int) -> list[dict[str, Any]]:
     cursor.execute(
         """
         SELECT
@@ -2714,7 +2735,7 @@ def _bid_items(cursor: psycopg2.extensions.cursor, guild_id: int) -> list[dict[s
 
 
 def _bid_result_rows(
-    cursor: psycopg2.extensions.cursor,
+    cursor: SQLiteCursor,
     guild_id: int,
     bid_item_ids: list[int],
 ) -> list[dict[str, Any]]:
@@ -3524,11 +3545,13 @@ def delete_loot_drop(guild_id: int, loot_event_id: int) -> None:
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                DELETE FROM distribution_batches db
-                USING loot_events le
-                WHERE db.loot_event_id = le.loot_event_id
-                  AND le.guild_id = %s
-                  AND le.loot_event_id = %s
+                DELETE FROM distribution_batches
+                WHERE loot_event_id IN (
+                    SELECT loot_event_id
+                    FROM loot_events
+                    WHERE guild_id = %s
+                      AND loot_event_id = %s
+                )
                 """,
                 (guild_id, loot_event_id),
             )
@@ -3596,19 +3619,12 @@ def get_loot_drop_events(
             db.alliance_fee_amount
         FROM loot_events le
         LEFT JOIN attendance_sessions s ON s.attendance_id = le.attendance_id
-        LEFT JOIN LATERAL (
-            SELECT
-                loot_item_id,
-                item_id,
-                item_name_snapshot,
-                cash_price_krw,
-                sale_price,
-                net_amount
-            FROM loot_event_items
-            WHERE loot_event_id = le.loot_event_id
-            ORDER BY loot_item_id ASC
-            LIMIT 1
-        ) li ON TRUE
+        LEFT JOIN loot_event_items li
+            ON li.loot_item_id = (
+                SELECT MIN(first_item.loot_item_id)
+                FROM loot_event_items first_item
+                WHERE first_item.loot_event_id = le.loot_event_id
+            )
         LEFT JOIN distribution_batches db ON db.loot_event_id = le.loot_event_id
         WHERE {' AND '.join(conditions)}
         ORDER BY
@@ -3801,16 +3817,19 @@ def update_distribution_alliance_payout_status(
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                UPDATE distribution_alliance_payouts p
+                UPDATE distribution_alliance_payouts
                 SET payout_status = %s,
                     updated_at = CURRENT_TIMESTAMP
-                FROM distribution_batches db
-                WHERE p.distribution_id = db.distribution_id
-                  AND db.guild_id = %s
-                  AND p.distribution_id = %s
-                  AND p.alliance_id = %s
+                WHERE distribution_id = %s
+                  AND alliance_id = %s
+                  AND EXISTS (
+                      SELECT 1
+                      FROM distribution_batches db
+                      WHERE db.distribution_id = distribution_alliance_payouts.distribution_id
+                        AND db.guild_id = %s
+                  )
                 """,
-                (payout_status, guild_id, distribution_id, alliance_id),
+                (payout_status, distribution_id, alliance_id, guild_id),
             )
             if cursor.rowcount == 0:
                 raise ValueError("Distribution payout was not found.")
@@ -3829,15 +3848,18 @@ def update_all_distribution_alliance_payout_status(
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                UPDATE distribution_alliance_payouts p
+                UPDATE distribution_alliance_payouts
                 SET payout_status = %s,
                     updated_at = CURRENT_TIMESTAMP
-                FROM distribution_batches db
-                WHERE p.distribution_id = db.distribution_id
-                  AND db.guild_id = %s
-                  AND p.distribution_id = %s
+                WHERE distribution_id = %s
+                  AND EXISTS (
+                      SELECT 1
+                      FROM distribution_batches db
+                      WHERE db.distribution_id = distribution_alliance_payouts.distribution_id
+                        AND db.guild_id = %s
+                  )
                 """,
-                (payout_status, guild_id, distribution_id),
+                (payout_status, distribution_id, guild_id),
             )
             if cursor.rowcount == 0:
                 raise ValueError("Distribution payout was not found.")
@@ -4490,7 +4512,7 @@ def _loot_floor_amount(value: Any) -> Decimal:
 
 
 def _ensure_member_payout_rule_snapshot(
-    cursor: psycopg2.extensions.cursor,
+    cursor: SQLiteCursor,
     guild_id: int,
     distribution_id: int,
     alliance_id: int,
@@ -4550,7 +4572,7 @@ def _ensure_member_payout_rule_snapshot(
 
 
 def _member_payout_rule_snapshot_is_locked(
-    cursor: psycopg2.extensions.cursor,
+    cursor: SQLiteCursor,
     distribution_id: int,
     alliance_id: int,
 ) -> bool:
@@ -4632,7 +4654,7 @@ def settle_all_member_payouts(
 
 
 def _get_distribution_alliance_payout_for_settlement(
-    cursor: psycopg2.extensions.cursor,
+    cursor: SQLiteCursor,
     guild_id: int,
     distribution_id: int,
     alliance_id: int,
@@ -4652,13 +4674,12 @@ def _get_distribution_alliance_payout_for_settlement(
             ON p.distribution_id = db.distribution_id
         INNER JOIN loot_events le
             ON le.loot_event_id = db.loot_event_id
-        LEFT JOIN LATERAL (
-            SELECT item_id, item_name_snapshot
-            FROM loot_event_items
-            WHERE loot_event_id = le.loot_event_id
-            ORDER BY loot_item_id ASC
-            LIMIT 1
-        ) li ON TRUE
+        LEFT JOIN loot_event_items li
+            ON li.loot_item_id = (
+                SELECT MIN(first_item.loot_item_id)
+                FROM loot_event_items first_item
+                WHERE first_item.loot_event_id = le.loot_event_id
+            )
         WHERE db.guild_id = %s
           AND db.distribution_id = %s
           AND p.alliance_id = %s
@@ -4672,7 +4693,7 @@ def _get_distribution_alliance_payout_for_settlement(
 
 
 def _get_alliance_payout_fee_rules_for_update(
-    cursor: psycopg2.extensions.cursor,
+    cursor: SQLiteCursor,
     guild_id: int,
     alliance_id: int,
 ) -> list[dict[str, Any]]:
@@ -4691,7 +4712,7 @@ def _get_alliance_payout_fee_rules_for_update(
 
 
 def _get_loot_participants_for_alliance(
-    cursor: psycopg2.extensions.cursor,
+    cursor: SQLiteCursor,
     loot_event_id: int,
     alliance_id: int,
 ) -> list[dict[str, Any]]:
@@ -4712,7 +4733,7 @@ def _get_loot_participants_for_alliance(
 
 
 def _get_attendance_session_for_loot(
-    cursor: psycopg2.extensions.cursor,
+    cursor: SQLiteCursor,
     guild_id: int,
     attendance_id: int,
 ) -> dict[str, Any]:
@@ -4732,7 +4753,7 @@ def _get_attendance_session_for_loot(
 
 
 def _get_attendance_participants_for_loot(
-    cursor: psycopg2.extensions.cursor,
+    cursor: SQLiteCursor,
     attendance_id: int,
 ) -> list[dict[str, Any]]:
     cursor.execute(
@@ -4753,7 +4774,7 @@ def _get_attendance_participants_for_loot(
 
 
 def _rebuild_loot_for_attendance(
-    cursor: psycopg2.extensions.cursor,
+    cursor: SQLiteCursor,
     guild_id: int,
     attendance_id: int,
 ) -> None:
@@ -4875,7 +4896,7 @@ def _rebuild_loot_for_attendance(
 
 
 def _resolve_loot_item(
-    cursor: psycopg2.extensions.cursor,
+    cursor: SQLiteCursor,
     guild_id: int,
     item_id: int | None,
     item_name: str,
@@ -4934,7 +4955,7 @@ def _resolve_loot_item(
 
 
 def _upsert_distribution_for_loot(
-    cursor: psycopg2.extensions.cursor,
+    cursor: SQLiteCursor,
     guild_id: int,
     loot_event_id: int,
     loot_item_id: int,
@@ -5081,7 +5102,7 @@ def _upsert_distribution_for_loot(
 
 
 def _get_loot_alliance_counts(
-    cursor: psycopg2.extensions.cursor,
+    cursor: SQLiteCursor,
     loot_event_id: int,
 ) -> dict[int, int]:
     cursor.execute(
@@ -5099,7 +5120,7 @@ def _get_loot_alliance_counts(
 
 
 def _ensure_alliance_id(
-    cursor: psycopg2.extensions.cursor,
+    cursor: SQLiteCursor,
     alliance_name: str,
 ) -> int:
     normalized_name = alliance_name.strip()
@@ -5118,7 +5139,7 @@ def _ensure_alliance_id(
 
 
 def _deactivate_duplicate_item_prices(
-    cursor: psycopg2.extensions.cursor,
+    cursor: SQLiteCursor,
     keep_item_id: int,
     item_name: str,
 ) -> None:
@@ -5246,7 +5267,7 @@ def _time_label_from_text(value: str) -> str:
     return value
 
 
-def _ensure_postgres_columns(cursor: psycopg2.extensions.cursor) -> None:
+def _ensure_postgres_columns(cursor: SQLiteCursor) -> None:
     column_sql = [
         "ALTER TABLE alliances ADD COLUMN IF NOT EXISTS display_name TEXT",
         "ALTER TABLE alliances ADD COLUMN IF NOT EXISTS tag_name TEXT",
@@ -5538,7 +5559,7 @@ def _ensure_postgres_columns(cursor: psycopg2.extensions.cursor) -> None:
     )
 
 
-def _drop_redundant_timestamp_columns(cursor: psycopg2.extensions.cursor) -> None:
+def _drop_redundant_timestamp_columns(cursor: SQLiteCursor) -> None:
     redundant_columns = {
         "guilds": ("created_at",),
         "alliances": ("created_at",),
@@ -5555,7 +5576,7 @@ def _drop_redundant_timestamp_columns(cursor: psycopg2.extensions.cursor) -> Non
             cursor.execute(f"ALTER TABLE IF EXISTS {table_name} DROP COLUMN IF EXISTS {column_name}")
 
 
-def _drop_obsolete_member_payout_tables(cursor: psycopg2.extensions.cursor) -> None:
+def _drop_obsolete_member_payout_tables(cursor: SQLiteCursor) -> None:
     for table_name in (
         "payout_transactions",
         "member_payout_fee_statuses",
@@ -5567,7 +5588,7 @@ def _drop_obsolete_member_payout_tables(cursor: psycopg2.extensions.cursor) -> N
         cursor.execute(f"DROP TABLE IF EXISTS {table_name} CASCADE")
 
 
-def _drop_obsolete_loot_boss_schema(cursor: psycopg2.extensions.cursor) -> None:
+def _drop_obsolete_loot_boss_schema(cursor: SQLiteCursor) -> None:
     for table_name in (
         "boss_attendance_snapshot_rows",
         "boss_hunt_participants",

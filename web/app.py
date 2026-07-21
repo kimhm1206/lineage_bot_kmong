@@ -20,7 +20,7 @@ from fastapi import FastAPI, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from psycopg2.extras import Json
+from common.sqlite_backend import Json
 
 from common import database
 from web.session import RememberMeSessionMiddleware
