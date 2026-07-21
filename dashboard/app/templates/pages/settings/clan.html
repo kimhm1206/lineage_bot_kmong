@@ -1,0 +1,79 @@
+{% extends "layouts/app_shell.html" %}
+{% from "components/icons.html" import icon %}
+
+{% block title %}{{ page_title }} · {{ app_name }}{% endblock %}
+
+{% block content %}
+<section class="page-heading">
+  <div>
+    <p class="page-kicker">{{ page_kicker }}</p>
+    <h1>{{ page_title }}</h1>
+    <p>{{ page_description }}</p>
+  </div>
+  <span class="page-badge">{{ page_badge }}</span>
+</section>
+
+<section class="panel policy-panel" id="staff">
+  <div class="panel-header panel-header-inline">
+    <div>
+      <span class="panel-kicker">Clan accountants</span>
+      <h2>혈맹 경리 관리</h2>
+    </div>
+    <button class="text-button" type="button">
+      {{ icon("plus-square") }}
+      경리 추가
+    </button>
+  </div>
+
+  <div class="policy-table-wrap">
+    <table class="policy-table">
+      <thead>
+        <tr>
+          <th>경리</th>
+          <th>담당 범위</th>
+          <th>상태</th>
+          <th><span class="sr-only">관리</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for accountant in accountants %}
+        <tr>
+          <td><strong>{{ accountant.name }}</strong></td>
+          <td>{{ accountant.scope }}</td>
+          <td><span class="policy-value">{{ accountant.status }}</span></td>
+          <td><button class="table-action" type="button">관리</button></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel policy-panel" id="visibility">
+  <div class="panel-header panel-header-inline">
+    <div>
+      <span class="panel-kicker">Visibility & access</span>
+      <h2>정보 공개와 일반 유저 권한</h2>
+    </div>
+    <span class="soft-label">내 혈맹에만 적용</span>
+  </div>
+
+  <div class="policy-list">
+    {% for policy in clan_policies %}
+    <div class="policy-row" id="{{ policy.id }}">
+      <div class="policy-copy">
+        <strong>{{ policy.title }}</strong>
+        <span>{{ policy.description }}</span>
+      </div>
+      <div class="segmented-control" aria-label="{{ policy.title }}">
+        {% for option in policy.options %}
+        <button class="segment{% if option == policy.value %} is-selected{% endif %}" type="button" aria-pressed="{{ 'true' if option == policy.value else 'false' }}">
+          {{ option }}
+        </button>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

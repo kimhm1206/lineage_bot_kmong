@@ -1,0 +1,64 @@
+{% extends "layouts/app_shell.html" %}
+{% from "components/icons.html" import icon %}
+
+{% block title %}{{ page_title }} · {{ app_name }}{% endblock %}
+
+{% block content %}
+<section class="page-heading">
+  <div>
+    <p class="page-kicker">{{ page_kicker }}</p>
+    <h1>{{ page_title }}</h1>
+    <p>{{ page_description }}</p>
+  </div>
+  <span class="page-badge">{{ page_badge }}</span>
+</section>
+
+<section class="settings-section" id="manager-assignments">
+  <div class="section-heading">
+    <div>
+      <span class="panel-kicker">Direct user access</span>
+      <h2>관리자 유저 지정</h2>
+      <p>Discord 역할을 만들지 않고 서버 유저를 직접 선택해 권한을 부여합니다.</p>
+    </div>
+  </div>
+
+  <div class="owner-strip">
+    <span class="owner-icon">{{ icon("shield") }}</span>
+    <div>
+      <strong>서버 오너</strong>
+      <span>연합 관리자 유저와 각혈 관리자 유저를 각각 지정</span>
+    </div>
+    <span class="owner-label">OWNER</span>
+  </div>
+
+  <div class="authority-branch-label"><span>독립 사용자 권한</span></div>
+
+  <div class="authority-grid">
+    {% for manager in manager_groups %}
+    <article class="authority-card authority-card-{{ manager.tone }}">
+      <div class="authority-card-header">
+        <span class="authority-icon">{{ icon(manager.icon) }}</span>
+        <span class="independent-label">유저 직접 지정</span>
+      </div>
+      <h3>{{ manager.title }}</h3>
+      <p>{{ manager.description }}</p>
+      <div class="authority-scope">
+        {% for item in manager.scope %}<span>{{ item }}</span>{% endfor %}
+      </div>
+      <button class="authority-action" type="button">
+        {{ manager.action }}
+        {{ icon("chevron-right") }}
+      </button>
+    </article>
+    {% endfor %}
+  </div>
+
+  <div class="mapping-note">
+    <span class="mapping-note-icon">{{ icon("users-round") }}</span>
+    <div>
+      <strong>Discord 역할은 혈맹 구분에만 사용</strong>
+      <span>역할 매핑은 유저의 소속 혈맹 판별에만 사용하며 웹 권한에는 영향을 주지 않습니다.</span>
+    </div>
+  </div>
+</section>
+{% endblock %}

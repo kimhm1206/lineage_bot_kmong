@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 
 from dashboard.app.config import BASE_DIR, get_settings
 from dashboard.app.database import close_database, ping_database
-from dashboard.app.routes import health, home
+from dashboard.app.routes import health, home, settings as settings_routes
 
 
 @asynccontextmanager
@@ -32,4 +32,4 @@ app.mount(
 
 app.include_router(health.router)
 app.include_router(home.router)
-
+app.include_router(settings_routes.router)
