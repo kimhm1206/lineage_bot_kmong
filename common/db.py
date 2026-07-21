@@ -11,6 +11,7 @@ from typing import Any
 
 from dotenv import load_dotenv
 
+from common.compact_schema import ROLE_CODES, ensure_compact_schema
 from common.sqlite_backend import Json, SQLiteConnection, SQLiteCursor, connect_sqlite
 
 
@@ -860,6 +861,7 @@ def init_db() -> None:
         ).fetchone()
         if row is None:
             raise RuntimeError("SQLite 테스트 DB에 테이블이 없습니다. 복제를 다시 실행하세요.")
+    ensure_compact_schema(_sqlite_database_path())
 
 
 def ensure_guild(guild_id: int) -> None:
@@ -1893,37 +1895,140 @@ def add_work_log(
     details: dict[str, Any] | None = None,
 ) -> int:
     ensure_guild(guild_id)
+    details = details or {}
+
+    def detail_int(name: str) -> int | None:
+        try:
+            value = details.get(name)
+            return int(value) if value not in (None, "") else None
+        except (TypeError, ValueError):
+            return None
+
+    nested_item = details.get("item")
+    if not isinstance(nested_item, dict):
+        nested_item = {}
+
     with _connect() as connection:
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                INSERT INTO work_logs (
-                    guild_id,
-                    actor_discord_id,
-                    actor_display_name,
-                    actor_role,
-                    action_type,
-                    target_type,
-                    target_id,
-                    summary,
-                    details_json
+                SELECT user_id
+                FROM users
+                WHERE discord_id = %s
+                """,
+                (actor_discord_id,),
+            )
+            actor_user_row = cursor.fetchone()
+            actor_id = None
+            if actor_discord_id is not None:
+                cursor.execute(
+                    """
+                    INSERT INTO audit_actors(user_id, discord_id, fallback_name)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (discord_id) DO UPDATE SET
+                        user_id = COALESCE(excluded.user_id, audit_actors.user_id),
+                        fallback_name = excluded.fallback_name
+                    RETURNING actor_id
+                    """,
+                    (
+                        int(actor_user_row["user_id"]) if actor_user_row else None,
+                        actor_discord_id,
+                        actor_display_name.strip() or str(actor_discord_id),
+                    ),
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                RETURNING work_log_id
+                actor_id = int(cursor.fetchone()["actor_id"])
+
+            cursor.execute(
+                "SELECT entity_type_id FROM audit_entity_types WHERE entity_code = %s",
+                (target_type,),
+            )
+            entity_row = cursor.fetchone()
+            if entity_row is None:
+                cursor.execute(
+                    "SELECT COALESCE(MAX(entity_type_id), 0) + 1 AS next_id FROM audit_entity_types"
+                )
+                entity_type_id = int(cursor.fetchone()["next_id"])
+                cursor.execute(
+                    "INSERT INTO audit_entity_types(entity_type_id, entity_code) VALUES (%s, %s)",
+                    (entity_type_id, target_type),
+                )
+            else:
+                entity_type_id = int(entity_row["entity_type_id"])
+
+            cursor.execute(
+                "SELECT action_type_id FROM audit_action_types WHERE action_code = %s",
+                (action_type,),
+            )
+            action_row = cursor.fetchone()
+            if action_row is None:
+                cursor.execute(
+                    "SELECT COALESCE(MAX(action_type_id), 0) + 1 AS next_id FROM audit_action_types"
+                )
+                action_type_id = int(cursor.fetchone()["next_id"])
+                cursor.execute(
+                    """
+                    INSERT INTO audit_action_types(action_type_id, action_code, entity_type_id)
+                    VALUES (%s, %s, %s)
+                    """,
+                    (action_type_id, action_type, entity_type_id),
+                )
+            else:
+                action_type_id = int(action_row["action_type_id"])
+
+            cursor.execute(
+                """
+                INSERT INTO audit_events(
+                    guild_id, actor_id, actor_role, action_type_id, target_id
+                )
+                VALUES (%s, %s, %s, %s, %s)
+                RETURNING audit_event_id
                 """,
                 (
                     guild_id,
-                    actor_discord_id,
-                    actor_display_name.strip() or str(actor_discord_id or ""),
-                    actor_role,
-                    action_type,
-                    target_type,
+                    actor_id,
+                    ROLE_CODES.get(actor_role, 0),
+                    action_type_id,
                     target_id,
-                    summary.strip(),
-                    Json(details or {}),
                 ),
             )
-            work_log_id = int(cursor.fetchone()["work_log_id"])
+            work_log_id = int(cursor.fetchone()["audit_event_id"])
+
+            state_code = detail_int("is_completed")
+            if state_code is None and action_type == "bid_item":
+                state_code = 1 if "수정" in summary else 0
+            amount_value = None
+            try:
+                raw_amount = details.get("default_price")
+                if raw_amount not in (None, ""):
+                    amount_value = int(_decimal(raw_amount))
+            except (TypeError, ValueError):
+                amount_value = None
+            cursor.execute(
+                """
+                INSERT INTO audit_event_contexts(
+                    audit_event_id, attendance_id, user_id, loot_event_id,
+                    item_id, bid_item_id, alliance_id, result_id,
+                    state_code, amount_value
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    work_log_id,
+                    detail_int("attendance_id"),
+                    detail_int("user_id"),
+                    detail_int("loot_event_id")
+                    or (target_id if target_type == "loot" else None),
+                    detail_int("item_id")
+                    or (target_id if target_type == "item" else None),
+                    detail_int("bid_item_id")
+                    or _optional_int(nested_item.get("bid_item_id"))
+                    or (target_id if target_type == "bid_item" else None),
+                    detail_int("alliance_id"),
+                    detail_int("result_id"),
+                    state_code,
+                    amount_value,
+                ),
+            )
         connection.commit()
     return work_log_id
 
@@ -1936,56 +2041,134 @@ def get_work_logs(
 ) -> list[dict[str, Any]]:
     safe_limit = max(1, min(int(limit), 300))
     params: list[Any] = [guild_id]
-    where = "WHERE guild_id = %s"
+    where = "WHERE ae.guild_id = %s"
     if action_type:
-        where += " AND action_type = %s"
+        where += " AND action.action_code = %s"
         params.append(action_type)
     params.append(safe_limit)
     rows = _fetchall(
         f"""
         SELECT
-            work_log_id,
-            guild_id,
-            actor_discord_id,
-            actor_display_name,
-            actor_role,
-            action_type,
-            target_type,
-            target_id,
-            summary,
-            details_json,
-            created_at
-        FROM work_logs
+            ae.audit_event_id AS work_log_id,
+            ae.guild_id,
+            actor.discord_id AS actor_discord_id,
+            COALESCE(actor_user.discord_nickname, actor.fallback_name, '시스템') AS actor_display_name,
+            ae.actor_role,
+            action.action_code AS action_type,
+            entity.entity_code AS target_type,
+            ae.target_id,
+            ae.occurred_at,
+            context.attendance_id,
+            context.user_id,
+            context.loot_event_id,
+            context.item_id,
+            context.bid_item_id,
+            context.alliance_id,
+            context.result_id,
+            context.state_code,
+            context.amount_value,
+            target_user.discord_nickname AS target_user_name,
+            target_alliance.alliance_name AS target_user_alliance_name,
+            item.item_name AS item_name,
+            bid_item.item_name AS bid_item_name,
+            bid_alliance.alliance_name AS bid_alliance_name,
+            loot.attendance_id AS loot_attendance_id,
+            loot.event_time_label AS loot_time_label,
+            (
+                SELECT COALESCE(linked_item.item_name, linked_loot_item.item_name_snapshot)
+                FROM loot_event_items linked_loot_item
+                LEFT JOIN items linked_item ON linked_item.item_id = linked_loot_item.item_id
+                WHERE linked_loot_item.loot_event_id = COALESCE(context.loot_event_id, ae.target_id)
+                ORDER BY linked_loot_item.loot_item_id
+                LIMIT 1
+            ) AS loot_item_name
+        FROM audit_events ae
+        INNER JOIN audit_action_types action
+            ON action.action_type_id = ae.action_type_id
+        INNER JOIN audit_entity_types entity
+            ON entity.entity_type_id = action.entity_type_id
+        LEFT JOIN audit_actors actor ON actor.actor_id = ae.actor_id
+        LEFT JOIN users actor_user ON actor_user.user_id = actor.user_id
+        LEFT JOIN audit_event_contexts context
+            ON context.audit_event_id = ae.audit_event_id
+        LEFT JOIN users target_user ON target_user.user_id = context.user_id
+        LEFT JOIN alliances target_alliance
+            ON target_alliance.alliance_id = target_user.alliance_id
+        LEFT JOIN items item ON item.item_id = COALESCE(context.item_id, ae.target_id)
+        LEFT JOIN bid_items bid_item
+            ON bid_item.bid_item_id = COALESCE(context.bid_item_id, ae.target_id)
+        LEFT JOIN alliances bid_alliance ON bid_alliance.alliance_id = context.alliance_id
+        LEFT JOIN loot_events loot
+            ON loot.loot_event_id = COALESCE(context.loot_event_id, ae.target_id)
         {where}
-        ORDER BY created_at DESC, work_log_id DESC
+        ORDER BY ae.occurred_at DESC, ae.audit_event_id DESC
         LIMIT %s
         """,
         tuple(params),
     )
-    return [
-        {
-            "work_log_id": int(row["work_log_id"]),
-            "guild_id": int(row["guild_id"]),
-            "actor_discord_id": (
-                int(row["actor_discord_id"])
-                if row["actor_discord_id"] is not None
-                else None
-            ),
-            "actor_display_name": str(row["actor_display_name"]),
-            "actor_role": str(row["actor_role"]),
-            "action_type": str(row["action_type"]),
-            "target_type": str(row["target_type"]),
-            "target_id": (
-                int(row["target_id"])
-                if row["target_id"] is not None
-                else None
-            ),
-            "summary": str(row["summary"]),
-            "details": row["details_json"] or {},
-            "created_at": row["created_at"],
-        }
-        for row in rows
-    ]
+
+    role_names = {code: name for name, code in ROLE_CODES.items()}
+
+    def summary(row: dict[str, Any]) -> str:
+        action = str(row["action_type"])
+        target_id = int(row["target_id"] or 0)
+        attendance_id = int(row["attendance_id"] or target_id or 0)
+        user_label = str(row["target_user_name"] or f"User {row['user_id'] or '?'}")
+        if row["target_user_alliance_name"]:
+            user_label += f" ({row['target_user_alliance_name']})"
+        if action == "attendance_add":
+            return f"출석 #{attendance_id}에 {user_label} 추가"
+        if action == "attendance_delete":
+            return f"출석 #{attendance_id}에서 {user_label} 삭제"
+        if action.startswith("item_"):
+            verb = {"item_create": "추가", "item_update": "수정", "item_delete": "삭제"}.get(action, "변경")
+            label = str(row["item_name"] or f"아이템 #{target_id}")
+            amount = int(row["amount_value"] or 0)
+            return f"아이템 {verb}: {label}" + (f" · {amount:,}원" if amount else "")
+        if action.startswith("loot_"):
+            verb = {"loot_create": "등록", "loot_update": "수정", "loot_delete": "삭제"}.get(action, "변경")
+            label = str(row["loot_item_name"] or f"드랍 #{target_id}")
+            linked_attendance = int(row["loot_attendance_id"] or row["attendance_id"] or 0)
+            suffix = f" · 출석 #{linked_attendance}" if linked_attendance else ""
+            if row["loot_time_label"]:
+                suffix += f" · {row['loot_time_label']}"
+            return f"드랍 {verb}: {label}{suffix}"
+        if action == "bid_status":
+            state = "완료" if int(row["state_code"] or 0) else "대기"
+            return f"입찰 상태: {row['bid_item_name'] or f'#{target_id}'} / {row['bid_alliance_name'] or '혈맹'} -> {state}"
+        if action in {"bid_item", "bid_item_delete"}:
+            if action == "bid_item_delete":
+                verb = "삭제"
+            else:
+                verb = "수정" if int(row["state_code"] or 0) else "추가"
+            return f"입찰 아이템 {verb}: {row['bid_item_name'] or f'#{target_id}'}"
+        return f"{action}: {row['target_type']} #{target_id}"
+
+    output: list[dict[str, Any]] = []
+    for row in rows:
+        occurred_at = datetime.fromtimestamp(int(row["occurred_at"]), KST)
+        output.append(
+            {
+                "work_log_id": int(row["work_log_id"]),
+                "guild_id": int(row["guild_id"]),
+                "actor_discord_id": (
+                    int(row["actor_discord_id"])
+                    if row["actor_discord_id"] is not None
+                    else None
+                ),
+                "actor_display_name": str(row["actor_display_name"]),
+                "actor_role": role_names.get(int(row["actor_role"]), "user"),
+                "action_type": str(row["action_type"]),
+                "target_type": str(row["target_type"]),
+                "target_id": (
+                    int(row["target_id"]) if row["target_id"] is not None else None
+                ),
+                "summary": summary(row),
+                "details": {},
+                "created_at": occurred_at.strftime("%Y-%m-%d %H:%M:%S"),
+            }
+        )
+    return output
 
 
 def get_active_scheduled_reports() -> list[dict[str, Any]]:
@@ -5549,14 +5732,6 @@ def _ensure_postgres_columns(cursor: SQLiteCursor) -> None:
         "CREATE INDEX IF NOT EXISTS idx_bot_command_queue_guild_status "
         "ON bot_command_queue(guild_id, status, created_at)"
     )
-    cursor.execute(
-        "CREATE INDEX IF NOT EXISTS idx_work_logs_guild_created "
-        "ON work_logs(guild_id, created_at DESC)"
-    )
-    cursor.execute(
-        "CREATE INDEX IF NOT EXISTS idx_work_logs_guild_action "
-        "ON work_logs(guild_id, action_type, created_at DESC)"
-    )
 
 
 def _drop_redundant_timestamp_columns(cursor: SQLiteCursor) -> None:
@@ -5710,20 +5885,6 @@ CREATE TABLE IF NOT EXISTS bot_command_queue (
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     processed_at TIMESTAMPTZ,
     error_message TEXT
-);
-
-CREATE TABLE IF NOT EXISTS work_logs (
-    work_log_id BIGSERIAL PRIMARY KEY,
-    guild_id BIGINT NOT NULL REFERENCES guilds(guild_id) ON DELETE CASCADE,
-    actor_discord_id BIGINT,
-    actor_display_name TEXT NOT NULL,
-    actor_role TEXT NOT NULL,
-    action_type TEXT NOT NULL,
-    target_type TEXT NOT NULL,
-    target_id BIGINT,
-    summary TEXT NOT NULL,
-    details_json JSONB NOT NULL DEFAULT '{}'::jsonb,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS scheduled_report_settings (

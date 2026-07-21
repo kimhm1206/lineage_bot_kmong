@@ -5,6 +5,7 @@ import json
 import os
 import re
 import sqlite3
+import sys
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -15,8 +16,13 @@ import psycopg2
 from dotenv import load_dotenv
 from psycopg2.extras import RealDictCursor
 
-
 BASE_DIR = Path(__file__).resolve().parent.parent
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))
+
+from common.compact_schema import ensure_compact_schema
+
+
 DEFAULT_OUTPUT = BASE_DIR / "data" / "new_server_workspace.sqlite3"
 KST = timezone(timedelta(hours=9))
 
@@ -448,11 +454,20 @@ def main() -> None:
         sqlite_connection.close()
         pg_connection.close()
 
+    try:
+        migrated_logs = ensure_compact_schema(output)
+        with sqlite3.connect(output) as verification_connection:
+            verify_clone(verification_connection)
+    except Exception:
+        output.unlink(missing_ok=True)
+        raise
+
     print(f"SQLite clone: {output}")
     print(f"Cutoff (KST): {cutoff_text}")
     print(f"Tables: {len(copied)} / Rows: {sum(copied.values()):,}")
     for table_name, count in copied.items():
         print(f"  {table_name}: {count:,}")
+    print(f"Compact audit logs migrated: {migrated_logs:,}")
 
 
 if __name__ == "__main__":
