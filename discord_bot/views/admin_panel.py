@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import os
-from urllib.parse import urlencode
-
 import discord
 
 from discord_bot.utils.attendance import (
@@ -20,30 +17,6 @@ class AdminPanelView(discord.ui.View):
         self.bot = bot
         self.guild_id = guild_id
         self._apply_attendance_button_state()
-        self.add_item(
-            discord.ui.Button(
-                label="드랍&분배",
-                style=discord.ButtonStyle.link,
-                url=_build_web_loot_url(guild_id),
-                row=0,
-            )
-        )
-        self.add_item(
-            discord.ui.Button(
-                label="통계",
-                style=discord.ButtonStyle.link,
-                url=_build_web_statistics_url(guild_id),
-                row=0,
-            )
-        )
-        self.add_item(
-            discord.ui.Button(
-                label="설정",
-                style=discord.ButtonStyle.link,
-                url=_build_web_settings_url(guild_id),
-                row=0,
-            )
-        )
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         guild = interaction.guild
@@ -106,6 +79,54 @@ class AdminPanelView(discord.ui.View):
         ok, message = await start_attendance(self.bot, guild, user)
         await _safe_response(interaction, message)
 
+    @discord.ui.button(
+        label="드랍",
+        style=discord.ButtonStyle.primary,
+        custom_id="loot:drop:start",
+        row=0,
+    )
+    async def loot_drop_button(
+        self,
+        button: discord.ui.Button,
+        interaction: discord.Interaction,
+    ) -> None:
+        from discord_bot.views.loot_drop import (
+            RECENT_ATTENDANCE_LIMIT,
+            build_loot_drop_select_view,
+            select_prompt,
+        )
+
+        if not await _safe_defer(interaction):
+            return
+
+        view = await build_loot_drop_select_view(self.bot, self.guild_id)
+        await interaction.followup.send(
+            select_prompt()
+            if view.sessions
+            else f"최근 출석회차 {RECENT_ATTENDANCE_LIMIT}개 안에 등록할 출석 기록이 없습니다.",
+            view=view,
+            ephemeral=True,
+        )
+
+    @discord.ui.button(
+        label="설정",
+        style=discord.ButtonStyle.secondary,
+        custom_id="attendance:settings",
+        row=0,
+    )
+    async def settings_button(
+        self,
+        button: discord.ui.Button,
+        interaction: discord.Interaction,
+    ) -> None:
+        from discord_bot.views.settings import SettingsMenuView
+
+        await interaction.response.send_message(
+            "변경할 설정 항목을 선택해주세요.",
+            view=SettingsMenuView(self.bot, self.guild_id),
+            ephemeral=True,
+        )
+
 
 async def _safe_defer(interaction: discord.Interaction) -> bool:
     if interaction.response.is_done():
@@ -127,18 +148,3 @@ async def _safe_response(
             await interaction.response.send_message(message, ephemeral=True)
     except discord.NotFound:
         return
-
-
-def _build_web_statistics_url(guild_id: int) -> str:
-    base_url = os.getenv("WEB_BASE_URL", "https://xn--950bk80bh7an33asc.site").rstrip("/")
-    return f"{base_url}/dashboard?{urlencode({'guild_id': str(guild_id)})}"
-
-
-def _build_web_loot_url(guild_id: int) -> str:
-    base_url = os.getenv("WEB_BASE_URL", "https://xn--950bk80bh7an33asc.site").rstrip("/")
-    return f"{base_url}/loot?{urlencode({'guild_id': str(guild_id)})}"
-
-
-def _build_web_settings_url(guild_id: int) -> str:
-    base_url = os.getenv("WEB_BASE_URL", "https://xn--950bk80bh7an33asc.site").rstrip("/")
-    return f"{base_url}/settings?{urlencode({'guild_id': str(guild_id)})}#channels"

@@ -122,6 +122,13 @@ class Database:
     ) -> GuildSettings:
         return update_attendance_voice_channel_ids(guild_id, channel_ids)
 
+    def get_recent_attendance_sessions(
+        self,
+        guild_id: int,
+        limit: int = 25,
+    ) -> list[dict[str, Any]]:
+        return get_recent_attendance_sessions(guild_id, limit)
+
     def save_attendance_session(
         self,
         guild_id: int,
@@ -591,6 +598,21 @@ class Database:
             excluded_alliance_ids=excluded_alliance_ids,
         )
 
+    def create_basic_loot_drop(
+        self,
+        guild_id: int,
+        *,
+        attendance_id: int,
+        item_name: str,
+        created_by_discord_id: int | None,
+    ) -> int:
+        return create_basic_loot_drop(
+            guild_id,
+            attendance_id=attendance_id,
+            item_name=item_name,
+            created_by_discord_id=created_by_discord_id,
+        )
+
     def update_loot_drop(
         self,
         guild_id: int,
@@ -1041,6 +1063,35 @@ def update_attendance_voice_channel_ids(
             )
         connection.commit()
     return get_settings(guild_id)
+
+
+def get_recent_attendance_sessions(
+    guild_id: int,
+    limit: int = 25,
+) -> list[dict[str, Any]]:
+    ensure_guild(guild_id)
+    normalized_limit = max(1, min(int(limit), 100))
+    return _fetchall(
+        """
+        SELECT
+            s.attendance_id,
+            s.started_at,
+            s.ended_at,
+            s.started_by_discord_id,
+            COUNT(e.user_id)::int AS participant_count
+        FROM attendance_sessions s
+        LEFT JOIN attendance_entries e ON e.attendance_id = s.attendance_id
+        WHERE s.guild_id = %s
+        GROUP BY
+            s.attendance_id,
+            s.started_at,
+            s.ended_at,
+            s.started_by_discord_id
+        ORDER BY s.started_at DESC, s.attendance_id DESC
+        LIMIT %s
+        """,
+        (guild_id, normalized_limit),
+    )
 
 
 def save_attendance_session(
@@ -3246,6 +3297,71 @@ def _normalize_distribution_fee_rates(
     if bookkeeper_rate < 0 or alliance_rate < 0:
         raise ValueError("Fee rate must not be negative.")
     return bookkeeper_rate + alliance_rate, bookkeeper_rate, alliance_rate
+
+
+def create_basic_loot_drop(
+    guild_id: int,
+    *,
+    attendance_id: int,
+    item_name: str,
+    created_by_discord_id: int | None,
+) -> int:
+    ensure_guild(guild_id)
+    normalized_item_name = item_name.strip()
+    if not normalized_item_name:
+        raise ValueError("Item name must not be empty.")
+
+    with _connect() as connection:
+        with connection.cursor() as cursor:
+            session = _get_attendance_session_for_loot(cursor, guild_id, attendance_id)
+            started_at = str(session["started_at"])
+            cursor.execute(
+                """
+                INSERT INTO loot_events (
+                    guild_id,
+                    attendance_id,
+                    event_date,
+                    event_time_label,
+                    title,
+                    memo,
+                    adena_rate,
+                    excluded_alliance_ids,
+                    created_by_discord_id,
+                    updated_at
+                )
+                VALUES (%s, %s, %s, %s, %s, NULL, 0, %s, %s, CURRENT_TIMESTAMP)
+                RETURNING loot_event_id
+                """,
+                (
+                    guild_id,
+                    attendance_id,
+                    _date_label_from_text(started_at),
+                    _time_label_from_text(started_at),
+                    normalized_item_name,
+                    Json([]),
+                    created_by_discord_id,
+                ),
+            )
+            loot_event_id = int(cursor.fetchone()["loot_event_id"])
+            cursor.execute(
+                """
+                INSERT INTO loot_event_items (
+                    loot_event_id,
+                    item_id,
+                    item_name_snapshot,
+                    cash_price_krw,
+                    sale_price,
+                    fee_rate,
+                    bookkeeper_fee_rate,
+                    alliance_fee_rate,
+                    net_amount
+                )
+                VALUES (%s, NULL, %s, 0, 0, 0, 0, 0, 0)
+                """,
+                (loot_event_id, normalized_item_name),
+            )
+        connection.commit()
+    return loot_event_id
 
 
 def create_loot_drop(

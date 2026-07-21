@@ -10,9 +10,6 @@ import discord
 from dotenv import load_dotenv
 
 from common import database
-from discord_bot.bridge import start_web_bridge
-from discord_bot.queue import start_command_queue_worker
-from discord_bot.reports import start_report_scheduler
 from discord_bot.utils.attendance import (
     AttendanceActionView,
     register_attendance,
@@ -20,7 +17,12 @@ from discord_bot.utils.attendance import (
     sync_voice_entry_time,
 )
 from discord_bot.utils.guild import is_admin_member, is_supported_guild
-from discord_bot.utils.panel import build_runtime_label, update_admin_panel
+from discord_bot.utils.panel import (
+    build_runtime_label,
+    clear_old_admin_panel,
+    rebuild_admin_panel,
+    update_admin_panel,
+)
 from discord_bot.views.admin_panel import AdminPanelView
 
 
@@ -43,11 +45,6 @@ bot.attendance_locks = {}
 bot.voice_entry_times_by_guild = {}
 bot.commands_synced = False
 bot.persistent_views_registered = False
-bot.command_queue_task = None
-bot.report_scheduler = None
-bot.report_scheduler_reload_task = None
-bot.web_bridge_task = None
-bot.web_bridge_ws = None
 bot.attendance_state_publisher = None
 bot.runtime_label = build_runtime_label()
 
@@ -65,10 +62,6 @@ async def on_ready() -> None:
         await bot.sync_commands()
         bot.commands_synced = True
 
-    start_command_queue_worker(bot)
-    start_report_scheduler(bot)
-    start_web_bridge(bot)
-
     for guild in bot.guilds:
         seed_voice_entry_times(bot, guild)
         await update_admin_panel(bot, guild.id)
@@ -81,6 +74,45 @@ def _register_persistent_views() -> None:
     for guild in bot.guilds:
         bot.add_view(AdminPanelView(bot, guild.id))
         bot.add_view(AttendanceActionView(bot, guild.id))
+
+
+@bot.slash_command(
+    name="관리자채널",
+    description="출석 패널과 출석 메시지를 보낼 채널을 설정합니다.",
+)
+async def set_admin_channel(
+    ctx: discord.ApplicationContext,
+    channel: discord.Option(discord.TextChannel, description="출석 채널"),
+) -> None:
+    guild = ctx.guild
+    if guild is None:
+        await ctx.respond("서버에서만 사용할 수 있습니다.", ephemeral=True)
+        return
+
+    if not is_supported_guild(bot, guild.id):
+        await ctx.respond("이 서버에서는 사용할 수 없습니다.", ephemeral=True)
+        return
+
+    if not is_admin_member(ctx.author):
+        await ctx.respond("권한이 없습니다.", ephemeral=True)
+        return
+
+    await ctx.defer(ephemeral=True)
+
+    previous_settings = await asyncio.to_thread(database.get_settings, guild.id)
+    await asyncio.to_thread(
+        database.update_setting,
+        guild.id,
+        "admin_channel_id",
+        channel.id,
+    )
+    await clear_old_admin_panel(bot, guild, previous_settings.admin_channel_id)
+    await rebuild_admin_panel(bot, guild.id)
+
+    await ctx.followup.send(
+        f"출석 채널이 {channel.mention}으로 설정되었습니다.",
+        ephemeral=True,
+    )
 
 
 @bot.slash_command(

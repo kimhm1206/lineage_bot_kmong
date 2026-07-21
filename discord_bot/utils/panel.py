@@ -28,7 +28,7 @@ def build_admin_panel_embed(
 ) -> discord.Embed:
     embed = discord.Embed(
         title="출석 패널",
-        description="출석 시작은 여기서, 설정과 통계는 웹에서 관리합니다.",
+        description="출석 시작, 간단 드랍 등록, 기본 설정을 봇에서 관리합니다.",
         color=discord.Color.blurple(),
     )
     embed.add_field(
