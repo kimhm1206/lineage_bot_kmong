@@ -16,8 +16,8 @@ async def index(request: Request):
     context = build_template_context(
         request,
         active_nav="home.personal",
-        page_title="운영 대시보드",
-        page_description="본인과 혈맹의 정산 흐름을 먼저 확인하고, 필요한 업무로 바로 이동하는 새 운영툴 베이스입니다.",
+        page_title="업무 공간",
+        page_description="개인 현황을 확인하고, 담당 업무에 따라 연합 운영 또는 내 혈맹 운영으로 이동합니다.",
         page_kicker="LOCAL PostgreSQL · testdb",
     )
     context.update(
@@ -28,33 +28,33 @@ async def index(request: Request):
                 {"label": "최근 참여 드랍", "value": "-", "meta": "최근 한달 기준"},
                 {"label": "마지막 출석", "value": "-", "meta": "출석 현황 연결 예정"},
             ],
-            "alliance_cards": [
-                {"label": "혈맹 미정산", "value": "-", "meta": "인원별 정산 연결 예정"},
-                {"label": "귀속 혈비", "value": "-", "meta": "혈비 가계부 연결 예정"},
-                {"label": "진행 중 드랍", "value": "-", "meta": "드랍별 상태 연결 예정"},
-                {"label": "내부 수수료", "value": "-", "meta": "분배 설정 연결 예정"},
+            "workspaces": [
+                {
+                    "id": "alliance-workspace",
+                    "tone": "alliance",
+                    "eyebrow": "Alliance workspace",
+                    "title": "연합 운영",
+                    "role": "연합 경리",
+                    "description": "아이템 드랍을 등록하고 판매대금을 혈맹별로 1차 분배하는 연합 전용 업무 공간입니다.",
+                    "primary": "연합 대시보드",
+                    "links": ["드랍 등록", "각혈 분배", "아이템 입찰", "연합 분배 설정"],
+                    "flow": ["드랍 등록", "연합 수수료", "혈맹별 분배"],
+                },
+                {
+                    "id": "clan-workspace",
+                    "tone": "clan",
+                    "eyebrow": "Clan workspace",
+                    "title": "내 혈맹 운영",
+                    "role": "혈맹 경리",
+                    "description": "연합에서 전달받은 금액을 혈맹원에게 분배하고 혈비와 귀속 내역을 관리합니다.",
+                    "primary": "혈맹 대시보드",
+                    "links": ["혈맹원 분배", "혈비 가계부", "귀속 관리", "혈맹 분배 설정"],
+                    "flow": ["혈맹 수령", "내부 수수료", "인원별 분배"],
+                },
             ],
-            "workspace_modules": [
-                {
-                    "title": "드랍 & 분배",
-                    "description": "드랍 등록부터 연합/혈맹/개인 정산까지 이어지는 핵심 업무 영역입니다.",
-                    "links": ["분배금 현황", "드랍 등록", "연합 분배", "혈맹 분배", "분배 설정"],
-                },
-                {
-                    "title": "혈비",
-                    "description": "귀속 혈비와 입출금 흐름을 공개 가능한 가계부 형태로 정리합니다.",
-                    "links": ["혈비 현황", "입출금 내역", "귀속 내역", "혈비 설정"],
-                },
-                {
-                    "title": "출석",
-                    "description": "출석 현황과 통계는 유지하되, 설정은 출석 업무 아래에서 관리합니다.",
-                    "links": ["출석 현황", "출석 통계", "내 혈맹 통계", "출석 설정"],
-                },
-                {
-                    "title": "서버 운영",
-                    "description": "혈맹, 권한, 알림, 작업 로그처럼 서버 운영에 필요한 설정을 모읍니다.",
-                    "links": ["혈맹 관리", "권한 관리", "알림 관리", "작업 로그"],
-                },
+            "common_modules": [
+                {"icon": "calendar-check", "title": "출석 · 통계", "description": "회차별 출석과 인원·혈맹 통계"},
+                {"icon": "shield", "title": "서버 운영", "description": "혈맹, 권한, 알림과 작업 로그"},
             ],
         }
     )

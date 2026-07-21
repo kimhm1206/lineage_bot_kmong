@@ -7,15 +7,23 @@
       <strong>Lineage Ops</strong>
       <span>Settlement Console</span>
     </div>
+    <button class="nav-toggle" type="button" data-nav-toggle aria-expanded="false" aria-controls="side-navigation" aria-label="메뉴 열기">
+      <span class="nav-toggle-open">{{ icon("menu") }}</span>
+      <span class="nav-toggle-close">{{ icon("x") }}</span>
+    </button>
   </div>
 
-  <nav class="side-nav">
+  <nav class="side-nav" id="side-navigation">
     {% for group in navigation %}
-    <section class="nav-section" aria-labelledby="nav-{{ group.id }}">
-      <div class="nav-section-title" id="nav-{{ group.id }}">
-        {{ icon(group.icon) }}
-        <span>{{ group.label }}</span>
+    <section class="nav-section nav-section-{{ group.tone }}{% if group.is_active %} is-current{% endif %}" aria-labelledby="nav-{{ group.id }}">
+      <div class="nav-section-heading">
+        <div class="nav-section-title" id="nav-{{ group.id }}">
+          {{ icon(group.icon) }}
+          <span>{{ group.label }}</span>
+        </div>
+        {% if group.audience %}<span class="nav-audience">{{ group.audience }}</span>{% endif %}
       </div>
+      {% if group.description %}<p class="nav-section-description">{{ group.description }}</p>{% endif %}
       <div class="nav-list">
         {% for item in group.nav_items %}
         <a class="nav-link{% if item.is_active %} is-active{% endif %}" href="{{ item.href }}" {% if item.is_active %}aria-current="page"{% endif %}>

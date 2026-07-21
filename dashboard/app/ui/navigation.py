@@ -19,6 +19,9 @@ class NavGroup:
     label: str
     icon: str
     items: tuple[NavItem, ...]
+    audience: str = ""
+    description: str = ""
+    tone: str = "common"
 
 
 NAV_GROUPS: tuple[NavGroup, ...] = (
@@ -27,36 +30,45 @@ NAV_GROUPS: tuple[NavGroup, ...] = (
         label="홈",
         icon="layout-dashboard",
         items=(
-            NavItem("home.personal", "본인 대시보드", "/", "user", "내 분배금과 마지막 활동"),
-            NavItem("home.alliance", "내 혈맹 대시보드", "/#alliance-dashboard", "users", "혈맹 미정산과 혈비 요약"),
+            NavItem("home.personal", "내 현황", "/", "user", "분배금과 최근 활동"),
+            NavItem("home.payments", "내 분배금", "/#personal-dashboard", "wallet", "수령 및 귀속 내역"),
         ),
+        description="모든 구성원이 확인하는 개인 영역",
     ),
     NavGroup(
-        id="drops",
-        label="드랍 & 분배",
-        icon="package-open",
+        id="alliance-operations",
+        label="연합 운영",
+        icon="network",
         items=(
-            NavItem("drops.personal", "분배금 현황", "#", "wallet", "개인 분배금 조회"),
-            NavItem("drops.register", "드랍 등록", "#", "plus-square", "출석 회차와 아이템 연결"),
-            NavItem("drops.alliance", "연합 분배", "#", "network", "혈맹별 1차 정산"),
-            NavItem("drops.members", "혈맹 분배", "#", "list-check", "인원별 2차 정산"),
-            NavItem("drops.settings", "분배 설정", "#", "sliders", "수수료와 분배 정책"),
+            NavItem("alliance.dashboard", "연합 대시보드", "/#alliance-workspace", "layout-dashboard", "판매대금과 1차 정산"),
+            NavItem("alliance.drops", "드랍 등록", "#", "plus-square", "출석 회차와 아이템 연결"),
+            NavItem("alliance.settlement", "각혈 분배", "#", "network", "혈맹별 1차 정산"),
+            NavItem("alliance.bidding", "아이템 입찰", "#", "gavel", "혈맹별 입찰 상태"),
+            NavItem("alliance.items", "아이템 관리", "#", "tag", "시세와 입찰 아이템"),
+            NavItem("alliance.settings", "연합 분배 설정", "#", "sliders", "경리·연합 수수료"),
         ),
+        audience="연합 경리",
+        description="연합 전체 드랍과 혈맹별 1차 분배",
+        tone="alliance",
     ),
     NavGroup(
-        id="treasury",
-        label="혈비",
+        id="clan-operations",
+        label="내 혈맹 운영",
         icon="landmark",
         items=(
-            NavItem("treasury.summary", "혈비 현황", "#", "receipt", "잔액과 흐름"),
-            NavItem("treasury.entries", "입출금 내역", "#", "rows", "수입/지출 기록"),
-            NavItem("treasury.forfeits", "귀속 내역", "#", "archive", "미수령 귀속 기록"),
-            NavItem("treasury.settings", "혈비 설정", "#", "settings", "카테고리와 공개 기준"),
+            NavItem("clan.dashboard", "혈맹 대시보드", "/#clan-workspace", "layout-dashboard", "내 혈맹 정산 요약"),
+            NavItem("clan.settlement", "혈맹원 분배", "#", "list-check", "인원별 2차 정산"),
+            NavItem("clan.treasury", "혈비 가계부", "#", "receipt", "잔액과 입출금 흐름"),
+            NavItem("clan.forfeits", "귀속 관리", "#", "archive", "미수령 분배금 귀속"),
+            NavItem("clan.settings", "혈맹 분배 설정", "#", "settings", "혈비와 내부 수수료"),
         ),
+        audience="혈맹 경리",
+        description="내 혈맹의 인원별 분배와 혈비",
+        tone="clan",
     ),
     NavGroup(
         id="attendance",
-        label="출석",
+        label="출석 · 통계",
         icon="calendar-check",
         items=(
             NavItem("attendance.status", "출석 현황", "#", "activity", "회차별 출석 조회"),
@@ -64,16 +76,7 @@ NAV_GROUPS: tuple[NavGroup, ...] = (
             NavItem("attendance.alliance", "내 혈맹 통계", "#", "line-chart", "혈맹 내부 흐름"),
             NavItem("attendance.settings", "출석 설정", "#", "timer", "채널과 시간 설정"),
         ),
-    ),
-    NavGroup(
-        id="items",
-        label="아이템 & 입찰",
-        icon="tag",
-        items=(
-            NavItem("items.prices", "아이템 시세", "#", "badge-won", "원화 기준 시세"),
-            NavItem("items.bid", "입찰표", "#", "table", "혈맹별 입찰 상태"),
-            NavItem("items.settings", "입찰 설정", "#", "gavel", "입찰 아이템 관리"),
-        ),
+        description="공통 출석 기록과 분석",
     ),
     NavGroup(
         id="operations",
@@ -84,17 +87,12 @@ NAV_GROUPS: tuple[NavGroup, ...] = (
             NavItem("operations.permissions", "권한 관리", "#", "key-round", "오너/경리/관리자"),
             NavItem("operations.notifications", "알림 관리", "#", "bell", "통계와 정산 알림"),
             NavItem("operations.audit", "작업 로그", "#", "clipboard-list", "관리 작업 이력"),
-        ),
-    ),
-    NavGroup(
-        id="settings",
-        label="설정",
-        icon="settings",
-        items=(
             NavItem("settings.server", "서버 기본 설정", "#", "server", "공통 서버 값"),
             NavItem("settings.bot", "봇 설정", "#", "bot", "패널과 버전"),
             NavItem("settings.system", "시스템 설정", "#", "database", "점검과 개발자 도구"),
         ),
+        audience="오너",
+        description="권한과 서버 공통 설정",
     ),
 )
 
@@ -125,6 +123,9 @@ def get_navigation(active_item_id: str) -> list[dict[str, object]]:
                 "icon": group.icon,
                 "nav_items": items,
                 "is_active": group_is_active,
+                "audience": group.audience,
+                "description": group.description,
+                "tone": group.tone,
             }
         )
     return groups

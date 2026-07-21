@@ -13,71 +13,80 @@
   <span class="page-badge">{{ page_badge }}</span>
 </section>
 
-<section class="dashboard-split">
-  <article class="panel" id="personal-dashboard">
-    <div class="panel-header">
-      <div>
-        <span class="panel-kicker">Personal</span>
-        <h2>본인 대시보드</h2>
-      </div>
-      <button class="icon-button" type="button" aria-label="본인 대시보드 이동">
-        {{ icon("chevron-right") }}
-      </button>
-    </div>
-    <div class="compact-stat-grid">
-      {% for card in personal_cards %}
-      <div class="stat-tile">
-        <span>{{ card.label }}</span>
-        <strong>{{ card.value }}</strong>
-        <small>{{ card.meta }}</small>
-      </div>
-      {% endfor %}
-    </div>
-  </article>
-
-  <article class="panel" id="alliance-dashboard">
-    <div class="panel-header">
-      <div>
-        <span class="panel-kicker">Alliance</span>
-        <h2>내 혈맹 대시보드</h2>
-      </div>
-      <button class="icon-button" type="button" aria-label="내 혈맹 대시보드 이동">
-        {{ icon("chevron-right") }}
-      </button>
-    </div>
-    <div class="compact-stat-grid">
-      {% for card in alliance_cards %}
-      <div class="stat-tile">
-        <span>{{ card.label }}</span>
-        <strong>{{ card.value }}</strong>
-        <small>{{ card.meta }}</small>
-      </div>
-      {% endfor %}
-    </div>
-  </article>
-</section>
-
-<section class="panel">
-  <div class="panel-header">
+<section class="panel" id="personal-dashboard">
+  <div class="panel-header panel-header-inline">
     <div>
-      <span class="panel-kicker">Structure</span>
-      <h2>운영툴 화면 구조</h2>
+      <span class="panel-kicker">Personal overview</span>
+      <h2>내 현황</h2>
     </div>
-    <span class="soft-label">기능 연결 전 UI 베이스</span>
+    <button class="text-button" type="button">
+      내 분배금 보기
+      {{ icon("chevron-right") }}
+    </button>
   </div>
-
-  <div class="module-grid">
-    {% for module in workspace_modules %}
-    <article class="module-card">
-      <h3>{{ module.title }}</h3>
-      <p>{{ module.description }}</p>
-      <div class="module-tags">
-        {% for item in module.links %}
-        <span>{{ item }}</span>
-        {% endfor %}
-      </div>
-    </article>
+  <div class="compact-stat-grid compact-stat-grid-wide">
+    {% for card in personal_cards %}
+    <div class="stat-tile">
+      <span>{{ card.label }}</span>
+      <strong>{{ card.value }}</strong>
+      <small>{{ card.meta }}</small>
+    </div>
     {% endfor %}
   </div>
+</section>
+
+<section class="section-heading">
+  <div>
+    <span class="panel-kicker">Role-based workspaces</span>
+    <h2>담당 업무 선택</h2>
+    <p>연합 전체 정산과 개별 혈맹 정산의 작업 공간을 분리했습니다.</p>
+  </div>
+</section>
+
+<section class="workspace-grid">
+  {% for workspace in workspaces %}
+  <article class="workspace-card workspace-card-{{ workspace.tone }}" id="{{ workspace.id }}">
+    <div class="workspace-card-head">
+      <div class="workspace-icon">
+        {{ icon("network" if workspace.tone == "alliance" else "landmark") }}
+      </div>
+      <span class="workspace-role">{{ workspace.role }}</span>
+    </div>
+    <span class="workspace-eyebrow">{{ workspace.eyebrow }}</span>
+    <h3>{{ workspace.title }}</h3>
+    <p>{{ workspace.description }}</p>
+
+    <div class="workspace-flow" aria-label="{{ workspace.title }} 업무 흐름">
+      {% for step in workspace.flow %}
+      <span>{{ step }}</span>
+      {% if not loop.last %}{{ icon("chevron-right") }}{% endif %}
+      {% endfor %}
+    </div>
+
+    <div class="workspace-links">
+      {% for item in workspace.links %}<span>{{ item }}</span>{% endfor %}
+    </div>
+
+    <button class="workspace-primary" type="button">
+      {{ workspace.primary }}
+      {{ icon("chevron-right") }}
+    </button>
+  </article>
+  {% endfor %}
+</section>
+
+<section class="common-grid">
+  {% for module in common_modules %}
+  <article class="common-card">
+    <span class="common-icon">{{ icon(module.icon) }}</span>
+    <div>
+      <h3>{{ module.title }}</h3>
+      <p>{{ module.description }}</p>
+    </div>
+    <button class="icon-button" type="button" aria-label="{{ module.title }} 이동">
+      {{ icon("chevron-right") }}
+    </button>
+  </article>
+  {% endfor %}
 </section>
 {% endblock %}
