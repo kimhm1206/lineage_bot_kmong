@@ -58,6 +58,11 @@ class SettingsMenuView(discord.ui.View):
                 value="attendance_available_timer",
                 description="음성채널 입장 후 출석 가능해지는 시간을 초 단위로 입력합니다.",
             ),
+            discord.SelectOption(
+                label="혈맹 역할 매핑",
+                value="alliance_role_mapping",
+                description="Discord 역할과 혈맹 이름을 연결합니다.",
+            ),
         ],
     )
     async def settings_select(
@@ -87,6 +92,17 @@ class SettingsMenuView(discord.ui.View):
             )
             return
 
+        if selected == "alliance_role_mapping":
+            mappings = await asyncio.to_thread(
+                database.get_guild_alliance_role_mappings,
+                self.guild_id,
+            )
+            await interaction.response.edit_message(
+                content=_role_mapping_content(self.bot, self.guild_id, mappings),
+                view=RoleMappingSettingView(self.bot, self.guild_id, mappings),
+            )
+            return
+
         if selected == "attendance_available_timer":
             await interaction.response.send_modal(
                 TimerSettingModal(
@@ -107,6 +123,252 @@ class SettingsMenuView(discord.ui.View):
                 title="출석 확인 타이머 설정",
                 success_label="출석 확인 타이머",
             )
+        )
+
+
+class RoleMappingSettingView(discord.ui.View):
+    def __init__(
+        self,
+        bot: discord.Bot,
+        guild_id: int,
+        mappings: list[dict[str, object]],
+    ):
+        super().__init__(timeout=300)
+        self.bot = bot
+        self.guild_id = guild_id
+        self.mappings = mappings
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        return await _settings_interaction_check(self.bot, interaction)
+
+    @discord.ui.button(label="추가/수정", style=discord.ButtonStyle.primary, row=0)
+    async def add_button(
+        self,
+        button: discord.ui.Button,
+        interaction: discord.Interaction,
+    ) -> None:
+        await interaction.response.edit_message(
+            content="매핑할 Discord 역할을 선택해주세요.",
+            view=RoleMappingRoleSelectView(self.bot, self.guild_id),
+        )
+
+    @discord.ui.button(label="삭제", style=discord.ButtonStyle.danger, row=0)
+    async def delete_button(
+        self,
+        button: discord.ui.Button,
+        interaction: discord.Interaction,
+    ) -> None:
+        if not self.mappings:
+            await interaction.response.edit_message(
+                content="삭제할 혈맹 역할 매핑이 없습니다.",
+                view=RoleMappingSettingView(self.bot, self.guild_id, self.mappings),
+            )
+            return
+
+        await interaction.response.edit_message(
+            content="삭제할 혈맹 역할 매핑을 선택해주세요.",
+            view=RoleMappingDeleteView(self.bot, self.guild_id, self.mappings),
+        )
+
+    @discord.ui.button(label="뒤로", style=discord.ButtonStyle.secondary, row=0)
+    async def back_button(
+        self,
+        button: discord.ui.Button,
+        interaction: discord.Interaction,
+    ) -> None:
+        await interaction.response.edit_message(
+            content="변경할 설정 항목을 선택해주세요.",
+            view=SettingsMenuView(self.bot, self.guild_id),
+        )
+
+
+class RoleMappingRoleSelectView(discord.ui.View):
+    def __init__(self, bot: discord.Bot, guild_id: int):
+        super().__init__(timeout=300)
+        self.bot = bot
+        self.guild_id = guild_id
+        self.add_item(RoleMappingRoleSelect(bot, guild_id))
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        return await _settings_interaction_check(self.bot, interaction)
+
+    @discord.ui.button(label="뒤로", style=discord.ButtonStyle.secondary, row=1)
+    async def back_button(
+        self,
+        button: discord.ui.Button,
+        interaction: discord.Interaction,
+    ) -> None:
+        mappings = await asyncio.to_thread(
+            database.get_guild_alliance_role_mappings,
+            self.guild_id,
+        )
+        await interaction.response.edit_message(
+            content=_role_mapping_content(self.bot, self.guild_id, mappings),
+            view=RoleMappingSettingView(self.bot, self.guild_id, mappings),
+        )
+
+
+class RoleMappingRoleSelect(discord.ui.Select):
+    def __init__(self, bot: discord.Bot, guild_id: int):
+        super().__init__(
+            select_type=discord.ComponentType.role_select,
+            placeholder="매핑할 역할을 선택해주세요.",
+            min_values=1,
+            max_values=1,
+            row=0,
+        )
+        self.bot = bot
+        self.guild_id = guild_id
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        role = self.values[0] if self.values else None
+        if not isinstance(role, discord.Role):
+            await _safe_response(interaction, "역할을 찾을 수 없습니다.")
+            return
+
+        await interaction.response.send_modal(
+            RoleMappingAllianceModal(
+                self.bot,
+                self.guild_id,
+                role_id=role.id,
+                role_name=role.name,
+            )
+        )
+
+
+class RoleMappingAllianceModal(discord.ui.Modal):
+    def __init__(
+        self,
+        bot: discord.Bot,
+        guild_id: int,
+        *,
+        role_id: int,
+        role_name: str,
+    ):
+        super().__init__(title=f"혈맹 역할 매핑 · {role_name}")
+        self.bot = bot
+        self.guild_id = guild_id
+        self.role_id = role_id
+        self.role_name = role_name
+        self.alliance_name_input = discord.ui.InputText(
+            label="혈맹 이름",
+            placeholder="예: 보스, 정지, 원피스",
+            required=True,
+            min_length=1,
+            max_length=40,
+        )
+        self.add_item(self.alliance_name_input)
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        if not await _settings_interaction_check(self.bot, interaction):
+            return
+
+        alliance_name = self.alliance_name_input.value.strip()
+        if not alliance_name:
+            await interaction.response.send_message(
+                "혈맹 이름을 입력해주세요.",
+                ephemeral=True,
+            )
+            return
+
+        await asyncio.to_thread(
+            database.upsert_guild_alliance_role_mapping,
+            self.guild_id,
+            self.role_id,
+            self.role_name,
+            alliance_name,
+        )
+        await interaction.response.send_message(
+            f"`{self.role_name}` 역할을 `{alliance_name}` 혈맹으로 매핑했습니다.",
+            ephemeral=True,
+        )
+
+
+class RoleMappingDeleteView(discord.ui.View):
+    def __init__(
+        self,
+        bot: discord.Bot,
+        guild_id: int,
+        mappings: list[dict[str, object]],
+    ):
+        super().__init__(timeout=300)
+        self.bot = bot
+        self.guild_id = guild_id
+        self.mappings = mappings[:25]
+        self.add_item(RoleMappingDeleteSelect(bot, guild_id, self.mappings))
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        return await _settings_interaction_check(self.bot, interaction)
+
+    @discord.ui.button(label="뒤로", style=discord.ButtonStyle.secondary, row=1)
+    async def back_button(
+        self,
+        button: discord.ui.Button,
+        interaction: discord.Interaction,
+    ) -> None:
+        mappings = await asyncio.to_thread(
+            database.get_guild_alliance_role_mappings,
+            self.guild_id,
+        )
+        await interaction.response.edit_message(
+            content=_role_mapping_content(self.bot, self.guild_id, mappings),
+            view=RoleMappingSettingView(self.bot, self.guild_id, mappings),
+        )
+
+
+class RoleMappingDeleteSelect(discord.ui.Select):
+    def __init__(
+        self,
+        bot: discord.Bot,
+        guild_id: int,
+        mappings: list[dict[str, object]],
+    ):
+        self.bot = bot
+        self.guild_id = guild_id
+        self.mapping_map = {
+            str(mapping["mapping_id"]): mapping
+            for mapping in mappings
+        }
+        options = [
+            discord.SelectOption(
+                label=_trim_text(
+                    f"{mapping['role_name']} -> {mapping['alliance_name']}",
+                    100,
+                ),
+                value=str(mapping["mapping_id"]),
+                description=f"역할 ID: {mapping['role_id']}",
+            )
+            for mapping in mappings
+        ]
+        super().__init__(
+            placeholder="삭제할 매핑을 선택해주세요.",
+            min_values=1,
+            max_values=1,
+            options=options,
+            row=0,
+        )
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        mapping = self.mapping_map.get(self.values[0])
+        if mapping is None:
+            await _safe_response(interaction, "선택한 매핑을 찾을 수 없습니다.")
+            return
+
+        await asyncio.to_thread(
+            database.delete_guild_alliance_role_mapping,
+            self.guild_id,
+            int(mapping["mapping_id"]),
+        )
+        mappings = await asyncio.to_thread(
+            database.get_guild_alliance_role_mappings,
+            self.guild_id,
+        )
+        await interaction.response.edit_message(
+            content=(
+                f"`{mapping['role_name']}` 역할 매핑을 삭제했습니다.\n\n"
+                f"{_role_mapping_content(self.bot, self.guild_id, mappings)}"
+            ),
+            view=RoleMappingSettingView(self.bot, self.guild_id, mappings),
         )
 
 
@@ -557,6 +819,32 @@ def _text_channel_prompt(page: int, page_count: int, setting_key: str) -> str:
         f"{label}로 사용할 채팅채널을 선택해주세요. "
         f"({page + 1}/{page_count}페이지)"
     )
+
+
+def _role_mapping_content(
+    bot: discord.Bot,
+    guild_id: int,
+    mappings: list[dict[str, object]],
+) -> str:
+    lines = [
+        "혈맹 역할 매핑을 관리합니다.",
+        "출석 저장 시 역할 매핑이 닉네임 파싱보다 먼저 적용됩니다.",
+        "",
+        "**현재 매핑**",
+    ]
+    if not mappings:
+        lines.append("등록된 매핑이 없습니다.")
+        return "\n".join(lines)
+
+    guild = bot.get_guild(guild_id)
+    for mapping in mappings[:20]:
+        role_id = int(mapping["role_id"])
+        role = guild.get_role(role_id) if guild is not None else None
+        role_label = role.mention if role is not None else str(mapping["role_name"])
+        lines.append(f"- {role_label} -> {mapping['alliance_name']}")
+    if len(mappings) > 20:
+        lines.append(f"- 외 {len(mappings) - 20}개")
+    return "\n".join(lines)
 
 
 def _channel_description(channel: discord.VoiceChannel) -> str:
