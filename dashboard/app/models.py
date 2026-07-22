@@ -104,6 +104,39 @@ class SettlementDropExcludedAlliance(Base):
     alliance_id: Mapped[int] = mapped_column(ForeignKey("alliances.alliance_id", ondelete="RESTRICT"), primary_key=True)
 
 
+class SettlementDropSale(Base):
+    __tablename__ = "settlement_drop_sales"
+    __table_args__ = (
+        CheckConstraint("status_code IN (0, 1)", name="chk_drop_sale_status"),
+        CheckConstraint(
+            "(status_code = 0 AND buyer_alliance_id IS NULL "
+            "AND buyer_user_id IS NULL AND completed_at IS NULL "
+            "AND completed_by_user_id IS NULL) OR "
+            "(status_code = 1 AND buyer_alliance_id IS NOT NULL "
+            "AND completed_at IS NOT NULL)",
+            name="chk_drop_sale_completion",
+        ),
+    )
+
+    drop_id: Mapped[int] = mapped_column(
+        ForeignKey("settlement_drops.drop_id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    status_code: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=0)
+    buyer_alliance_id: Mapped[int | None] = mapped_column(
+        ForeignKey("alliances.alliance_id", ondelete="RESTRICT")
+    )
+    buyer_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.user_id", ondelete="SET NULL")
+    )
+    completed_at: Mapped[int | None] = mapped_column(BigInteger)
+    completed_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.user_id", ondelete="SET NULL")
+    )
+    created_at: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    updated_at: Mapped[int] = mapped_column(BigInteger, nullable=False)
+
+
 class SettlementFeeRule(Base):
     __tablename__ = "settlement_fee_rules"
 

@@ -61,6 +61,8 @@ DISCORD_BOT_TOKEN=실제_봇_토큰
 
 가계부는 `treasury_accounts.account_scope_code`로 범위를 구분합니다. `1`은 서버별 연합 전체 계정이며 `alliance_id`가 비어 있고, `2`는 기존 혈맹 계정이며 `alliance_id`를 가집니다. 입출금 분류도 `treasury_categories.account_scope_code`로 분리해 연합과 혈맹 선택지가 섞이지 않습니다. 두 계정은 `treasury_entries` 원장을 함께 사용하므로 입금·출금·거래 후 잔액·발생 시각·작성자·취소 연결을 같은 방식으로 기록합니다.
 
+드랍 등록과 각혈 분배 사이의 판매 단계는 `settlement_drop_sales`가 담당합니다. 드랍과 `drop_id`로 1:1 연결되며 `status_code=0`은 판매 대기, `status_code=1`은 판매 완료입니다. 판매 완료 상태에는 구매 혈맹과 완료 시각이 필수이고 구매 유저는 선택값입니다. 각혈 분배 화면은 이후 이 테이블의 판매 완료 행만 조회하도록 연결합니다.
+
 ## 화면 구조
 
 새 화면은 기능별 파일이 섞이지 않도록 아래처럼 나눕니다.

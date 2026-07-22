@@ -34,6 +34,7 @@ EXPECTED_TABLES = frozenset(
         "schema_migrations",
         "settlement_drop_excluded_alliances",
         "settlement_drop_participants",
+        "settlement_drop_sales",
         "settlement_drops",
         "settlement_fee_rule_versions",
         "settlement_fee_rules",
@@ -413,6 +414,97 @@ async def apply_local_schema_cleanup() -> bool:
                 DO NOTHING
             """)
         )
+
+        drop_sales_applied = await connection.scalar(
+            text("SELECT 1 FROM schema_migrations WHERE version = 8")
+        )
+        if not drop_sales_applied:
+            await connection.execute(
+                text("""
+                    CREATE TABLE settlement_drop_sales (
+                        drop_id BIGINT PRIMARY KEY
+                            REFERENCES settlement_drops(drop_id) ON DELETE CASCADE,
+                        status_code SMALLINT NOT NULL DEFAULT 0,
+                        buyer_alliance_id BIGINT
+                            REFERENCES alliances(alliance_id) ON DELETE RESTRICT,
+                        buyer_user_id BIGINT
+                            REFERENCES users(user_id) ON DELETE SET NULL,
+                        completed_at BIGINT,
+                        completed_by_user_id BIGINT
+                            REFERENCES users(user_id) ON DELETE SET NULL,
+                        created_at BIGINT NOT NULL,
+                        updated_at BIGINT NOT NULL,
+                        CONSTRAINT chk_drop_sale_status
+                            CHECK (status_code IN (0, 1)),
+                        CONSTRAINT chk_drop_sale_completion
+                            CHECK (
+                                (
+                                    status_code = 0
+                                    AND buyer_alliance_id IS NULL
+                                    AND buyer_user_id IS NULL
+                                    AND completed_at IS NULL
+                                    AND completed_by_user_id IS NULL
+                                )
+                                OR (
+                                    status_code = 1
+                                    AND buyer_alliance_id IS NOT NULL
+                                    AND completed_at IS NOT NULL
+                                )
+                            )
+                    )
+                """)
+            )
+            await connection.execute(
+                text("""
+                    CREATE INDEX idx_drop_sales_status_time
+                    ON settlement_drop_sales (status_code, updated_at DESC, drop_id DESC)
+                """)
+            )
+            await connection.execute(
+                text("""
+                    CREATE INDEX idx_drop_sales_buyer_alliance_time
+                    ON settlement_drop_sales (
+                        buyer_alliance_id, completed_at DESC, drop_id DESC
+                    )
+                    WHERE status_code = 1
+                """)
+            )
+            await connection.execute(
+                text("""
+                    INSERT INTO settlement_drop_sales (
+                        drop_id, status_code, buyer_alliance_id, buyer_user_id,
+                        completed_at, completed_by_user_id, created_at, updated_at
+                    )
+                    SELECT drop_id, 0, NULL, NULL, NULL, NULL,
+                           occurred_at, occurred_at
+                    FROM settlement_drops
+                """)
+            )
+            await connection.execute(
+                text("""
+                    INSERT INTO audit_entity_types(entity_type_id, entity_code)
+                    VALUES (7, 'sale')
+                    ON CONFLICT (entity_code) DO NOTHING
+                """)
+            )
+            await connection.execute(
+                text("""
+                    INSERT INTO audit_action_types(
+                        action_type_id, action_code, entity_type_id
+                    ) VALUES
+                        (16, 'sale_complete', 7),
+                        (17, 'sale_update', 7),
+                        (18, 'sale_reopen', 7)
+                    ON CONFLICT (action_code) DO NOTHING
+                """)
+            )
+            await connection.execute(
+                text("""
+                    INSERT INTO schema_migrations(version, applied_at)
+                    VALUES (8, EXTRACT(EPOCH FROM NOW())::BIGINT)
+                """)
+            )
+            changed = True
     return changed
 
 
