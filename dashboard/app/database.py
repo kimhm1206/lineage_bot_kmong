@@ -505,6 +505,21 @@ async def apply_local_schema_cleanup() -> bool:
                 """)
             )
             changed = True
+
+        attendance_end_time_cleanup_applied = await connection.scalar(
+            text("SELECT 1 FROM schema_migrations WHERE version = 9")
+        )
+        if not attendance_end_time_cleanup_applied:
+            await connection.execute(
+                text("ALTER TABLE attendance_sessions DROP COLUMN IF EXISTS ended_at")
+            )
+            await connection.execute(
+                text("""
+                    INSERT INTO schema_migrations(version, applied_at)
+                    VALUES (9, EXTRACT(EPOCH FROM NOW())::BIGINT)
+                """)
+            )
+            changed = True
     return changed
 
 

@@ -191,7 +191,6 @@ async def attendance_sessions_page(
         rows_sql=f"""
             SELECT s.attendance_id,
                    TO_CHAR(s.started_at::timestamp, 'YYYY-MM-DD HH24:MI') AS started_at_label,
-                   TO_CHAR(s.ended_at::timestamp, 'HH24:MI') AS ended_at_label,
                    COALESCE(starter.discord_nickname, CAST(s.started_by_discord_id AS TEXT), '-') AS started_by,
                    COUNT(e.user_id) AS participant_count,
                    COUNT(DISTINCT au.alliance_id) FILTER (WHERE au.alliance_id IS NOT NULL) AS alliance_count
@@ -200,7 +199,7 @@ async def attendance_sessions_page(
             LEFT JOIN attendance_entries e ON e.attendance_id = s.attendance_id
             LEFT JOIN users au ON au.user_id = e.user_id
             WHERE s.guild_id = :guild_id {period} {search}
-            GROUP BY s.attendance_id, s.started_at, s.ended_at, starter.discord_nickname, s.started_by_discord_id
+            GROUP BY s.attendance_id, s.started_at, starter.discord_nickname, s.started_by_discord_id
             ORDER BY s.started_at::timestamp DESC
             LIMIT :limit OFFSET :offset
         """,

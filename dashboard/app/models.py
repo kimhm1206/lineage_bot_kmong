@@ -60,7 +60,6 @@ class AttendanceSession(Base):
     attendance_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     guild_id: Mapped[int] = mapped_column(ForeignKey("guilds.guild_id", ondelete="CASCADE"), nullable=False)
     started_at: Mapped[str] = mapped_column(Text, nullable=False)
-    ended_at: Mapped[str] = mapped_column(Text, nullable=False)
     started_by_discord_id: Mapped[int | None] = mapped_column(BigInteger)
 
 
