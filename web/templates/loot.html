@@ -78,7 +78,9 @@
 
   <nav class="loot-tabs" aria-label="드랍&분배 탭">
     <a class="loot-tab-button {% if active_loot_tab == 'distribution' %}is-active{% endif %}" href="{{ loot_tab_hrefs['distribution'] }}" data-loot-tab="distribution" data-required-role="user">분배금 현황</a>
-    <a class="loot-tab-button {% if active_loot_tab == 'item-bids' %}is-active{% endif %}" href="{{ loot_tab_hrefs['item-bids'] }}" data-loot-tab="item-bids" data-required-role="user">아이템 입찰</a>
+    {% if auth.selected_server.can_manage %}
+      <a class="loot-tab-button {% if active_loot_tab == 'item-bids' %}is-active{% endif %}" href="{{ loot_tab_hrefs['item-bids'] }}" data-loot-tab="item-bids" data-required-role="admin">아이템 입찰</a>
+    {% endif %}
     {% if auth.selected_server.can_bookkeep %}
       <a class="loot-tab-button {% if active_loot_tab == 'create' %}is-active{% endif %}" href="{{ loot_tab_hrefs['create'] }}" data-loot-tab="create" data-required-role="owner">드랍 등록</a>
     {% endif %}

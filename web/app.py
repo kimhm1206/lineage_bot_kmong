@@ -5250,6 +5250,8 @@ def _normalize_loot_tab(tab: str | None, auth: dict[str, Any]) -> str:
         return "distribution"
 
     selected_server = auth.get("selected_server") or {}
+    if normalized == "item-bids" and not selected_server.get("can_manage"):
+        return "distribution"
     if normalized in {"create", "item-settings"} and not selected_server.get(
         "can_bookkeep"
     ):
