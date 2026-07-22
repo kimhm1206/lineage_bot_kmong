@@ -2,63 +2,44 @@
 {% from "components/icons.html" import icon %}
 
 {% block title %}{{ page_title }} · {{ app_name }}{% endblock %}
-
 {% block content %}
 <section class="page-heading">
-  <div>
-    <p class="page-kicker">{{ page_kicker }}</p>
-    <h1>{{ page_title }}</h1>
-    <p>{{ page_description }}</p>
-  </div>
+  <div><p class="page-kicker">{{ page_kicker }}</p><h1>{{ page_title }}</h1><p>{{ page_description }}</p></div>
   <span class="page-badge">{{ page_badge }}</span>
 </section>
+{% include "partials/settings_toolbar.html" %}
 
-<section class="settings-section" id="manager-assignments">
-  <div class="section-heading">
-    <div>
-      <span class="panel-kicker">Direct user access</span>
-      <h2>관리자 유저 지정</h2>
-      <p>Discord 역할을 만들지 않고 서버 유저를 직접 선택해 권한을 부여합니다.</p>
+<div class="settings-grid settings-grid-sidebar">
+  <section class="panel settings-form-panel">
+    <div class="panel-header"><div><span class="panel-kicker">Assigned users</span><h2>현재 운영 담당자</h2></div><span class="soft-label">{{ assignments|length }}명</span></div>
+    <div class="assignment-list">
+      {% for assignment in assignments %}
+      <article class="assignment-row">
+        <span class="user-avatar">{{ assignment.display_name[:1] }}</span>
+        <div><strong>{{ assignment.display_name }}</strong><small>{{ assignment.discord_user_id }}</small></div>
+        <span class="scope-chip scope-{{ assignment.scope_code }}">{{ assignment.scope_label }}</span>
+        <span class="assignment-alliance">{{ assignment.alliance_name or "연합 전체" }}</span>
+        <form method="post" action="/settings/assignments/{{ assignment.assignment_id }}/delete">
+          <input type="hidden" name="guild_id" value="{{ guild_id }}"><input type="hidden" name="return_path" value="/settings/managers">
+          <button class="danger-icon-button" type="submit" title="지정 해제">{{ icon("trash") }}</button>
+        </form>
+      </article>
+      {% else %}<div class="empty-state">지정된 운영 담당자가 없습니다.</div>{% endfor %}
     </div>
-  </div>
+  </section>
 
-  <div class="owner-strip">
-    <span class="owner-icon">{{ icon("shield") }}</span>
-    <div>
-      <strong>서버 오너</strong>
-      <span>연합 관리자 유저와 각혈 관리자 유저를 각각 지정</span>
-    </div>
-    <span class="owner-label">OWNER</span>
-  </div>
-
-  <div class="authority-branch-label"><span>독립 사용자 권한</span></div>
-
-  <div class="authority-grid">
-    {% for manager in manager_groups %}
-    <article class="authority-card authority-card-{{ manager.tone }}">
-      <div class="authority-card-header">
-        <span class="authority-icon">{{ icon(manager.icon) }}</span>
-        <span class="independent-label">유저 직접 지정</span>
-      </div>
-      <h3>{{ manager.title }}</h3>
-      <p>{{ manager.description }}</p>
-      <div class="authority-scope">
-        {% for item in manager.scope %}<span>{{ item }}</span>{% endfor %}
-      </div>
-      <button class="authority-action" type="button">
-        {{ manager.action }}
-        {{ icon("chevron-right") }}
-      </button>
-    </article>
-    {% endfor %}
-  </div>
-
-  <div class="mapping-note">
-    <span class="mapping-note-icon">{{ icon("users-round") }}</span>
-    <div>
-      <strong>Discord 역할은 혈맹 구분에만 사용</strong>
-      <span>역할 매핑은 유저의 소속 혈맹 판별에만 사용하며 웹 권한에는 영향을 주지 않습니다.</span>
-    </div>
-  </div>
-</section>
+  <aside class="panel settings-side-panel">
+    <div class="panel-header"><div><span class="panel-kicker">Assign user</span><h2>담당자 지정</h2></div></div>
+    <form class="settings-form" method="post" action="/settings/managers" data-manager-form>
+      <input type="hidden" name="guild_id" value="{{ guild_id or '' }}">
+      <label class="form-field"><span>서버 유저</span><select name="discord_user_id" required><option value="">유저 선택</option>{% for member in members %}<option value="{{ member.discord_id }}">{{ member.display_name }}{% if member.username %} · {{ member.username }}{% endif %}</option>{% endfor %}</select></label>
+      <label class="form-field"><span>담당 권한</span><select name="scope_code" data-scope-select required><option value="1">연합 관리자</option><option value="2">각혈 관리자</option></select></label>
+      <label class="form-field is-hidden" data-alliance-field><span>담당 혈맹</span><select name="alliance_id"><option value="">혈맹 선택</option>{% for alliance in alliances %}<option value="{{ alliance.alliance_id }}">{{ alliance.alliance_name }}</option>{% endfor %}</select></label>
+      <button class="primary-button" type="submit" {% if not guild_id or not members %}disabled{% endif %}>{{ icon("plus-square") }} 담당자 지정</button>
+    </form>
+    <p class="form-help">연합 관리자와 각혈 관리자는 상하 관계가 아닌 서로 다른 업무 권한입니다.</p>
+  </aside>
+</div>
 {% endblock %}
+
+{% block scripts %}<script src="{{ url_for('static', path='/js/settings.js') }}" defer></script>{% endblock %}

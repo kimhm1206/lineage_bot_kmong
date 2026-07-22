@@ -17,6 +17,9 @@ class Settings(BaseSettings):
         default="postgresql+asyncpg://postgres:testest@127.0.0.1:5432/testdb",
     )
     db_echo: bool = False
+    discord_bot_token: str = ""
+    discord_api_base: str = "https://discord.com/api/v10"
+    discord_cache_ttl_seconds: int = 60
 
     model_config = SettingsConfigDict(
         env_file=BASE_DIR / ".env",
@@ -28,4 +31,3 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
-

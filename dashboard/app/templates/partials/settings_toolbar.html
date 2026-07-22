@@ -1,0 +1,23 @@
+{% from "components/icons.html" import icon %}
+
+<div class="settings-toolbar">
+  <form class="guild-switcher" method="get" action="{{ request.url.path }}">
+    <label for="settings-guild">Discord 서버</label>
+    <select id="settings-guild" name="guild_id" onchange="this.form.submit()" {% if not guilds %}disabled{% endif %}>
+      {% if not guilds %}<option>등록된 서버 없음</option>{% endif %}
+      {% for guild in guilds %}
+      <option value="{{ guild.guild_id }}" {% if guild.guild_id == guild_id %}selected{% endif %}>{{ guild.name }}</option>
+      {% endfor %}
+    </select>
+  </form>
+  {% if guild_id %}
+  <a class="icon-text-button" href="{{ request.url.path }}?guild_id={{ guild_id }}&refresh=true" title="Discord 정보 새로고침">
+    {{ icon("refresh") }}
+    API 새로고침
+  </a>
+  {% endif %}
+</div>
+
+{% if notice %}<div class="notice-banner notice-success">{{ icon("check") }}<span>{{ notice }}</span></div>{% endif %}
+{% if error %}<div class="notice-banner notice-error">{{ icon("alert") }}<span>{{ error }}</span></div>{% endif %}
+{% if discord_error %}<div class="notice-banner notice-info">{{ icon("info") }}<span>{{ discord_error }}</span></div>{% endif %}

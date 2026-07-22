@@ -1,0 +1,40 @@
+{% extends "layouts/app_shell.html" %}
+{% from "components/icons.html" import icon %}
+
+{% block title %}{{ page_title }} · {{ app_name }}{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div><p class="page-kicker">{{ page_kicker }}</p><h1>{{ page_title }}</h1><p>{{ page_description }}</p></div>
+  <span class="page-badge">{{ page_badge }}</span>
+</section>
+{% include "partials/settings_toolbar.html" %}
+
+<form class="panel settings-form-panel" method="post" action="/settings/attendance">
+  <input type="hidden" name="guild_id" value="{{ guild_id or '' }}">
+  <div class="panel-header panel-header-inline">
+    <div><span class="panel-kicker">Channels & timer</span><h2>출석 채널과 시간</h2></div>
+    <button class="primary-button" type="submit" {% if not guild_id %}disabled{% endif %}>{{ icon("check") }} 설정 저장</button>
+  </div>
+  <div class="form-section">
+    <div class="form-section-heading"><span class="form-step">01</span><div><strong>Discord 채널</strong><small>음성 채널은 한 곳만 선택합니다.</small></div></div>
+    <div class="form-grid form-grid-three">
+      <label class="form-field"><span>출석 패널 채널</span>
+        <select name="admin_channel_id"><option value="">선택 안 함</option>{% for channel in text_channels %}<option value="{{ channel.id }}" {% if settings_values.admin_channel_id|string == channel.id|string %}selected{% endif %}># {{ channel.name }}</option>{% endfor %}</select>
+      </label>
+      <label class="form-field"><span>출석 음성 채널</span>
+        <select name="voice_channel_id"><option value="">선택 안 함</option>{% for channel in voice_channels %}<option value="{{ channel.id }}" {% if settings_values.attendance_voice_channel_id|string == channel.id|string %}selected{% endif %}>{{ channel.name }}</option>{% endfor %}</select>
+      </label>
+      <label class="form-field"><span>로그 채널</span>
+        <select name="log_channel_id"><option value="">선택 안 함</option>{% for channel in text_channels %}<option value="{{ channel.id }}" {% if settings_values.log_channel_id|string == channel.id|string %}selected{% endif %}># {{ channel.name }}</option>{% endfor %}</select>
+      </label>
+    </div>
+  </div>
+  <div class="form-section">
+    <div class="form-section-heading"><span class="form-step">02</span><div><strong>출석 시간</strong><small>1초부터 24시간까지 설정할 수 있습니다.</small></div></div>
+    <div class="form-grid form-grid-two">
+      <label class="form-field"><span>출석 진행 시간 (초)</span><input type="number" name="timer" min="1" max="86400" value="{{ settings_values.timer or 240 }}" required></label>
+      <label class="form-field"><span>음성 채널 체류 시간 (초)</span><input type="number" name="attendance_available_timer" min="1" max="86400" value="{{ settings_values.attendance_available_timer or 60 }}" required></label>
+    </div>
+  </div>
+</form>
+{% endblock %}

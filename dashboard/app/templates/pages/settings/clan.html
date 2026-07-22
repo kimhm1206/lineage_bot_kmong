@@ -2,78 +2,52 @@
 {% from "components/icons.html" import icon %}
 
 {% block title %}{{ page_title }} · {{ app_name }}{% endblock %}
-
 {% block content %}
 <section class="page-heading">
-  <div>
-    <p class="page-kicker">{{ page_kicker }}</p>
-    <h1>{{ page_title }}</h1>
-    <p>{{ page_description }}</p>
-  </div>
+  <div><p class="page-kicker">{{ page_kicker }}</p><h1>{{ page_title }}</h1><p>{{ page_description }}</p></div>
   <span class="page-badge">{{ page_badge }}</span>
 </section>
+{% include "partials/settings_toolbar.html" %}
 
-<section class="panel policy-panel" id="staff">
-  <div class="panel-header panel-header-inline">
-    <div>
-      <span class="panel-kicker">Clan accountants</span>
-      <h2>혈맹 경리 관리</h2>
+<form class="clan-context-bar" method="get" action="/settings/clan">
+  <input type="hidden" name="guild_id" value="{{ guild_id or '' }}">
+  <label for="clan-alliance">관리 혈맹</label>
+  <select id="clan-alliance" name="alliance_id" onchange="this.form.submit()"><option value="">혈맹 선택</option>{% for alliance in alliances %}<option value="{{ alliance.alliance_id }}" {% if alliance.alliance_id == alliance_id %}selected{% endif %}>{{ alliance.alliance_name }}</option>{% endfor %}</select>
+</form>
+
+<div class="settings-grid settings-grid-even">
+  <section class="panel settings-form-panel" id="staff">
+    <div class="panel-header"><div><span class="panel-kicker">Clan accountants</span><h2>혈맹 경리</h2></div><span class="soft-label">{{ accountants|length }}명</span></div>
+    <div class="assignment-list compact-assignment-list">
+      {% for accountant in accountants %}
+      <article class="assignment-row"><span class="user-avatar">{{ accountant.display_name[:1] }}</span><div><strong>{{ accountant.display_name }}</strong><small>{{ accountant.discord_user_id }}</small></div><span class="scope-chip scope-3">혈맹 경리</span>
+        <form method="post" action="/settings/assignments/{{ accountant.assignment_id }}/delete"><input type="hidden" name="guild_id" value="{{ guild_id }}"><input type="hidden" name="alliance_id" value="{{ alliance_id }}"><input type="hidden" name="return_path" value="/settings/clan"><button class="danger-icon-button" type="submit" title="지정 해제">{{ icon("trash") }}</button></form>
+      </article>
+      {% else %}<div class="empty-state">지정된 혈맹 경리가 없습니다.</div>{% endfor %}
     </div>
-    <button class="text-button" type="button">
-      {{ icon("plus-square") }}
-      경리 추가
-    </button>
-  </div>
+    <form class="inline-assign-form" method="post" action="/settings/clan/accountants">
+      <input type="hidden" name="guild_id" value="{{ guild_id or '' }}"><input type="hidden" name="alliance_id" value="{{ alliance_id or '' }}">
+      <label class="form-field"><span>경리 추가</span><select name="discord_user_id" required><option value="">서버 유저 선택</option>{% for member in members %}<option value="{{ member.discord_id }}">{{ member.display_name }}</option>{% endfor %}</select></label>
+      <button class="primary-button" type="submit" {% if not alliance_id or not members %}disabled{% endif %}>{{ icon("plus-square") }} 추가</button>
+    </form>
+  </section>
 
-  <div class="policy-table-wrap">
-    <table class="policy-table">
-      <thead>
-        <tr>
-          <th>경리</th>
-          <th>담당 범위</th>
-          <th>상태</th>
-          <th><span class="sr-only">관리</span></th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for accountant in accountants %}
-        <tr>
-          <td><strong>{{ accountant.name }}</strong></td>
-          <td>{{ accountant.scope }}</td>
-          <td><span class="policy-value">{{ accountant.status }}</span></td>
-          <td><button class="table-action" type="button">관리</button></td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</section>
-
-<section class="panel policy-panel" id="visibility">
-  <div class="panel-header panel-header-inline">
-    <div>
-      <span class="panel-kicker">Visibility & access</span>
-      <h2>정보 공개와 일반 유저 권한</h2>
-    </div>
-    <span class="soft-label">내 혈맹에만 적용</span>
-  </div>
-
-  <div class="policy-list">
-    {% for policy in clan_policies %}
-    <div class="policy-row" id="{{ policy.id }}">
-      <div class="policy-copy">
-        <strong>{{ policy.title }}</strong>
-        <span>{{ policy.description }}</span>
-      </div>
-      <div class="segmented-control" aria-label="{{ policy.title }}">
-        {% for option in policy.options %}
-        <button class="segment{% if option == policy.value %} is-selected{% endif %}" type="button" aria-pressed="{{ 'true' if option == policy.value else 'false' }}">
-          {{ option }}
-        </button>
+  <section class="panel settings-form-panel" id="visibility">
+    <form method="post" action="/settings/clan/policy">
+      <input type="hidden" name="guild_id" value="{{ guild_id or '' }}"><input type="hidden" name="alliance_id" value="{{ alliance_id or '' }}">
+      <div class="panel-header panel-header-inline"><div><span class="panel-kicker">Visibility & access</span><h2>정보 공개 정책</h2></div><button class="primary-button" type="submit" {% if not alliance_id %}disabled{% endif %}>{{ icon("check") }} 저장</button></div>
+      <div class="policy-form-list">
+        {% for field_name, title, description in [
+          ('distribution_visibility_code', '분배 정보 공개', '분배금과 정산 상태를 확인할 수 있는 범위'),
+          ('treasury_visibility_code', '혈비 가계부 공개', '혈비 잔액과 입출금 내역의 공개 범위'),
+          ('user_access_code', '일반 유저 권한', '일반 유저에게 허용할 기본 조회 수준')
+        ] %}
+        <fieldset class="policy-fieldset"><legend><strong>{{ title }}</strong><span>{{ description }}</span></legend><div class="segmented-control">
+          {% for code, label in policy_labels[field_name].items() %}<label class="segment-radio"><input type="radio" name="{{ field_name }}" value="{{ code }}" {% if policy[field_name] == code %}checked{% endif %}><span>{{ label }}</span></label>{% endfor %}
+        </div></fieldset>
         {% endfor %}
       </div>
-    </div>
-    {% endfor %}
-  </div>
-</section>
+    </form>
+  </section>
+</div>
 {% endblock %}

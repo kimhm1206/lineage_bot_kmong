@@ -6,13 +6,14 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from dashboard.app.config import BASE_DIR, get_settings
-from dashboard.app.database import close_database, ping_database
+from dashboard.app.database import close_database, ensure_settings_schema, ping_database
 from dashboard.app.routes import health, home, settings as settings_routes
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await ping_database()
+    await ensure_settings_schema()
     yield
     await close_database()
 

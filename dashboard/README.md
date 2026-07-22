@@ -19,6 +19,22 @@ postgresql+asyncpg://postgres:testest@127.0.0.1:5432/testdb
 
 필요하면 `dashboard/.env`를 만들어 `dashboard/.env.example` 값을 덮어쓰면 됩니다.
 
+Discord 채널·역할·서버 유저 목록은 봇을 별도로 실행하지 않고 REST API로만 조회합니다. 실제 봇 토큰은 Git에 포함되는 `.env.example`에 넣지 말고, Git에서 제외되는 `dashboard/.env`에만 설정합니다.
+
+```text
+DISCORD_BOT_TOKEN=실제_봇_토큰
+```
+
+설정 페이지는 다음 경로에서 확인합니다.
+
+```text
+/settings/server       서버 등록과 사용 여부
+/settings/attendance   출석 채널과 진행 시간
+/settings/alliances    혈맹과 Discord 역할 매핑
+/settings/managers     연합/각혈 관리자 유저 지정
+/settings/clan         혈맹 경리와 공개 정책
+```
+
 ## 화면 구조
 
 새 화면은 기능별 파일이 섞이지 않도록 아래처럼 나눕니다.

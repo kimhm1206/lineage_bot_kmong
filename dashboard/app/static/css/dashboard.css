@@ -410,7 +410,8 @@ a {
 }
 
 .content-shell {
-  width: min(1540px, calc(100vw - var(--sidebar-width) - 56px));
+  width: calc(100% - 56px);
+  max-width: 1540px;
   margin: 0 auto;
   padding: 30px 0 48px;
 }
@@ -1184,6 +1185,448 @@ a {
   border: 0;
 }
 
+/* Settings workspace */
+.settings-toolbar,
+.clan-context-bar {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 24px 0 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+
+.guild-switcher,
+.clan-context-bar {
+  min-width: 0;
+}
+
+.guild-switcher label,
+.clan-context-bar label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.guild-switcher select,
+.clan-context-bar select,
+.form-field input,
+.form-field select {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--text-strong);
+  padding: 0 12px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.guild-switcher select {
+  min-width: min(420px, 48vw);
+}
+
+.clan-context-bar {
+  justify-content: flex-start;
+}
+
+.clan-context-bar select {
+  min-width: min(360px, 48vw);
+}
+
+.icon-text-button,
+.primary-button,
+.danger-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 40px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--text-strong);
+  cursor: pointer;
+  padding: 0 13px;
+  text-decoration: none;
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.icon-text-button .icon,
+.primary-button .icon,
+.danger-icon-button .icon {
+  width: 16px;
+  height: 16px;
+}
+
+.primary-button {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #07141b;
+}
+
+.primary-button:disabled,
+.icon-text-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.danger-icon-button {
+  width: 38px;
+  padding: 0;
+  border-color: color-mix(in srgb, #dc5b5b 35%, var(--line));
+  color: #dc5b5b;
+}
+
+.notice-banner {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 10px 0;
+  padding: 11px 14px;
+  border: 1px solid var(--line);
+  border-left-width: 3px;
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--muted-strong);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.notice-banner .icon {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 auto;
+}
+
+.notice-success { border-left-color: #27a879; }
+.notice-error { border-left-color: #dc5b5b; }
+.notice-info { border-left-color: var(--accent); }
+
+.settings-grid {
+  display: grid;
+  gap: 18px;
+  margin-top: 18px;
+  align-items: start;
+}
+
+.settings-grid-sidebar {
+  grid-template-columns: minmax(0, 1.55fr) minmax(300px, 0.7fr);
+}
+
+.settings-grid-even {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.settings-form-panel,
+.settings-side-panel {
+  overflow: hidden;
+}
+
+.settings-form,
+.inline-assign-form {
+  display: grid;
+  gap: 14px;
+  padding: 18px 20px 20px;
+}
+
+.form-field {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+.form-field > span {
+  color: var(--text-strong);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.form-field input::placeholder {
+  color: var(--muted);
+}
+
+.form-field input:focus,
+.form-field select:focus,
+.guild-switcher select:focus,
+.clan-context-bar select:focus {
+  outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  outline-offset: 1px;
+  border-color: var(--accent);
+}
+
+.form-help {
+  margin: 0;
+  padding: 0 20px 20px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 750;
+  line-height: 1.6;
+}
+
+.form-section {
+  padding: 22px;
+  border-top: 1px solid var(--line);
+}
+
+.form-section-heading {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  margin-bottom: 18px;
+}
+
+.form-section-heading strong,
+.form-section-heading small {
+  display: block;
+}
+
+.form-section-heading strong {
+  color: var(--text-strong);
+  font-size: 14px;
+}
+
+.form-section-heading small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.form-step {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  color: var(--accent-strong);
+  font-size: 11px;
+  font-weight: 950;
+}
+
+.form-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.form-grid-two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.form-grid-three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+.server-list,
+.mapping-list,
+.assignment-list {
+  display: grid;
+}
+
+.server-row,
+.mapping-row,
+.assignment-row {
+  display: grid;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px 18px;
+  border-top: 1px solid var(--line);
+}
+
+.server-row {
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+}
+
+.server-state {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.server-row.is-enabled .server-state {
+  background: #27a879;
+  box-shadow: 0 0 0 4px color-mix(in srgb, #27a879 15%, transparent);
+}
+
+.server-row strong,
+.server-row small,
+.assignment-row strong,
+.assignment-row small {
+  display: block;
+}
+
+.server-row strong,
+.assignment-row strong,
+.mapping-row strong {
+  color: var(--text-strong);
+  font-size: 13px;
+}
+
+.server-row small,
+.assignment-row small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.connection-label,
+.soft-label,
+.scope-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--panel-subtle);
+  color: var(--muted-strong);
+  font-size: 10px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.mapping-row {
+  grid-template-columns: minmax(130px, 0.8fr) auto minmax(120px, 1fr) auto;
+}
+
+.mapping-role {
+  overflow: hidden;
+  color: var(--accent-strong);
+  font-size: 12px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mapping-arrow {
+  color: var(--muted);
+}
+
+.mapping-arrow .icon {
+  width: 15px;
+  height: 15px;
+}
+
+.assignment-row {
+  grid-template-columns: auto minmax(150px, 1fr) auto minmax(100px, 0.7fr) auto;
+}
+
+.user-avatar {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  background: var(--panel-subtle);
+  color: var(--text-strong);
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.scope-1 { color: var(--alliance); border-color: color-mix(in srgb, var(--alliance) 35%, var(--line)); }
+.scope-2, .scope-3 { color: var(--clan); border-color: color-mix(in srgb, var(--clan) 35%, var(--line)); }
+
+.assignment-alliance {
+  overflow: hidden;
+  color: var(--muted-strong);
+  font-size: 12px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compact-assignment-list .assignment-row {
+  grid-template-columns: auto minmax(120px, 1fr) auto auto;
+}
+
+.inline-assign-form {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  border-top: 1px solid var(--line);
+}
+
+.policy-form-list {
+  display: grid;
+}
+
+.policy-fieldset {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 18px 20px;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+
+.policy-fieldset legend {
+  width: 100%;
+  padding: 0;
+}
+
+.policy-fieldset legend strong,
+.policy-fieldset legend span {
+  display: block;
+}
+
+.policy-fieldset legend strong {
+  color: var(--text-strong);
+  font-size: 13px;
+}
+
+.policy-fieldset legend span {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.segment-radio {
+  cursor: pointer;
+}
+
+.segment-radio input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.segment-radio span {
+  display: grid;
+  place-items: center;
+  min-height: 36px;
+  border-radius: 5px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.segment-radio input:checked + span {
+  background: var(--panel);
+  color: var(--clan);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--clan) 30%, var(--line));
+}
+
+.empty-state {
+  padding: 38px 20px;
+  color: var(--muted);
+  text-align: center;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.is-hidden {
+  display: none !important;
+}
+
 @media (max-width: 1320px) {
   :root {
     --sidebar-width: 260px;
@@ -1253,6 +1696,15 @@ a {
 
   .topbar-search {
     width: 100%;
+  }
+
+  .settings-grid-sidebar,
+  .settings-grid-even {
+    grid-template-columns: 1fr;
+  }
+
+  .form-grid-three {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -1331,5 +1783,62 @@ a {
 
   #staff .policy-table th:nth-child(3) {
     width: 22%;
+  }
+
+  .settings-toolbar,
+  .clan-context-bar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .guild-switcher select,
+  .clan-context-bar select {
+    min-width: 0;
+  }
+
+  .form-grid-two,
+  .inline-assign-form {
+    grid-template-columns: 1fr;
+  }
+
+  .server-row {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .server-row form {
+    grid-column: 2 / -1;
+  }
+
+  .mapping-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .mapping-arrow {
+    display: none;
+  }
+
+  .mapping-row strong {
+    grid-column: 1;
+  }
+
+  .mapping-row form {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
+
+  .assignment-row,
+  .compact-assignment-list .assignment-row {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .assignment-row .scope-chip,
+  .assignment-alliance {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .assignment-row form {
+    grid-column: 3;
+    grid-row: 1 / span 3;
   }
 }

@@ -1,0 +1,41 @@
+{% extends "layouts/app_shell.html" %}
+{% from "components/icons.html" import icon %}
+
+{% block title %}{{ page_title }} · {{ app_name }}{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div><p class="page-kicker">{{ page_kicker }}</p><h1>{{ page_title }}</h1><p>{{ page_description }}</p></div>
+  <span class="page-badge">{{ page_badge }}</span>
+</section>
+{% include "partials/settings_toolbar.html" %}
+
+<div class="settings-grid settings-grid-sidebar">
+  <section class="panel settings-form-panel">
+    <div class="panel-header"><div><span class="panel-kicker">Mapped roles</span><h2>현재 역할 매핑</h2></div><span class="soft-label">{{ mappings|length }}개</span></div>
+    <div class="mapping-list">
+      {% for mapping in mappings %}
+      <article class="mapping-row">
+        <span class="mapping-role">@{{ mapping.role_name }}</span>
+        <span class="mapping-arrow">{{ icon("chevron-right") }}</span>
+        <strong>{{ mapping.alliance_name }}</strong>
+        <form method="post" action="/settings/alliances/{{ mapping.mapping_id }}/delete">
+          <input type="hidden" name="guild_id" value="{{ guild_id }}">
+          <button class="danger-icon-button" type="submit" title="연결 해제">{{ icon("trash") }}</button>
+        </form>
+      </article>
+      {% else %}<div class="empty-state">연결된 혈맹 역할이 없습니다.</div>{% endfor %}
+    </div>
+  </section>
+  <aside class="panel settings-side-panel">
+    <div class="panel-header"><div><span class="panel-kicker">New mapping</span><h2>역할 연결</h2></div></div>
+    <form class="settings-form" method="post" action="/settings/alliances">
+      <input type="hidden" name="guild_id" value="{{ guild_id or '' }}">
+      <label class="form-field"><span>혈맹 이름</span><input name="alliance_name" list="alliance-names" maxlength="100" placeholder="혈맹 이름 입력" required></label>
+      <datalist id="alliance-names">{% for alliance in alliances %}<option value="{{ alliance.alliance_name }}">{% endfor %}</datalist>
+      <label class="form-field"><span>Discord 역할</span><select name="role_id" required><option value="">역할 선택</option>{% for role in roles %}<option value="{{ role.id }}">@{{ role.name }}</option>{% endfor %}</select></label>
+      <button class="primary-button" type="submit" {% if not guild_id or not roles %}disabled{% endif %}>{{ icon("plus-square") }} 역할 연결</button>
+    </form>
+    <p class="form-help">웹 권한은 부여하지 않습니다. 이 연결은 유저가 어느 혈맹 소속인지 판별할 때만 사용합니다.</p>
+  </aside>
+</div>
+{% endblock %}
