@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import time
 from collections.abc import Sequence
 from typing import Any
 
@@ -33,9 +34,9 @@ ACTION_LABELS = {
     "bid_item_delete": "입찰 아이템 삭제",
     "bid_status": "입찰 상태 변경",
     "payout_status": "분배 상태 변경",
-    "treasury_deposit": "혈비 입금",
-    "treasury_withdrawal": "혈비 출금",
-    "treasury_reversal": "혈비 기록 취소",
+    "treasury_deposit": "가계부 입금",
+    "treasury_withdrawal": "가계부 출금",
+    "treasury_reversal": "가계부 기록 취소",
 }
 
 ROLE_LABELS = {
@@ -679,17 +680,39 @@ async def clan_settlements_page(
 
 async def treasury_page(
     session: AsyncSession,
-    *, guild_id: int, alliance_id: int, period_days: int, query: str, page: int
+    *,
+    guild_id: int,
+    alliance_id: int | None,
+    account_scope_code: int,
+    period_days: int,
+    query: str,
+    page: int,
 ) -> dict[str, Any]:
+    if account_scope_code not in {1, 2}:
+        raise ValueError("지원하지 않는 가계부 범위입니다.")
+    if account_scope_code == 2 and alliance_id is None:
+        raise ValueError("혈맹 가계부에는 혈맹 선택이 필요합니다.")
+
     period = _period_clause("e.occurred_at", period_days, unix=True)
     search = " AND (COALESCE(c.category_name, '') ILIKE :query OR COALESCE(e.memo, '') ILIKE :query)" if query else ""
-    params = {"guild_id": guild_id, "alliance_id": alliance_id, "period_days": period_days, "query": f"%{query}%"}
+    scope_filter = (
+        "a.account_scope_code = 1 AND a.alliance_id IS NULL"
+        if account_scope_code == 1
+        else "a.account_scope_code = 2 AND a.alliance_id = :alliance_id"
+    )
+    params = {
+        "guild_id": guild_id,
+        "alliance_id": alliance_id,
+        "account_scope_code": account_scope_code,
+        "period_days": period_days,
+        "query": f"%{query}%",
+    }
     from_sql = f"""
         FROM treasury_entries e
         JOIN treasury_accounts a ON a.treasury_account_id = e.treasury_account_id
         LEFT JOIN treasury_categories c ON c.treasury_category_id = e.treasury_category_id
         LEFT JOIN treasury_source_types st ON st.source_type_id = e.source_type_id
-        WHERE a.guild_id = :guild_id AND a.alliance_id = :alliance_id {period} {search}
+        WHERE a.guild_id = :guild_id AND {scope_filter} {period} {search}
     """
     rows, pagination = await _fetch_page(
         session,
@@ -698,7 +721,7 @@ async def treasury_page(
             SELECT e.treasury_entry_id, e.direction,
                    COALESCE(c.category_name, st.source_code, '기타') AS category_name,
                    e.amount_adena, e.balance_after, COALESCE(e.memo, '-') AS memo,
-                   TO_CHAR(TO_TIMESTAMP(e.occurred_at), 'YYYY-MM-DD HH24:MI') AS occurred_at_label
+                   TO_CHAR(TO_TIMESTAMP(e.occurred_at) AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD HH24:MI') AS occurred_at_label
             {from_sql}
             ORDER BY e.occurred_at DESC, e.treasury_entry_id DESC
             LIMIT :limit OFFSET :offset
@@ -712,18 +735,20 @@ async def treasury_page(
         row["direction_tone"] = "success" if is_income else "warning"
         row["amount_label"] = ("+" if is_income else "-") + _money(row["amount_adena"])
         row["balance_label"] = _money(row["balance_after"])
-    account = (await session.execute(text("""
-        SELECT current_balance FROM treasury_accounts
-        WHERE guild_id = :guild_id AND alliance_id = :alliance_id
+    account = (await session.execute(text(f"""
+        SELECT current_balance FROM treasury_accounts a
+        WHERE a.guild_id = :guild_id AND {scope_filter}
     """), params)).mappings().first()
     totals = (await session.execute(text(f"""
         SELECT COALESCE(SUM(e.amount_adena) FILTER (WHERE e.direction = 1), 0) AS income,
-               COALESCE(SUM(e.amount_adena) FILTER (WHERE e.direction = 2), 0) AS expense
+               COALESCE(SUM(e.amount_adena) FILTER (WHERE e.direction = -1), 0) AS expense
         {from_sql}
     """), params)).mappings().one()
+    categories = await list_treasury_categories(session, guild_id, account_scope_code)
+    account_label = "연합비" if account_scope_code == 1 else "혈비"
     return {
         "summary_cards": [
-            {"label": "현재 혈비", "value": _money(account["current_balance"] if account else 0), "meta": "가계부 잔액"},
+            {"label": f"현재 {account_label}", "value": _money(account["current_balance"] if account else 0), "meta": "가계부 잔액"},
             {"label": "기간 입금", "value": _money(totals["income"]), "meta": "선택 기간"},
             {"label": "기간 출금", "value": _money(totals["expense"]), "meta": "선택 기간"},
         ],
@@ -737,7 +762,178 @@ async def treasury_page(
         ],
         "rows": rows,
         "pagination": pagination,
+        "treasury_categories": categories,
+        "treasury_scope_code": account_scope_code,
     }
+
+
+async def list_treasury_categories(
+    session: AsyncSession,
+    guild_id: int,
+    account_scope_code: int,
+) -> dict[int, list[dict[str, Any]]]:
+    rows = (await session.execute(
+        text("""
+            SELECT treasury_category_id, direction, category_name
+            FROM treasury_categories
+            WHERE guild_id = :guild_id
+              AND account_scope_code = :account_scope_code
+              AND is_active = TRUE
+              AND direction IN (-1, 1)
+            ORDER BY direction DESC, category_name, treasury_category_id
+        """),
+        {"guild_id": guild_id, "account_scope_code": account_scope_code},
+    )).mappings().all()
+    categories: dict[int, list[dict[str, Any]]] = {1: [], -1: []}
+    for row in rows:
+        categories[_int(row["direction"])].append(dict(row))
+    return categories
+
+
+async def record_treasury_entry(
+    session: AsyncSession,
+    *,
+    guild_id: int,
+    alliance_id: int | None,
+    account_scope_code: int,
+    treasury_category_id: int,
+    direction: int,
+    amount_adena: int,
+    occurred_at: int,
+    memo: str,
+    created_by_user_id: int | None = None,
+) -> int:
+    if account_scope_code not in {1, 2}:
+        raise ValueError("지원하지 않는 가계부 범위입니다.")
+    if account_scope_code == 1:
+        alliance_id = None
+    elif alliance_id is None:
+        raise ValueError("혈맹을 선택해 주세요.")
+    if direction not in {-1, 1}:
+        raise ValueError("입금 또는 출금을 선택해 주세요.")
+    if amount_adena <= 0:
+        raise ValueError("금액은 1 아데나 이상 입력해 주세요.")
+    if occurred_at <= 0:
+        raise ValueError("거래 시각을 확인해 주세요.")
+
+    clean_memo = memo.strip()[:500]
+    try:
+        if account_scope_code == 2:
+            alliance_exists = await session.scalar(
+                text("""
+                    SELECT 1
+                    FROM guild_alliance_role_mappings
+                    WHERE guild_id = :guild_id AND alliance_id = :alliance_id
+                    LIMIT 1
+                """),
+                {"guild_id": guild_id, "alliance_id": alliance_id},
+            )
+            if not alliance_exists:
+                raise ValueError("선택한 서버의 혈맹을 확인해 주세요.")
+
+        category = (await session.execute(
+            text("""
+                SELECT treasury_category_id, direction
+                FROM treasury_categories
+                WHERE treasury_category_id = :treasury_category_id
+                  AND guild_id = :guild_id
+                  AND account_scope_code = :account_scope_code
+                  AND is_active = TRUE
+            """),
+            {
+                "treasury_category_id": treasury_category_id,
+                "guild_id": guild_id,
+                "account_scope_code": account_scope_code,
+            },
+        )).mappings().first()
+        if category is None or _int(category["direction"]) != direction:
+            raise ValueError("입출금 구분과 항목을 다시 확인해 주세요.")
+
+        now = int(time.time())
+        if account_scope_code == 1:
+            await session.execute(
+                text("""
+                    INSERT INTO treasury_accounts (
+                        guild_id, alliance_id, account_scope_code, current_balance, updated_at
+                    ) VALUES (:guild_id, NULL, 1, 0, :updated_at)
+                    ON CONFLICT (guild_id) WHERE account_scope_code = 1 DO NOTHING
+                """),
+                {"guild_id": guild_id, "updated_at": now},
+            )
+            account_filter = "account_scope_code = 1 AND alliance_id IS NULL"
+        else:
+            await session.execute(
+                text("""
+                    INSERT INTO treasury_accounts (
+                        guild_id, alliance_id, account_scope_code, current_balance, updated_at
+                    ) VALUES (:guild_id, :alliance_id, 2, 0, :updated_at)
+                    ON CONFLICT (guild_id, alliance_id) WHERE account_scope_code = 2 DO NOTHING
+                """),
+                {"guild_id": guild_id, "alliance_id": alliance_id, "updated_at": now},
+            )
+            account_filter = "account_scope_code = 2 AND alliance_id = :alliance_id"
+
+        account = (await session.execute(
+            text(f"""
+                SELECT treasury_account_id, current_balance
+                FROM treasury_accounts
+                WHERE guild_id = :guild_id AND {account_filter}
+                FOR UPDATE
+            """),
+            {"guild_id": guild_id, "alliance_id": alliance_id},
+        )).mappings().one()
+        balance_after = _int(account["current_balance"]) + (direction * amount_adena)
+        source_type_id = await session.scalar(
+            text("SELECT source_type_id FROM treasury_source_types WHERE source_code = 'manual'")
+        )
+        if source_type_id is None:
+            raise RuntimeError("수동 가계부 원본 유형이 없습니다.")
+
+        treasury_entry_id = await session.scalar(
+            text("""
+                INSERT INTO treasury_entries (
+                    treasury_account_id, treasury_category_id, direction,
+                    amount_adena, balance_after, source_type_id, source_id,
+                    memo, occurred_at, created_at, created_by_user_id,
+                    reversal_of_entry_id
+                ) VALUES (
+                    :treasury_account_id, :treasury_category_id, :direction,
+                    :amount_adena, :balance_after, :source_type_id, NULL,
+                    :memo, :occurred_at, :created_at, :created_by_user_id,
+                    NULL
+                )
+                RETURNING treasury_entry_id
+            """),
+            {
+                "treasury_account_id": account["treasury_account_id"],
+                "treasury_category_id": treasury_category_id,
+                "direction": direction,
+                "amount_adena": amount_adena,
+                "balance_after": balance_after,
+                "source_type_id": source_type_id,
+                "memo": clean_memo or None,
+                "occurred_at": occurred_at,
+                "created_at": now,
+                "created_by_user_id": created_by_user_id,
+            },
+        )
+        await session.execute(
+            text("""
+                UPDATE treasury_accounts
+                SET current_balance = :current_balance, updated_at = :updated_at
+                WHERE treasury_account_id = :treasury_account_id
+            """),
+            {
+                "current_balance": balance_after,
+                "updated_at": now,
+                "treasury_account_id": account["treasury_account_id"],
+            },
+        )
+        await session.commit()
+        return _int(treasury_entry_id)
+    except Exception:
+        await session.rollback()
+        raise
 
 
 async def forfeits_page(

@@ -2642,6 +2642,159 @@ body.modal-open {
   font-weight: 750;
 }
 
+.treasury-entry-panel {
+  overflow: hidden;
+}
+
+.treasury-entry-heading {
+  padding: 17px 20px;
+}
+
+.treasury-entry-heading h2 {
+  margin: 2px 0 0;
+}
+
+.treasury-entry-heading p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.treasury-scope-chip {
+  display: inline-flex;
+  min-height: 30px;
+  align-items: center;
+  padding: 0 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line));
+  border-radius: 5px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-size: 11px;
+  font-weight: 950;
+}
+
+.treasury-entry-form {
+  display: grid;
+  grid-template-columns: 150px minmax(180px, 0.8fr) minmax(180px, 0.8fr) 190px minmax(240px, 1.2fr) auto;
+  align-items: end;
+  gap: 10px;
+  padding: 18px 20px 20px;
+  border-top: 1px solid var(--line);
+  background: var(--panel-subtle);
+}
+
+.treasury-direction-control {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.treasury-direction-control legend,
+.treasury-form-field > span:first-child {
+  display: block;
+  margin-bottom: 7px;
+  color: var(--muted-strong);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.treasury-segments {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  height: 42px;
+  padding: 3px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--panel);
+}
+
+.treasury-segments label {
+  min-width: 0;
+  cursor: pointer;
+}
+
+.treasury-segments input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.treasury-segments span {
+  display: grid;
+  height: 34px;
+  place-items: center;
+  border-radius: 4px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.treasury-entry-form[data-direction="1"] .treasury-segments input[value="1"] + span {
+  background: color-mix(in srgb, var(--success) 13%, var(--panel));
+  color: var(--success);
+}
+
+.treasury-entry-form[data-direction="-1"] .treasury-segments input[value="-1"] + span {
+  background: color-mix(in srgb, var(--warning) 14%, var(--panel));
+  color: var(--warning);
+}
+
+.treasury-form-field {
+  display: grid;
+  min-width: 0;
+}
+
+.treasury-form-field input,
+.treasury-form-field select,
+.treasury-amount-control {
+  width: 100%;
+  min-width: 0;
+  height: 42px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text-strong);
+}
+
+.treasury-form-field input,
+.treasury-form-field select {
+  padding: 0 12px;
+}
+
+.treasury-form-field input:focus,
+.treasury-form-field select:focus {
+  outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  outline-offset: 1px;
+  border-color: var(--accent);
+}
+
+.treasury-amount-control {
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+}
+
+.treasury-amount-control input {
+  height: 40px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+}
+
+.treasury-amount-control small {
+  flex: 0 0 auto;
+  padding-right: 12px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.treasury-submit {
+  min-height: 42px;
+}
+
 .workspace-data-panel {
   overflow: hidden;
 }
@@ -2832,6 +2985,14 @@ body.modal-open {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
+  .treasury-entry-form {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .treasury-memo-field {
+    grid-column: span 2;
+  }
+
   .workspace-filter-search {
     grid-column: span 2;
   }
@@ -2925,6 +3086,10 @@ body.modal-open {
   }
 
   .workspace-filter-bar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .treasury-entry-form {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -3112,7 +3277,8 @@ body.modal-open {
   }
 
   .workspace-filter-bar,
-  .workspace-summary-grid {
+  .workspace-summary-grid,
+  .treasury-entry-form {
     grid-template-columns: 1fr;
   }
 
@@ -3121,8 +3287,13 @@ body.modal-open {
   }
 
   .workspace-search-button,
-  .workspace-settings-link {
+  .workspace-settings-link,
+  .treasury-submit {
     width: 100%;
+  }
+
+  .treasury-memo-field {
+    grid-column: auto;
   }
 
   .workspace-summary-card {

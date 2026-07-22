@@ -21,7 +21,7 @@ DATA_TABLES = (
     ("settlement_payout_objects", "분배 객체"),
     ("bid_items", "입찰 아이템"),
     ("bid_item_results", "입찰 결과"),
-    ("treasury_entries", "혈비 원장"),
+    ("treasury_entries", "연합/혈맹 가계부 원장"),
     ("audit_events", "작업 로그"),
 )
 

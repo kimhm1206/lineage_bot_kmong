@@ -146,21 +146,35 @@ class SettlementPayoutObject(Base):
 
 class TreasuryAccount(Base):
     __tablename__ = "treasury_accounts"
-    __table_args__ = (UniqueConstraint("guild_id", "alliance_id", name="uq_treasury_account_guild_alliance"),)
+    __table_args__ = (
+        CheckConstraint(
+            "(account_scope_code = 1 AND alliance_id IS NULL) OR "
+            "(account_scope_code = 2 AND alliance_id IS NOT NULL)",
+            name="chk_treasury_account_scope",
+        ),
+    )
 
     treasury_account_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     guild_id: Mapped[int] = mapped_column(ForeignKey("guilds.guild_id", ondelete="CASCADE"), nullable=False)
-    alliance_id: Mapped[int] = mapped_column(ForeignKey("alliances.alliance_id", ondelete="CASCADE"), nullable=False)
+    alliance_id: Mapped[int | None] = mapped_column(ForeignKey("alliances.alliance_id", ondelete="CASCADE"))
+    account_scope_code: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=2)
     current_balance: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     updated_at: Mapped[int] = mapped_column(BigInteger, nullable=False)
 
 
 class TreasuryCategory(Base):
     __tablename__ = "treasury_categories"
-    __table_args__ = (UniqueConstraint("guild_id", "direction", "category_name", name="uq_treasury_category_guild_direction_name"),)
+    __table_args__ = (
+        CheckConstraint("account_scope_code IN (1, 2)", name="chk_treasury_category_scope"),
+        UniqueConstraint(
+            "guild_id", "account_scope_code", "direction", "category_name",
+            name="uq_treasury_category_scope_name",
+        ),
+    )
 
     treasury_category_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     guild_id: Mapped[int] = mapped_column(ForeignKey("guilds.guild_id", ondelete="CASCADE"), nullable=False)
+    account_scope_code: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=2)
     direction: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     category_name: Mapped[str] = mapped_column(Text, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
@@ -175,6 +189,10 @@ class TreasurySourceType(Base):
 
 class TreasuryEntry(Base):
     __tablename__ = "treasury_entries"
+    __table_args__ = (
+        CheckConstraint("direction IN (-1, 1)", name="chk_treasury_entry_direction"),
+        CheckConstraint("amount_adena > 0", name="chk_treasury_entry_amount"),
+    )
 
     treasury_entry_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     treasury_account_id: Mapped[int] = mapped_column(ForeignKey("treasury_accounts.treasury_account_id", ondelete="RESTRICT"), nullable=False)

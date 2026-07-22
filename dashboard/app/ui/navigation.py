@@ -44,6 +44,7 @@ NAV_GROUPS: tuple[NavGroup, ...] = (
             NavItem("alliance.dashboard", "연합 대시보드", "/alliance/drops", "layout-dashboard", "판매대금과 1차 정산"),
             NavItem("alliance.drops", "드랍 등록", "/alliance/drops", "plus-square", "출석 회차와 아이템 연결"),
             NavItem("alliance.settlement", "각혈 분배", "/alliance/settlements", "network", "혈맹별 1차 정산"),
+            NavItem("alliance.treasury", "연합비 가계부", "/alliance/treasury", "receipt", "연합 전체 입출금과 잔액"),
             NavItem("alliance.bidding", "아이템 입찰", "/alliance/bidding", "gavel", "혈맹별 입찰 상태"),
             NavItem("alliance.items", "아이템 관리", "/alliance/items", "tag", "시세와 입찰 아이템"),
             NavItem("alliance.settings", "연합 분배 설정", "/alliance/settings", "sliders", "경리·연합 수수료"),

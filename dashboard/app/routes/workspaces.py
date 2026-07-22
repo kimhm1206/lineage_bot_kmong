@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
+from datetime import datetime, timedelta, timezone
 from typing import Any
+from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dashboard.app.config import BASE_DIR
 from dashboard.app.database import get_session
+from dashboard.app.security import can_manage_alliance_treasury, can_manage_clan_treasury
 from dashboard.app.services import workspace_store
 from dashboard.app.ui.context import build_template_context
 
@@ -17,6 +21,7 @@ router = APIRouter(tags=["workspaces"])
 templates = Jinja2Templates(directory=str(BASE_DIR / "app" / "templates"))
 
 PageBuilder = Callable[..., Awaitable[dict[str, Any]]]
+KST = timezone(timedelta(hours=9))
 
 
 def _empty_page(message: str) -> dict[str, Any]:
@@ -61,6 +66,8 @@ async def _render_workspace(
     settings_href: str = "",
     settings_label: str = "",
     builder_kwargs: dict[str, Any] | None = None,
+    treasury_form_action: str = "",
+    can_edit_treasury: bool = False,
 ):
     workspace = await workspace_store.resolve_workspace(session, guild_id, alliance_id)
     selected_period = workspace_store.normalize_period(period)
@@ -107,9 +114,94 @@ async def _render_workspace(
             "settings_href": settings_href,
             "settings_label": settings_label,
             "result_label": f"총 {page_data['pagination']['total']:,}건",
+            "notice": request.query_params.get("notice", ""),
+            "error": request.query_params.get("error", ""),
+            "treasury_form": {
+                "action": treasury_form_action,
+                "can_edit": can_edit_treasury,
+                "occurred_at_value": datetime.now(KST).strftime("%Y-%m-%dT%H:%M"),
+            } if (
+                treasury_form_action
+                and selected_guild_id is not None
+                and "treasury_scope_code" in page_data
+            ) else None,
         }
     )
     return templates.TemplateResponse(request, "pages/workspace/index.html", context)
+
+
+def _treasury_redirect(
+    path: str,
+    *,
+    guild_id: int | None,
+    alliance_id: int | None = None,
+    notice: str = "",
+    error: str = "",
+) -> RedirectResponse:
+    params: dict[str, str] = {}
+    if guild_id is not None:
+        params["guild_id"] = str(guild_id)
+    if alliance_id is not None:
+        params["alliance_id"] = str(alliance_id)
+    if notice:
+        params["notice"] = notice
+    if error:
+        params["error"] = error
+    return RedirectResponse(f"{path}?{urlencode(params)}", status_code=303)
+
+
+def _required_positive_int(value: Any) -> int:
+    parsed = int(str(value or "").replace(",", "").strip())
+    if parsed <= 0:
+        raise ValueError
+    return parsed
+
+
+def _entry_timestamp(value: Any) -> int:
+    raw = str(value or "").strip()
+    parsed = datetime.fromisoformat(raw) if raw else datetime.now(KST)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=KST)
+    return int(parsed.timestamp())
+
+
+async def _save_treasury_entry(
+    request: Request,
+    session: AsyncSession,
+    *,
+    path: str,
+    account_scope_code: int,
+    can_edit: bool,
+) -> RedirectResponse:
+    if not can_edit:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="가계부 작성 권한이 없습니다.")
+
+    form = await request.form()
+    guild_id: int | None = None
+    alliance_id: int | None = None
+    try:
+        guild_id = _required_positive_int(form.get("guild_id"))
+        if account_scope_code == 2:
+            alliance_id = _required_positive_int(form.get("alliance_id"))
+        direction = int(str(form.get("direction") or ""))
+        category_id = _required_positive_int(form.get("treasury_category_id"))
+        amount_adena = _required_positive_int(form.get("amount_adena"))
+        occurred_at = _entry_timestamp(form.get("occurred_at"))
+        await workspace_store.record_treasury_entry(
+            session,
+            guild_id=guild_id,
+            alliance_id=alliance_id,
+            account_scope_code=account_scope_code,
+            treasury_category_id=category_id,
+            direction=direction,
+            amount_adena=amount_adena,
+            occurred_at=occurred_at,
+            memo=str(form.get("memo") or ""),
+        )
+    except (TypeError, ValueError) as exc:
+        message = str(exc).strip() or "입출금 정보를 다시 확인해 주세요."
+        return _treasury_redirect(path, guild_id=guild_id, alliance_id=alliance_id, error=message)
+    return _treasury_redirect(path, guild_id=guild_id, alliance_id=alliance_id, notice="가계부 내역을 기록했습니다.")
 
 
 @router.get("/alliance/drops")
@@ -145,6 +237,39 @@ async def alliance_settlements(
         builder=workspace_store.alliance_settlements_page,
         guild_id=guild_id, alliance_id=None, period=period, query=q, page=page,
         settings_href="/alliance/settings", settings_label="분배 설정",
+    )
+
+
+@router.get("/alliance/treasury")
+async def alliance_treasury(
+    request: Request, guild_id: int | None = None, period: int | None = None,
+    q: str = "", page: int = 1, session: AsyncSession = Depends(get_session),
+):
+    return await _render_workspace(
+        request, session,
+        active_nav="alliance.treasury",
+        page_title="연합비 가계부",
+        page_description="연합 전체의 입출금과 거래 후 잔액을 시간 순서대로 확인합니다.",
+        page_kicker="Alliance treasury",
+        page_badge="ALLIANCE MANAGER",
+        builder=workspace_store.treasury_page,
+        guild_id=guild_id, alliance_id=None, period=period, query=q, page=page,
+        builder_kwargs={"alliance_id": None, "account_scope_code": 1},
+        treasury_form_action="/alliance/treasury/entries",
+        can_edit_treasury=can_manage_alliance_treasury(request),
+    )
+
+
+@router.post("/alliance/treasury/entries")
+async def create_alliance_treasury_entry(
+    request: Request, session: AsyncSession = Depends(get_session),
+):
+    return await _save_treasury_entry(
+        request,
+        session,
+        path="/alliance/treasury",
+        account_scope_code=1,
+        can_edit=can_manage_alliance_treasury(request),
     )
 
 
@@ -239,6 +364,22 @@ async def clan_treasury(
         builder=workspace_store.treasury_page,
         guild_id=guild_id, alliance_id=alliance_id, period=period, query=q, page=page,
         needs_alliance=True,
+        builder_kwargs={"account_scope_code": 2},
+        treasury_form_action="/clan/treasury/entries",
+        can_edit_treasury=can_manage_clan_treasury(request),
+    )
+
+
+@router.post("/clan/treasury/entries")
+async def create_clan_treasury_entry(
+    request: Request, session: AsyncSession = Depends(get_session),
+):
+    return await _save_treasury_entry(
+        request,
+        session,
+        path="/clan/treasury",
+        account_scope_code=2,
+        can_edit=can_manage_clan_treasury(request),
     )
 
 

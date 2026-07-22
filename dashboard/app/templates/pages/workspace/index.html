@@ -13,6 +13,9 @@
   <span class="page-badge">{{ page_badge }}</span>
 </section>
 
+{% if notice %}<div class="notice-banner notice-success">{{ icon("check") }}<span>{{ notice }}</span></div>{% endif %}
+{% if error %}<div class="notice-banner notice-error">{{ icon("alert") }}<span>{{ error }}</span></div>{% endif %}
+
 <form class="workspace-filter-bar" method="get" action="{{ request.url.path }}">
   <label class="workspace-filter-field">
     <span>서버</span>
@@ -73,6 +76,75 @@
   {% endfor %}
 </section>
 
+{% if treasury_form and treasury_form.can_edit %}
+<section class="panel treasury-entry-panel">
+  <div class="panel-header panel-header-inline treasury-entry-heading">
+    <div>
+      <span class="panel-kicker">New transaction</span>
+      <h2>입출금 기록</h2>
+      <p>거래를 저장하면 원장과 현재 잔액이 함께 반영됩니다.</p>
+    </div>
+    <span class="treasury-scope-chip">
+      {{ "연합 전체" if treasury_scope_code == 1 else (selected_alliance.display_name or selected_alliance.alliance_name) }}
+    </span>
+  </div>
+  <form class="treasury-entry-form" method="post" action="{{ treasury_form.action }}" data-treasury-entry-form>
+    <input type="hidden" name="guild_id" value="{{ guild_id }}">
+    {% if treasury_scope_code == 2 %}<input type="hidden" name="alliance_id" value="{{ alliance_id }}">{% endif %}
+
+    <fieldset class="treasury-direction-control">
+      <legend>구분</legend>
+      <div class="treasury-segments">
+        <label>
+          <input type="radio" name="direction" value="1" checked>
+          <span>입금</span>
+        </label>
+        <label>
+          <input type="radio" name="direction" value="-1">
+          <span>출금</span>
+        </label>
+      </div>
+    </fieldset>
+
+    <label class="treasury-form-field" data-category-field="1">
+      <span>입금 항목</span>
+      <select name="treasury_category_id" required>
+        <option value="">항목 선택</option>
+        {% for category in treasury_categories[1] %}
+        <option value="{{ category.treasury_category_id }}">{{ category.category_name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="treasury-form-field is-hidden" data-category-field="-1">
+      <span>출금 항목</span>
+      <select name="treasury_category_id" required disabled>
+        <option value="">항목 선택</option>
+        {% for category in treasury_categories[-1] %}
+        <option value="{{ category.treasury_category_id }}">{{ category.category_name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <label class="treasury-form-field">
+      <span>금액</span>
+      <span class="treasury-amount-control">
+        <input type="number" name="amount_adena" min="1" step="1" inputmode="numeric" placeholder="0" required>
+        <small>아데나</small>
+      </span>
+    </label>
+    <label class="treasury-form-field">
+      <span>거래 시각</span>
+      <input type="datetime-local" name="occurred_at" value="{{ treasury_form.occurred_at_value }}" required>
+    </label>
+    <label class="treasury-form-field treasury-memo-field">
+      <span>내용</span>
+      <input type="text" name="memo" maxlength="500" placeholder="입출금 사유를 입력해 주세요">
+    </label>
+    <button class="primary-button treasury-submit" type="submit" data-treasury-submit>입금 기록</button>
+  </form>
+</section>
+{% endif %}
+
 <section class="panel workspace-data-panel">
   <div class="panel-header panel-header-inline workspace-data-head">
     <div>
@@ -129,4 +201,10 @@
   </nav>
   {% endif %}
 </section>
+{% endblock %}
+
+{% block scripts %}
+{% if treasury_form and treasury_form.can_edit %}
+<script src="{{ url_for('static', path='/js/treasury.js') }}" defer></script>
+{% endif %}
 {% endblock %}

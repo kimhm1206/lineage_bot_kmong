@@ -235,6 +235,184 @@ async def apply_local_schema_cleanup() -> bool:
                 """)
             )
             changed = True
+
+        alliance_treasury_applied = await connection.scalar(
+            text("SELECT 1 FROM schema_migrations WHERE version = 6")
+        )
+        if not alliance_treasury_applied:
+            await connection.execute(
+                text("""
+                    ALTER TABLE treasury_accounts
+                    ADD COLUMN IF NOT EXISTS account_scope_code SMALLINT
+                """)
+            )
+            await connection.execute(
+                text("""
+                    UPDATE treasury_accounts
+                    SET account_scope_code = 2
+                    WHERE account_scope_code IS NULL
+                """)
+            )
+            await connection.execute(
+                text("""
+                    ALTER TABLE treasury_accounts
+                    ALTER COLUMN account_scope_code SET DEFAULT 2,
+                    ALTER COLUMN account_scope_code SET NOT NULL,
+                    ALTER COLUMN alliance_id DROP NOT NULL
+                """)
+            )
+            await connection.execute(
+                text("""
+                    ALTER TABLE treasury_accounts
+                    DROP CONSTRAINT IF EXISTS treasury_accounts_guild_id_alliance_id_key
+                """)
+            )
+            await connection.execute(
+                text("""
+                    ALTER TABLE treasury_accounts
+                    DROP CONSTRAINT IF EXISTS uq_treasury_account_guild_alliance,
+                    DROP CONSTRAINT IF EXISTS chk_treasury_account_scope
+                """)
+            )
+            await connection.execute(
+                text("""
+                    ALTER TABLE treasury_accounts
+                    ADD CONSTRAINT chk_treasury_account_scope
+                    CHECK (
+                        (account_scope_code = 1 AND alliance_id IS NULL)
+                        OR (account_scope_code = 2 AND alliance_id IS NOT NULL)
+                    )
+                """)
+            )
+            await connection.execute(
+                text("""
+                    CREATE UNIQUE INDEX IF NOT EXISTS uq_treasury_account_alliance_scope
+                    ON treasury_accounts (guild_id)
+                    WHERE account_scope_code = 1
+                """)
+            )
+            await connection.execute(
+                text("""
+                    CREATE UNIQUE INDEX IF NOT EXISTS uq_treasury_account_clan_scope
+                    ON treasury_accounts (guild_id, alliance_id)
+                    WHERE account_scope_code = 2
+                """)
+            )
+            await connection.execute(
+                text("""
+                    INSERT INTO treasury_accounts (
+                        guild_id, alliance_id, account_scope_code,
+                        current_balance, updated_at
+                    )
+                    SELECT guild_id, NULL, 1, 0,
+                           EXTRACT(EPOCH FROM NOW())::BIGINT
+                    FROM guilds
+                    ON CONFLICT (guild_id) WHERE account_scope_code = 1
+                    DO NOTHING
+                """)
+            )
+            await connection.execute(
+                text("""
+                    INSERT INTO treasury_categories (
+                        guild_id, direction, category_name, is_active
+                    )
+                    SELECT guild_id, 1, '연합비 입금', TRUE FROM guilds
+                    UNION ALL
+                    SELECT guild_id, -1, '연합비 지출', TRUE FROM guilds
+                    ON CONFLICT (guild_id, direction, category_name)
+                    DO NOTHING
+                """)
+            )
+            await connection.execute(
+                text("""
+                    INSERT INTO schema_migrations(version, applied_at)
+                    VALUES (6, EXTRACT(EPOCH FROM NOW())::BIGINT)
+                """)
+            )
+            changed = True
+
+        treasury_category_scope_applied = await connection.scalar(
+            text("SELECT 1 FROM schema_migrations WHERE version = 7")
+        )
+        if not treasury_category_scope_applied:
+            await connection.execute(
+                text("""
+                    ALTER TABLE treasury_categories
+                    ADD COLUMN IF NOT EXISTS account_scope_code SMALLINT
+                """)
+            )
+            await connection.execute(
+                text("""
+                    UPDATE treasury_categories
+                    SET account_scope_code = CASE
+                        WHEN category_name IN ('연합비 입금', '연합비 지출') THEN 1
+                        ELSE 2
+                    END
+                    WHERE account_scope_code IS NULL
+                """)
+            )
+            await connection.execute(
+                text("""
+                    ALTER TABLE treasury_categories
+                    ALTER COLUMN account_scope_code SET DEFAULT 2,
+                    ALTER COLUMN account_scope_code SET NOT NULL,
+                    DROP CONSTRAINT IF EXISTS treasury_categories_guild_id_direction_category_name_key,
+                    DROP CONSTRAINT IF EXISTS uq_treasury_category_guild_direction_name,
+                    DROP CONSTRAINT IF EXISTS chk_treasury_category_scope
+                """)
+            )
+            await connection.execute(
+                text("""
+                    ALTER TABLE treasury_categories
+                    ADD CONSTRAINT chk_treasury_category_scope
+                    CHECK (account_scope_code IN (1, 2)),
+                    ADD CONSTRAINT uq_treasury_category_scope_name
+                    UNIQUE (guild_id, account_scope_code, direction, category_name)
+                """)
+            )
+            await connection.execute(
+                text("""
+                    INSERT INTO schema_migrations(version, applied_at)
+                    VALUES (7, EXTRACT(EPOCH FROM NOW())::BIGINT)
+                """)
+            )
+            changed = True
+
+        await connection.execute(
+            text("""
+                INSERT INTO treasury_accounts (
+                    guild_id, alliance_id, account_scope_code, current_balance, updated_at
+                )
+                SELECT guild_id, NULL, 1, 0, EXTRACT(EPOCH FROM NOW())::BIGINT
+                FROM guilds
+                ON CONFLICT (guild_id) WHERE account_scope_code = 1
+                DO NOTHING
+            """)
+        )
+        await connection.execute(
+            text("""
+                INSERT INTO treasury_categories (
+                    guild_id, account_scope_code, direction, category_name, is_active
+                )
+                SELECT g.guild_id, 1, category.direction, category.category_name, TRUE
+                FROM guilds g
+                CROSS JOIN (
+                    VALUES
+                        (1, '연합비 입금'),
+                        (1, '이벤트비 입금'),
+                        (1, '수수료 입금'),
+                        (1, '운영비 입금'),
+                        (1, '기타 입금'),
+                        (-1, '연합비 지출'),
+                        (-1, '이벤트비 지출'),
+                        (-1, '운영비 지출'),
+                        (-1, '환급'),
+                        (-1, '기타 지출')
+                ) AS category(direction, category_name)
+                ON CONFLICT (guild_id, account_scope_code, direction, category_name)
+                DO NOTHING
+            """)
+        )
     return changed
 
 

@@ -42,6 +42,7 @@ DISCORD_BOT_TOKEN=실제_봇_토큰
 ```text
 /alliance/drops            드랍 등록 내역
 /alliance/settlements      혈맹별 1차 정산
+/alliance/treasury         연합 전체 입출금 가계부
 /alliance/bidding          아이템 입찰 현황
 /alliance/items            아이템 목록과 기본 시세
 /alliance/settings         연합 수수료 규칙
@@ -57,6 +58,8 @@ DISCORD_BOT_TOKEN=실제_봇_토큰
 ```
 
 `testdb`에서만 실행되는 스키마 정리는 Discord 역할 저장을 `guild_alliance_role_mappings` 하나로 제한하고, 웹 권한은 `guild_user_assignments`의 유저 지정 방식으로 유지합니다. 사용하지 않는 이전 테이블 12개와 중복 인덱스를 제거하며, 운영 조회용 복합 인덱스를 추가합니다. 호스트가 로컬 주소가 아니거나 DB 이름이 `testdb`가 아니면 이 정리는 실행되지 않습니다.
+
+가계부는 `treasury_accounts.account_scope_code`로 범위를 구분합니다. `1`은 서버별 연합 전체 계정이며 `alliance_id`가 비어 있고, `2`는 기존 혈맹 계정이며 `alliance_id`를 가집니다. 입출금 분류도 `treasury_categories.account_scope_code`로 분리해 연합과 혈맹 선택지가 섞이지 않습니다. 두 계정은 `treasury_entries` 원장을 함께 사용하므로 입금·출금·거래 후 잔액·발생 시각·작성자·취소 연결을 같은 방식으로 기록합니다.
 
 ## 화면 구조
 
