@@ -6,7 +6,7 @@ FastAPI와 SQLAlchemy 2.x 기반의 PostgreSQL 전용 새 대시보드입니다.
 ## 실행
 
 ```bash
-dashboard/venv/bin/python -m uvicorn dashboard.app.main:app --host 127.0.0.1 --port 8000 --reload
+dashboard/venv/bin/python -m uvicorn dashboard.app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 ## 설정
