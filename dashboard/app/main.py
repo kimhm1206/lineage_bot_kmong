@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 
 from dashboard.app.config import BASE_DIR, get_settings
 from dashboard.app.database import apply_local_schema_cleanup, close_database, ensure_settings_schema, ping_database
-from dashboard.app.routes import developer, health, home, settings as settings_routes
+from dashboard.app.routes import developer, health, home, settings as settings_routes, workspaces
 from dashboard.app.services.discord_api import discord_api
 
 
@@ -40,3 +40,4 @@ app.include_router(health.router)
 app.include_router(home.router)
 app.include_router(settings_routes.router)
 app.include_router(developer.router)
+app.include_router(workspaces.router)

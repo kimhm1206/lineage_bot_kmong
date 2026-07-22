@@ -37,6 +37,7 @@ async def index(request: Request):
                     "role": "연합 관리자",
                     "description": "아이템 드랍 등록부터 혈맹별 1차 분배까지 담당하는 독립된 연합 업무 공간입니다.",
                     "primary": "연합 대시보드",
+                    "href": "/alliance/drops",
                     "links": ["드랍 등록", "각혈 분배", "아이템 입찰", "연합 분배 설정"],
                     "flow": ["드랍 등록", "연합 수수료", "혈맹별 분배"],
                 },
@@ -48,13 +49,14 @@ async def index(request: Request):
                     "role": "각혈 관리자 · 경리",
                     "description": "혈맹원 분배와 혈비를 처리하고 경리 지정 및 공개 정책을 관리하는 독립된 혈맹 업무 공간입니다.",
                     "primary": "혈맹 대시보드",
+                    "href": "/clan/settlements",
                     "links": ["혈맹원 분배", "혈비 가계부", "혈맹 경리 관리", "정보 공개 설정"],
                     "flow": ["혈맹 수령", "인원별 분배", "공개 정책"],
                 },
             ],
             "common_modules": [
-                {"icon": "calendar-check", "title": "출석 · 통계", "description": "회차별 출석과 인원·혈맹 통계"},
-                {"icon": "shield", "title": "서버 운영", "description": "혈맹, 권한, 알림과 작업 로그"},
+                {"icon": "calendar-check", "title": "출석 · 통계", "description": "회차별 출석과 인원·혈맹 통계", "href": "/attendance/status"},
+                {"icon": "shield", "title": "서버 운영", "description": "혈맹, 권한, 알림과 작업 로그", "href": "/settings/alliances"},
             ],
         }
     )

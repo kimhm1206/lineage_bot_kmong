@@ -37,6 +37,27 @@ DISCORD_BOT_TOKEN=실제_봇_토큰
 /developer/system      로컬 DB 스키마와 핵심 데이터 점검
 ```
 
+운영 조회 화면은 모두 로컬 PostgreSQL의 실제 데이터를 사용하며 기본 조회 기간은 최근 한 달입니다.
+
+```text
+/alliance/drops            드랍 등록 내역
+/alliance/settlements      혈맹별 1차 정산
+/alliance/bidding          아이템 입찰 현황
+/alliance/items            아이템 목록과 기본 시세
+/alliance/settings         연합 수수료 규칙
+/clan/settlements          혈맹원과 내부 수수료 분배
+/clan/treasury             혈비 가계부
+/clan/forfeits             미수령 분배금 귀속
+/clan/settings             혈맹 내부 수수료 규칙
+/attendance/status         회차별 출석 현황
+/attendance/statistics     유저별 출석 통계
+/attendance/clan           혈맹별 출석 통계
+/operations/notifications  통계 알림 현황
+/operations/audit          운영 작업 로그
+```
+
+`testdb`에서만 실행되는 스키마 정리는 Discord 역할 저장을 `guild_alliance_role_mappings` 하나로 제한하고, 웹 권한은 `guild_user_assignments`의 유저 지정 방식으로 유지합니다. 사용하지 않는 이전 테이블 12개와 중복 인덱스를 제거하며, 운영 조회용 복합 인덱스를 추가합니다. 호스트가 로컬 주소가 아니거나 DB 이름이 `testdb`가 아니면 이 정리는 실행되지 않습니다.
+
 ## 화면 구조
 
 새 화면은 기능별 파일이 섞이지 않도록 아래처럼 나눕니다.

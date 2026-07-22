@@ -1,0 +1,369 @@
+from __future__ import annotations
+
+from collections.abc import Awaitable, Callable
+from typing import Any
+
+from fastapi import APIRouter, Depends, Request
+from fastapi.templating import Jinja2Templates
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from dashboard.app.config import BASE_DIR
+from dashboard.app.database import get_session
+from dashboard.app.services import workspace_store
+from dashboard.app.ui.context import build_template_context
+
+
+router = APIRouter(tags=["workspaces"])
+templates = Jinja2Templates(directory=str(BASE_DIR / "app" / "templates"))
+
+PageBuilder = Callable[..., Awaitable[dict[str, Any]]]
+
+
+def _empty_page(message: str) -> dict[str, Any]:
+    return {
+        "summary_cards": [
+            {"label": "조회 결과", "value": "0", "meta": message},
+            {"label": "처리 대기", "value": "0", "meta": "표시할 데이터 없음"},
+            {"label": "상태", "value": "준비", "meta": "설정을 먼저 확인해 주세요"},
+        ],
+        "columns": [],
+        "rows": [],
+        "pagination": {
+            "page": 1,
+            "page_size": workspace_store.PAGE_SIZE,
+            "total": 0,
+            "total_pages": 1,
+            "pages": [1],
+            "has_previous": False,
+            "has_next": False,
+        },
+        "empty_message": message,
+    }
+
+
+async def _render_workspace(
+    request: Request,
+    session: AsyncSession,
+    *,
+    active_nav: str,
+    page_title: str,
+    page_description: str,
+    page_kicker: str,
+    page_badge: str,
+    builder: PageBuilder,
+    guild_id: int | None,
+    alliance_id: int | None,
+    period: int | None,
+    query: str,
+    page: int,
+    needs_alliance: bool = False,
+    supports_period: bool = True,
+    settings_href: str = "",
+    settings_label: str = "",
+    builder_kwargs: dict[str, Any] | None = None,
+):
+    workspace = await workspace_store.resolve_workspace(session, guild_id, alliance_id)
+    selected_period = workspace_store.normalize_period(period)
+    selected_guild_id = workspace["guild_id"]
+    selected_alliance_id = workspace["alliance_id"]
+    clean_query = query.strip()[:100]
+
+    if selected_guild_id is None:
+        page_data = _empty_page("등록된 서버가 없습니다.")
+    elif needs_alliance and selected_alliance_id is None:
+        page_data = _empty_page("역할과 연결된 혈맹이 없습니다.")
+    else:
+        call_args: dict[str, Any] = {
+            "session": session,
+            "guild_id": selected_guild_id,
+            "query": clean_query,
+            "page": max(page, 1),
+        }
+        if supports_period:
+            call_args["period_days"] = selected_period
+        if needs_alliance:
+            call_args["alliance_id"] = selected_alliance_id
+        if builder_kwargs:
+            call_args.update(builder_kwargs)
+        page_data = await builder(**call_args)
+
+    context = build_template_context(
+        request,
+        active_nav=active_nav,
+        page_title=page_title,
+        page_description=page_description,
+        page_kicker=page_kicker,
+        page_badge=page_badge,
+    )
+    context.update(workspace)
+    context.update(page_data)
+    context.update(
+        {
+            "query": clean_query,
+            "period": selected_period,
+            "period_options": workspace_store.filter_options(workspace_store.PERIOD_OPTIONS, selected_period),
+            "supports_period": supports_period,
+            "needs_alliance": needs_alliance,
+            "settings_href": settings_href,
+            "settings_label": settings_label,
+            "result_label": f"총 {page_data['pagination']['total']:,}건",
+        }
+    )
+    return templates.TemplateResponse(request, "pages/workspace/index.html", context)
+
+
+@router.get("/alliance/drops")
+async def alliance_drops(
+    request: Request, guild_id: int | None = None, period: int | None = None,
+    q: str = "", page: int = 1, session: AsyncSession = Depends(get_session),
+):
+    return await _render_workspace(
+        request, session,
+        active_nav="alliance.drops",
+        page_title="드랍 등록 내역",
+        page_description="출석 회차와 연결된 아이템 드랍 및 정산 진행 상태를 확인합니다.",
+        page_kicker="Alliance operations",
+        page_badge="ALLIANCE MANAGER",
+        builder=workspace_store.alliance_drops_page,
+        guild_id=guild_id, alliance_id=None, period=period, query=q, page=page,
+        settings_href="/alliance/items", settings_label="아이템 관리",
+    )
+
+
+@router.get("/alliance/settlements")
+async def alliance_settlements(
+    request: Request, guild_id: int | None = None, period: int | None = None,
+    q: str = "", page: int = 1, session: AsyncSession = Depends(get_session),
+):
+    return await _render_workspace(
+        request, session,
+        active_nav="alliance.settlement",
+        page_title="각혈 분배",
+        page_description="드랍별 혈맹 분배금과 1차 정산 상태를 한눈에 확인합니다.",
+        page_kicker="Alliance settlement",
+        page_badge="ALLIANCE MANAGER",
+        builder=workspace_store.alliance_settlements_page,
+        guild_id=guild_id, alliance_id=None, period=period, query=q, page=page,
+        settings_href="/alliance/settings", settings_label="분배 설정",
+    )
+
+
+@router.get("/alliance/bidding")
+async def alliance_bidding(
+    request: Request, guild_id: int | None = None, q: str = "", page: int = 1,
+    session: AsyncSession = Depends(get_session),
+):
+    return await _render_workspace(
+        request, session,
+        active_nav="alliance.bidding",
+        page_title="아이템 입찰",
+        page_description="입찰 아이템의 현재 회차와 혈맹별 완료 기록을 조회합니다.",
+        page_kicker="Alliance bidding",
+        page_badge="USER",
+        builder=workspace_store.bid_items_page,
+        guild_id=guild_id, alliance_id=None, period=None, query=q, page=page,
+        supports_period=False,
+    )
+
+
+@router.get("/alliance/items")
+async def alliance_items(
+    request: Request, guild_id: int | None = None, q: str = "", page: int = 1,
+    session: AsyncSession = Depends(get_session),
+):
+    return await _render_workspace(
+        request, session,
+        active_nav="alliance.items",
+        page_title="아이템 관리",
+        page_description="드랍 등록에 사용하는 아이템과 기본 원화 시세를 확인합니다.",
+        page_kicker="Item catalog",
+        page_badge="ALLIANCE MANAGER",
+        builder=workspace_store.items_page,
+        guild_id=guild_id, alliance_id=None, period=None, query=q, page=page,
+        supports_period=False,
+    )
+
+
+@router.get("/alliance/settings")
+async def alliance_settings(
+    request: Request, guild_id: int | None = None, q: str = "", page: int = 1,
+    session: AsyncSession = Depends(get_session),
+):
+    return await _render_workspace(
+        request, session,
+        active_nav="alliance.settings",
+        page_title="연합 분배 설정",
+        page_description="혈맹별 1차 분배 전에 적용되는 연합 수수료 규칙을 확인합니다.",
+        page_kicker="Alliance fee rules",
+        page_badge="OWNER",
+        builder=workspace_store.fee_rules_page,
+        guild_id=guild_id, alliance_id=None, period=None, query=q, page=page,
+        supports_period=False,
+        builder_kwargs={"alliance_id": None, "scope_code": 1},
+    )
+
+
+@router.get("/clan/settlements")
+async def clan_settlements(
+    request: Request, guild_id: int | None = None, alliance_id: int | None = None,
+    period: int | None = None, q: str = "", page: int = 1,
+    session: AsyncSession = Depends(get_session),
+):
+    return await _render_workspace(
+        request, session,
+        active_nav="clan.settlement",
+        page_title="혈맹원 분배",
+        page_description="혈맹원과 내부 수수료를 같은 분배 대상으로 조회합니다.",
+        page_kicker="Clan settlement",
+        page_badge="CLAN MANAGER",
+        builder=workspace_store.clan_settlements_page,
+        guild_id=guild_id, alliance_id=alliance_id, period=period, query=q, page=page,
+        needs_alliance=True,
+        settings_href="/clan/settings", settings_label="혈맹 분배 설정",
+    )
+
+
+@router.get("/clan/treasury")
+async def clan_treasury(
+    request: Request, guild_id: int | None = None, alliance_id: int | None = None,
+    period: int | None = None, q: str = "", page: int = 1,
+    session: AsyncSession = Depends(get_session),
+):
+    return await _render_workspace(
+        request, session,
+        active_nav="clan.treasury",
+        page_title="혈비 가계부",
+        page_description="혈비 입출금과 거래 후 잔액을 시간 순서대로 확인합니다.",
+        page_kicker="Clan treasury",
+        page_badge="CLAN MANAGER",
+        builder=workspace_store.treasury_page,
+        guild_id=guild_id, alliance_id=alliance_id, period=period, query=q, page=page,
+        needs_alliance=True,
+    )
+
+
+@router.get("/clan/forfeits")
+async def clan_forfeits(
+    request: Request, guild_id: int | None = None, alliance_id: int | None = None,
+    period: int | None = None, q: str = "", page: int = 1,
+    session: AsyncSession = Depends(get_session),
+):
+    return await _render_workspace(
+        request, session,
+        active_nav="clan.forfeits",
+        page_title="귀속 관리",
+        page_description="기한 내 수령하지 않아 혈비로 귀속된 분배 기록을 조회합니다.",
+        page_kicker="Member forfeitures",
+        page_badge="CLAN MANAGER",
+        builder=workspace_store.forfeits_page,
+        guild_id=guild_id, alliance_id=alliance_id, period=period, query=q, page=page,
+        needs_alliance=True,
+    )
+
+
+@router.get("/clan/settings")
+async def clan_settings(
+    request: Request, guild_id: int | None = None, alliance_id: int | None = None,
+    q: str = "", page: int = 1, session: AsyncSession = Depends(get_session),
+):
+    return await _render_workspace(
+        request, session,
+        active_nav="clan.settings",
+        page_title="혈맹 분배 설정",
+        page_description="혈비와 기타 내부 수수료 규칙을 혈맹 단위로 확인합니다.",
+        page_kicker="Clan fee rules",
+        page_badge="CLAN MANAGER",
+        builder=workspace_store.fee_rules_page,
+        guild_id=guild_id, alliance_id=alliance_id, period=None, query=q, page=page,
+        needs_alliance=True, supports_period=False,
+        builder_kwargs={"scope_code": 2},
+    )
+
+
+@router.get("/attendance/status")
+async def attendance_status(
+    request: Request, guild_id: int | None = None, period: int | None = None,
+    q: str = "", page: int = 1, session: AsyncSession = Depends(get_session),
+):
+    return await _render_workspace(
+        request, session,
+        active_nav="attendance.status",
+        page_title="출석 현황",
+        page_description="회차별 시작 시각과 참여 인원을 최근 기록부터 확인합니다.",
+        page_kicker="Attendance sessions",
+        page_badge="USER",
+        builder=workspace_store.attendance_sessions_page,
+        guild_id=guild_id, alliance_id=None, period=period, query=q, page=page,
+        settings_href="/settings/attendance", settings_label="출석 설정",
+    )
+
+
+@router.get("/attendance/statistics")
+async def attendance_statistics(
+    request: Request, guild_id: int | None = None, period: int | None = None,
+    q: str = "", page: int = 1, session: AsyncSession = Depends(get_session),
+):
+    return await _render_workspace(
+        request, session,
+        active_nav="attendance.stats",
+        page_title="출석 통계",
+        page_description="기간 내 유저별 출석 횟수와 마지막 참여 시각을 비교합니다.",
+        page_kicker="Attendance analytics",
+        page_badge="USER",
+        builder=workspace_store.attendance_statistics_page,
+        guild_id=guild_id, alliance_id=None, period=period, query=q, page=page,
+    )
+
+
+@router.get("/attendance/clan")
+async def clan_attendance(
+    request: Request, guild_id: int | None = None, alliance_id: int | None = None,
+    period: int | None = None, q: str = "", page: int = 1,
+    session: AsyncSession = Depends(get_session),
+):
+    return await _render_workspace(
+        request, session,
+        active_nav="attendance.alliance",
+        page_title="내 혈맹 통계",
+        page_description="혈맹원을 기준으로 출석 횟수와 기간 참여율을 확인합니다.",
+        page_kicker="Clan attendance",
+        page_badge="USER",
+        builder=workspace_store.clan_attendance_page,
+        guild_id=guild_id, alliance_id=alliance_id, period=period, query=q, page=page,
+        needs_alliance=True,
+    )
+
+
+@router.get("/operations/notifications")
+async def operation_notifications(
+    request: Request, guild_id: int | None = None, q: str = "", page: int = 1,
+    session: AsyncSession = Depends(get_session),
+):
+    return await _render_workspace(
+        request, session,
+        active_nav="operations.notifications",
+        page_title="알림 관리",
+        page_description="등록된 통계 알림의 채널, 스케줄과 다음 발송 시각을 확인합니다.",
+        page_kicker="Scheduled reports",
+        page_badge="OWNER",
+        builder=workspace_store.reports_page,
+        guild_id=guild_id, alliance_id=None, period=None, query=q, page=page,
+        supports_period=False,
+    )
+
+
+@router.get("/operations/audit")
+async def operation_audit(
+    request: Request, guild_id: int | None = None, period: int | None = None,
+    q: str = "", page: int = 1, session: AsyncSession = Depends(get_session),
+):
+    return await _render_workspace(
+        request, session,
+        active_nav="operations.audit",
+        page_title="작업 로그",
+        page_description="출석, 아이템, 드랍, 입찰과 혈비 작업 이력을 시간 순서대로 확인합니다.",
+        page_kicker="Operation audit",
+        page_badge="OWNER",
+        builder=workspace_store.audit_page,
+        guild_id=guild_id, alliance_id=None, period=period, query=q, page=page,
+    )

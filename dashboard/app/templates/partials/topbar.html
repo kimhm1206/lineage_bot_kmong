@@ -1,9 +1,12 @@
 {% from "components/icons.html" import icon %}
 
 <header class="topbar">
-  <div class="topbar-search" aria-label="검색 자리">
-    {{ icon("search") }}
-    <span>페이지, 유저, 아이템 검색</span>
+  <div class="topbar-context" aria-label="현재 화면">
+    {{ icon("layout-dashboard") }}
+    <div>
+      <span>현재 화면</span>
+      <strong>{{ page_title }}</strong>
+    </div>
   </div>
 
   <div class="topbar-actions">

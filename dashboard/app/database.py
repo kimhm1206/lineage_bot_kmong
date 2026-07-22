@@ -131,6 +131,7 @@ async def apply_local_schema_cleanup() -> bool:
     if database_url.host not in {"127.0.0.1", "localhost", "::1"} or database_url.database != "testdb":
         return False
 
+    changed = False
     async with engine.begin() as connection:
         table_names = set(await connection.run_sync(lambda sync_connection: inspect(sync_connection).get_table_names()))
         if "schema_migrations" not in table_names:
@@ -143,68 +144,98 @@ async def apply_local_schema_cleanup() -> bool:
                 """)
             )
 
-        already_applied = await connection.scalar(
+        cleanup_applied = await connection.scalar(
             text("SELECT 1 FROM schema_migrations WHERE version = 4")
         )
-        if already_applied:
-            return False
+        if not cleanup_applied:
+            if "guild_bookkeepers" in table_names:
+                await connection.execute(
+                    text("""
+                        INSERT INTO guild_user_assignments (
+                            guild_id, discord_user_id, scope_code, alliance_id,
+                            assigned_by_discord_user_id, created_at, updated_at
+                        )
+                        SELECT guild_id, discord_id, 1, NULL,
+                               added_by_discord_id, updated_at, updated_at
+                        FROM guild_bookkeepers
+                        ON CONFLICT DO NOTHING
+                    """)
+                )
 
-        if "guild_bookkeepers" in table_names:
+            await connection.execute(text("ALTER TABLE guilds ADD COLUMN IF NOT EXISTS guild_name TEXT"))
+            await connection.execute(text("ALTER TABLE guilds ADD COLUMN IF NOT EXISTS owner_discord_id BIGINT"))
+            await connection.execute(text("ALTER TABLE guilds ADD COLUMN IF NOT EXISTS icon_hash TEXT"))
+            await connection.execute(text("ALTER TABLE guilds ADD COLUMN IF NOT EXISTS discord_synced_at TIMESTAMPTZ"))
+
+            await connection.execute(text("ALTER TABLE guild_settings DROP COLUMN IF EXISTS attendance_voice_channel_ids"))
+            for column_name in ("class_name", "attribute_name", "position_name", "phone", "memo"):
+                await connection.execute(text(f'ALTER TABLE users DROP COLUMN IF EXISTS "{column_name}"'))
+            for column_name in ("category", "is_bid_item", "sort_order", "memo"):
+                await connection.execute(text(f'ALTER TABLE items DROP COLUMN IF EXISTS "{column_name}"'))
             await connection.execute(
                 text("""
-                    INSERT INTO guild_user_assignments (
-                        guild_id, discord_user_id, scope_code, alliance_id,
-                        assigned_by_discord_user_id, created_at, updated_at
-                    )
-                    SELECT guild_id, discord_id, 1, NULL,
-                           added_by_discord_id, updated_at, updated_at
-                    FROM guild_bookkeepers
-                    ON CONFLICT DO NOTHING
+                    ALTER TABLE items
+                    ALTER COLUMN default_price TYPE BIGINT
+                    USING CASE WHEN default_price IS NULL THEN NULL ELSE TRUNC(default_price)::BIGINT END
                 """)
             )
 
-        await connection.execute(text("ALTER TABLE guilds ADD COLUMN IF NOT EXISTS guild_name TEXT"))
-        await connection.execute(text("ALTER TABLE guilds ADD COLUMN IF NOT EXISTS owner_discord_id BIGINT"))
-        await connection.execute(text("ALTER TABLE guilds ADD COLUMN IF NOT EXISTS icon_hash TEXT"))
-        await connection.execute(text("ALTER TABLE guilds ADD COLUMN IF NOT EXISTS discord_synced_at TIMESTAMPTZ"))
+            legacy_tables = (
+                "alliance_item_bid_statuses",
+                "attendance_live_participants",
+                "attendance_live_sessions",
+                "bot_command_queue",
+                "discord_message_links",
+                "guild_bookkeepers",
+                "item_bid_rules",
+                "item_categories",
+                "item_price_rules",
+                "notifications",
+                "web_admins",
+                "websocket_events",
+            )
+            for table_name in legacy_tables:
+                await connection.execute(text(f'DROP TABLE IF EXISTS "{table_name}"'))
 
-        await connection.execute(text("ALTER TABLE guild_settings DROP COLUMN IF EXISTS attendance_voice_channel_ids"))
-        for column_name in ("class_name", "attribute_name", "position_name", "phone", "memo"):
-            await connection.execute(text(f'ALTER TABLE users DROP COLUMN IF EXISTS "{column_name}"'))
-        for column_name in ("category", "is_bid_item", "sort_order", "memo"):
-            await connection.execute(text(f'ALTER TABLE items DROP COLUMN IF EXISTS "{column_name}"'))
-        await connection.execute(
-            text("""
-                ALTER TABLE items
-                ALTER COLUMN default_price TYPE BIGINT
-                USING CASE WHEN default_price IS NULL THEN NULL ELSE TRUNC(default_price)::BIGINT END
-            """)
-        )
+            await connection.execute(
+                text("""
+                    INSERT INTO schema_migrations(version, applied_at)
+                    VALUES (4, EXTRACT(EPOCH FROM NOW())::BIGINT)
+                """)
+            )
+            changed = True
 
-        legacy_tables = (
-            "alliance_item_bid_statuses",
-            "attendance_live_participants",
-            "attendance_live_sessions",
-            "bot_command_queue",
-            "discord_message_links",
-            "guild_bookkeepers",
-            "item_bid_rules",
-            "item_categories",
-            "item_price_rules",
-            "notifications",
-            "web_admins",
-            "websocket_events",
+        index_cleanup_applied = await connection.scalar(
+            text("SELECT 1 FROM schema_migrations WHERE version = 5")
         )
-        for table_name in legacy_tables:
-            await connection.execute(text(f'DROP TABLE IF EXISTS "{table_name}"'))
-
-        await connection.execute(
-            text("""
-                INSERT INTO schema_migrations(version, applied_at)
-                VALUES (4, EXTRACT(EPOCH FROM NOW())::BIGINT)
-            """)
-        )
-    return True
+        if not index_cleanup_applied:
+            await connection.execute(text("DROP INDEX IF EXISTS idx_users_discord_id"))
+            await connection.execute(
+                text("""
+                    CREATE INDEX IF NOT EXISTS idx_users_alliance_active_name
+                    ON users (alliance_id, is_active, discord_nickname)
+                """)
+            )
+            await connection.execute(
+                text("""
+                    CREATE INDEX IF NOT EXISTS idx_items_guild_active_name
+                    ON items (guild_id, is_active, item_name)
+                """)
+            )
+            await connection.execute(
+                text("""
+                    CREATE INDEX IF NOT EXISTS idx_fee_rules_guild_scope_alliance
+                    ON settlement_fee_rules (guild_id, scope_code, alliance_id, is_active)
+                """)
+            )
+            await connection.execute(
+                text("""
+                    INSERT INTO schema_migrations(version, applied_at)
+                    VALUES (5, EXTRACT(EPOCH FROM NOW())::BIGINT)
+                """)
+            )
+            changed = True
+    return changed
 
 
 async def close_database() -> None:

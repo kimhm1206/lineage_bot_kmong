@@ -1,0 +1,132 @@
+{% extends "layouts/app_shell.html" %}
+{% from "components/icons.html" import icon %}
+
+{% block title %}{{ page_title }} · {{ app_name }}{% endblock %}
+
+{% block content %}
+<section class="page-heading workspace-page-heading">
+  <div>
+    <p class="page-kicker">{{ page_kicker }}</p>
+    <h1>{{ page_title }}</h1>
+    <p>{{ page_description }}</p>
+  </div>
+  <span class="page-badge">{{ page_badge }}</span>
+</section>
+
+<form class="workspace-filter-bar" method="get" action="{{ request.url.path }}">
+  <label class="workspace-filter-field">
+    <span>서버</span>
+    <select name="guild_id" onchange="this.form.submit()" {% if not guilds %}disabled{% endif %}>
+      {% if not guilds %}<option>등록된 서버 없음</option>{% endif %}
+      {% for guild in guilds %}
+      <option value="{{ guild.guild_id }}" {% if guild.guild_id == guild_id %}selected{% endif %}>{{ guild.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+
+  {% if needs_alliance %}
+  <label class="workspace-filter-field">
+    <span>혈맹</span>
+    <select name="alliance_id" onchange="this.form.submit()" {% if not alliances %}disabled{% endif %}>
+      {% if not alliances %}<option>연결된 혈맹 없음</option>{% endif %}
+      {% for alliance in alliances %}
+      <option value="{{ alliance.alliance_id }}" {% if alliance.alliance_id == alliance_id %}selected{% endif %}>{{ alliance.display_name or alliance.alliance_name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  {% endif %}
+
+  {% if supports_period %}
+  <label class="workspace-filter-field workspace-filter-period">
+    <span>기간</span>
+    <select name="period" onchange="this.form.submit()">
+      {% for option in period_options %}
+      <option value="{{ option.value }}" {% if option.selected %}selected{% endif %}>{{ option.label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  {% endif %}
+
+  <label class="workspace-filter-field workspace-filter-search">
+    <span>검색</span>
+    <span class="workspace-search-control">
+      {{ icon("search") }}
+      <input type="search" name="q" value="{{ query }}" placeholder="이름 또는 ID 검색">
+    </span>
+  </label>
+  <button class="primary-button workspace-search-button" type="submit">조회</button>
+  {% if settings_href %}
+  <a class="secondary-button workspace-settings-link" href="{{ settings_href }}{% if guild_id %}?guild_id={{ guild_id }}{% endif %}">
+    {{ icon("settings") }}
+    {{ settings_label }}
+  </a>
+  {% endif %}
+</form>
+
+<section class="workspace-summary-grid">
+  {% for card in summary_cards %}
+  <article class="workspace-summary-card">
+    <span>{{ card.label }}</span>
+    <strong>{{ card.value }}</strong>
+    <small>{{ card.meta }}</small>
+  </article>
+  {% endfor %}
+</section>
+
+<section class="panel workspace-data-panel">
+  <div class="panel-header panel-header-inline workspace-data-head">
+    <div>
+      <span class="panel-kicker">Current data</span>
+      <h2>{{ page_title }} 목록</h2>
+    </div>
+    <span class="workspace-result-count">{{ result_label }}</span>
+  </div>
+
+  {% if rows and columns %}
+  <div class="workspace-table-wrap">
+    <table class="workspace-table">
+      <thead>
+        <tr>
+          {% for column in columns %}<th{% if column.numeric %} class="is-numeric"{% endif %}>{{ column.label }}</th>{% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr>
+          {% for column in columns %}
+          <td{% if column.numeric %} class="is-numeric"{% endif %}>
+            {% if column.status_key %}
+            <span class="workspace-status workspace-status-{{ row[column.status_key] }}">{{ row[column.key] }}</span>
+            {% elif column.emphasis %}
+            <strong>{{ row[column.key] }}</strong>
+            {% else %}
+            {{ row[column.key] }}
+            {% endif %}
+          </td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="workspace-empty-state">
+    <span class="workspace-empty-icon">{{ icon("database") }}</span>
+    <strong>표시할 데이터가 없습니다.</strong>
+    <p>{{ empty_message or "선택한 서버와 기간에 해당하는 기록이 없습니다." }}</p>
+  </div>
+  {% endif %}
+
+  {% if pagination.total_pages > 1 %}
+  <nav class="workspace-pagination" aria-label="페이지 이동">
+    <a class="page-control{% if not pagination.has_previous %} is-disabled{% endif %}" href="{{ request.url.include_query_params(page=1) }}" aria-label="첫 페이지">&lt;&lt;</a>
+    <a class="page-control{% if not pagination.has_previous %} is-disabled{% endif %}" href="{{ request.url.include_query_params(page=pagination.page - 1) }}" aria-label="이전 페이지">&lt;</a>
+    {% for number in pagination.pages %}
+    <a class="page-control{% if number == pagination.page %} is-active{% endif %}" href="{{ request.url.include_query_params(page=number) }}">{{ number }}</a>
+    {% endfor %}
+    <a class="page-control{% if not pagination.has_next %} is-disabled{% endif %}" href="{{ request.url.include_query_params(page=pagination.page + 1) }}" aria-label="다음 페이지">&gt;</a>
+    <a class="page-control{% if not pagination.has_next %} is-disabled{% endif %}" href="{{ request.url.include_query_params(page=pagination.total_pages) }}" aria-label="마지막 페이지">&gt;&gt;</a>
+  </nav>
+  {% endif %}
+</section>
+{% endblock %}

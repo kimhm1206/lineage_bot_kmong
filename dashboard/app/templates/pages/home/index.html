@@ -67,10 +67,10 @@
       {% for item in workspace.links %}<span>{{ item }}</span>{% endfor %}
     </div>
 
-    <button class="workspace-primary" type="button">
+    <a class="workspace-primary" href="{{ workspace.href }}">
       {{ workspace.primary }}
       {{ icon("chevron-right") }}
-    </button>
+    </a>
   </article>
   {% endfor %}
 </section>
@@ -83,9 +83,9 @@
       <h3>{{ module.title }}</h3>
       <p>{{ module.description }}</p>
     </div>
-    <button class="icon-button" type="button" aria-label="{{ module.title }} 이동">
+    <a class="icon-button" href="{{ module.href }}" aria-label="{{ module.title }} 이동">
       {{ icon("chevron-right") }}
-    </button>
+    </a>
   </article>
   {% endfor %}
 </section>
