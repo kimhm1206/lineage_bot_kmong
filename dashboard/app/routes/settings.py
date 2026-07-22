@@ -149,6 +149,7 @@ def _member_rows(members: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], d
         display_name = member.get("nick") or user.get("global_name") or user.get("username") or str(discord_id)
         rows.append({"discord_id": discord_id, "display_name": display_name, "username": user.get("username", "")})
         names[discord_id] = display_name
+    rows.sort(key=lambda row: (row["display_name"].casefold(), row["discord_id"]))
     return rows, names
 
 
@@ -344,7 +345,45 @@ async def manager_settings(
     members, member_names = _member_rows(resources["members"])
     for row in assignments:
         row["display_name"] = member_names.get(row["discord_user_id"], str(row["discord_user_id"]))
-        row["scope_label"] = "연합 관리자" if row["scope_code"] == settings_store.SCOPE_ALLIANCE_MANAGER else "각혈 관리자"
+    alliance_managers = [
+        row for row in assignments if row["scope_code"] == settings_store.SCOPE_ALLIANCE_MANAGER
+    ]
+    clan_manager_groups = []
+    mapped_alliance_ids = {row["alliance_id"] for row in alliances}
+    for alliance in alliances:
+        clan_manager_groups.append(
+            {
+                **alliance,
+                "managers": [
+                    row
+                    for row in assignments
+                    if row["scope_code"] == settings_store.SCOPE_CLAN_MANAGER
+                    and row["alliance_id"] == alliance["alliance_id"]
+                ],
+            }
+        )
+    orphan_clan_managers = [
+        row
+        for row in assignments
+        if row["scope_code"] == settings_store.SCOPE_CLAN_MANAGER
+        and row["alliance_id"] not in mapped_alliance_ids
+    ]
+    if orphan_clan_managers:
+        clan_manager_groups.append(
+            {
+                "alliance_id": None,
+                "alliance_name": "연결 해제된 혈맹",
+                "managers": orphan_clan_managers,
+            }
+        )
+    assigned_member_ids = {
+        "alliance": [row["discord_user_id"] for row in alliance_managers],
+        "clans": {
+            str(group["alliance_id"]): [row["discord_user_id"] for row in group["managers"]]
+            for group in clan_manager_groups
+            if group["alliance_id"] is not None
+        },
+    }
     context = build_template_context(
         request,
         active_nav="operations.delegation",
@@ -358,7 +397,9 @@ async def manager_settings(
         {
             "members": members,
             "alliances": alliances,
-            "assignments": [row for row in assignments if row["scope_code"] in (1, 2)],
+            "alliance_managers": alliance_managers,
+            "clan_manager_groups": clan_manager_groups,
+            "assigned_member_ids": assigned_member_ids,
             "discord_error": api_error or guild_data["discord_error"],
             "notice": request.query_params.get("notice", ""),
             "error": request.query_params.get("error", ""),
@@ -449,6 +490,7 @@ async def clan_settings(
             "alliances": alliances,
             "alliance_id": alliance_id,
             "accountants": accountants,
+            "accountant_ids": [row["discord_user_id"] for row in accountants],
             "policy": policy,
             "policy_labels": POLICY_LABELS,
             "discord_error": api_error or guild_data["discord_error"],

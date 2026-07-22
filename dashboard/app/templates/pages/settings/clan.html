@@ -1,5 +1,6 @@
 {% extends "layouts/app_shell.html" %}
 {% from "components/icons.html" import icon %}
+{% from "components/user_picker_field.html" import user_picker_field %}
 
 {% block title %}{{ page_title }} · {{ app_name }}{% endblock %}
 {% block content %}
@@ -25,9 +26,9 @@
       </article>
       {% else %}<div class="empty-state">지정된 혈맹 경리가 없습니다.</div>{% endfor %}
     </div>
-    <form class="inline-assign-form" method="post" action="/settings/clan/accountants">
+    <form class="inline-assign-form" method="post" action="/settings/clan/accountants" data-manager-form data-picker-scope="static" data-excluded-ids="{{ accountant_ids | tojson | forceescape }}">
       <input type="hidden" name="guild_id" value="{{ guild_id or '' }}"><input type="hidden" name="alliance_id" value="{{ alliance_id or '' }}">
-      <label class="form-field"><span>경리 추가</span><select name="discord_user_id" required><option value="">서버 유저 선택</option>{% for member in members %}<option value="{{ member.discord_id }}">{{ member.display_name }}</option>{% endfor %}</select></label>
+      {{ user_picker_field(label="경리 추가") }}
       <button class="primary-button" type="submit" {% if not alliance_id or not members %}disabled{% endif %}>{{ icon("plus-square") }} 추가</button>
     </form>
   </section>
@@ -50,4 +51,7 @@
     </form>
   </section>
 </div>
+<script id="page-users-data" type="application/json">{{ members | tojson }}</script>
 {% endblock %}
+
+{% block scripts %}<script src="{{ url_for('static', path='/js/settings.js') }}" defer></script>{% endblock %}

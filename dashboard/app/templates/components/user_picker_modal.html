@@ -1,0 +1,33 @@
+{% from "components/icons.html" import icon %}
+
+<div class="user-picker-overlay is-hidden" data-user-picker-modal aria-hidden="true">
+  <section class="user-picker-dialog" role="dialog" aria-modal="true" aria-labelledby="user-picker-title">
+    <header class="user-picker-header">
+      <div>
+        <span class="panel-kicker">Server members</span>
+        <h2 id="user-picker-title" data-user-picker-title>유저 선택</h2>
+      </div>
+      <button class="modal-close-button" type="button" data-user-picker-close aria-label="닫기">{{ icon("x") }}</button>
+    </header>
+
+    <div class="user-picker-search-wrap">
+      <label for="global-user-picker-search">서버 유저 검색</label>
+      <div class="user-picker-search">{{ icon("search") }}<input id="global-user-picker-search" type="search" placeholder="닉네임, 사용자명 또는 Discord ID" autocomplete="off" data-user-picker-search></div>
+    </div>
+
+    <div class="user-picker-summary">
+      <span data-user-picker-mode>한 명 선택</span>
+      <strong data-user-picker-count>0명 선택</strong>
+    </div>
+
+    <div class="user-picker-results" data-user-picker-results></div>
+
+    <footer class="user-picker-footer">
+      <span data-user-picker-result-count>0명</span>
+      <div>
+        <button class="secondary-button" type="button" data-user-picker-cancel>취소</button>
+        <button class="primary-button" type="button" data-user-picker-confirm disabled>선택 완료</button>
+      </div>
+    </footer>
+  </section>
+</div>

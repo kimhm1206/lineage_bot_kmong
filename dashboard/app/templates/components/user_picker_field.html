@@ -1,0 +1,17 @@
+{% from "components/icons.html" import icon %}
+
+{% macro user_picker_field(label="서버 유저", input_name="discord_user_id", empty_name="유저 선택", empty_meta="검색해서 선택") %}
+<div class="user-picker-field" data-user-picker-field>
+  <span class="field-label">{{ label }}</span>
+  <button class="user-picker-launch" type="button" data-user-picker-open>
+    <span class="user-picker-launch-icon">{{ icon("users-round") }}</span>
+    <span class="user-picker-launch-copy">
+      <strong data-user-picker-name>{{ empty_name }}</strong>
+      <small data-user-picker-meta>{{ empty_meta }}</small>
+    </span>
+    {{ icon("chevron-right") }}
+  </button>
+  <input type="hidden" name="{{ input_name }}" data-user-id>
+  <p class="picker-error is-hidden" data-picker-error>유저를 선택해 주세요.</p>
+</div>
+{% endmacro %}

@@ -1,5 +1,6 @@
 {% extends "layouts/app_shell.html" %}
 {% from "components/icons.html" import icon %}
+{% from "components/user_picker_field.html" import user_picker_field %}
 
 {% block title %}{{ page_title }} · {{ app_name }}{% endblock %}
 {% block content %}
@@ -9,37 +10,93 @@
 </section>
 {% include "partials/settings_toolbar.html" %}
 
-<div class="settings-grid settings-grid-sidebar">
-  <section class="panel settings-form-panel">
-    <div class="panel-header"><div><span class="panel-kicker">Assigned users</span><h2>현재 운영 담당자</h2></div><span class="soft-label">{{ assignments|length }}명</span></div>
-    <div class="assignment-list">
-      {% for assignment in assignments %}
-      <article class="assignment-row">
-        <span class="user-avatar">{{ assignment.display_name[:1] }}</span>
-        <div><strong>{{ assignment.display_name }}</strong><small>{{ assignment.discord_user_id }}</small></div>
-        <span class="scope-chip scope-{{ assignment.scope_code }}">{{ assignment.scope_label }}</span>
-        <span class="assignment-alliance">{{ assignment.alliance_name or "연합 전체" }}</span>
-        <form method="post" action="/settings/assignments/{{ assignment.assignment_id }}/delete">
-          <input type="hidden" name="guild_id" value="{{ guild_id }}"><input type="hidden" name="return_path" value="/settings/managers">
-          <button class="danger-icon-button" type="submit" title="지정 해제">{{ icon("trash") }}</button>
-        </form>
-      </article>
-      {% else %}<div class="empty-state">지정된 운영 담당자가 없습니다.</div>{% endfor %}
+<div class="manager-workspace">
+  <section class="panel manager-section manager-section-alliance">
+    <header class="manager-section-header">
+      <span class="manager-section-icon">{{ icon("network") }}</span>
+      <div><span class="panel-kicker">Alliance operations</span><h2>연합 관리자</h2></div>
+      <span class="manager-count">{{ alliance_managers|length }}명</span>
+    </header>
+
+    <div class="manager-section-body">
+      <div class="manager-current-area">
+        <h3>현재 담당자</h3>
+        <div class="manager-roster">
+          {% for manager in alliance_managers %}
+          <article class="manager-person-row">
+            <span class="user-avatar">{{ manager.display_name[:1] }}</span>
+            <div><strong>{{ manager.display_name }}</strong><small>{{ manager.discord_user_id }}</small></div>
+            <form method="post" action="/settings/assignments/{{ manager.assignment_id }}/delete">
+              <input type="hidden" name="guild_id" value="{{ guild_id }}"><input type="hidden" name="return_path" value="/settings/managers">
+              <button class="danger-icon-button" type="submit" title="지정 해제">{{ icon("trash") }}</button>
+            </form>
+          </article>
+          {% else %}<div class="manager-empty">지정된 연합 관리자가 없습니다.</div>{% endfor %}
+        </div>
+      </div>
+
+      <form class="manager-add-area" method="post" action="/settings/managers" data-manager-form data-picker-scope="alliance">
+        <input type="hidden" name="guild_id" value="{{ guild_id or '' }}">
+        <input type="hidden" name="scope_code" value="1">
+        <div class="manager-add-heading"><span>{{ icon("plus-square") }}</span><div><strong>연합 관리자 추가</strong><small>서버 유저 검색</small></div></div>
+        {{ user_picker_field() }}
+        <button class="primary-button manager-submit" type="submit" {% if not guild_id or not members %}disabled{% endif %}>담당자로 추가</button>
+      </form>
     </div>
   </section>
 
-  <aside class="panel settings-side-panel">
-    <div class="panel-header"><div><span class="panel-kicker">Assign user</span><h2>담당자 지정</h2></div></div>
-    <form class="settings-form" method="post" action="/settings/managers" data-manager-form>
-      <input type="hidden" name="guild_id" value="{{ guild_id or '' }}">
-      <label class="form-field"><span>서버 유저</span><select name="discord_user_id" required><option value="">유저 선택</option>{% for member in members %}<option value="{{ member.discord_id }}">{{ member.display_name }}{% if member.username %} · {{ member.username }}{% endif %}</option>{% endfor %}</select></label>
-      <label class="form-field"><span>담당 권한</span><select name="scope_code" data-scope-select required><option value="1">연합 관리자</option><option value="2">각혈 관리자</option></select></label>
-      <label class="form-field is-hidden" data-alliance-field><span>담당 혈맹</span><select name="alliance_id"><option value="">혈맹 선택</option>{% for alliance in alliances %}<option value="{{ alliance.alliance_id }}">{{ alliance.alliance_name }}</option>{% endfor %}</select></label>
-      <button class="primary-button" type="submit" {% if not guild_id or not members %}disabled{% endif %}>{{ icon("plus-square") }} 담당자 지정</button>
-    </form>
-    <p class="form-help">연합 관리자와 각혈 관리자는 상하 관계가 아닌 서로 다른 업무 권한입니다.</p>
-  </aside>
+  <section class="panel manager-section manager-section-clan">
+    <header class="manager-section-header">
+      <span class="manager-section-icon">{{ icon("landmark") }}</span>
+      <div><span class="panel-kicker">Clan operations</span><h2>각혈 관리자</h2></div>
+      <span class="manager-count">{{ clan_manager_groups | map(attribute='managers') | map('length') | sum }}명</span>
+    </header>
+
+    <div class="manager-section-body manager-section-body-clan">
+      <div class="manager-current-area">
+        <h3>혈맹별 담당자</h3>
+        <div class="clan-manager-groups">
+          {% for group in clan_manager_groups %}
+          <article class="clan-manager-group">
+            <header><strong>{{ group.alliance_name }}</strong><span>{{ group.managers|length }}명</span></header>
+            <div class="clan-manager-people">
+              {% for manager in group.managers %}
+              <div class="clan-manager-person">
+                <span class="user-avatar user-avatar-small">{{ manager.display_name[:1] }}</span>
+                <div><strong>{{ manager.display_name }}</strong><small>{{ manager.discord_user_id }}</small></div>
+                <form method="post" action="/settings/assignments/{{ manager.assignment_id }}/delete">
+                  <input type="hidden" name="guild_id" value="{{ guild_id }}"><input type="hidden" name="return_path" value="/settings/managers">
+                  <button class="danger-icon-button" type="submit" title="지정 해제">{{ icon("trash") }}</button>
+                </form>
+              </div>
+              {% else %}<span class="clan-manager-none">미지정</span>{% endfor %}
+            </div>
+          </article>
+          {% else %}<div class="manager-empty">먼저 혈맹과 Discord 역할을 연결해 주세요.</div>{% endfor %}
+        </div>
+      </div>
+
+      <form class="manager-add-area" method="post" action="/settings/managers" data-manager-form data-picker-scope="clan">
+        <input type="hidden" name="guild_id" value="{{ guild_id or '' }}">
+        <input type="hidden" name="scope_code" value="2">
+        <div class="manager-add-heading"><span>{{ icon("plus-square") }}</span><div><strong>각혈 관리자 추가</strong><small>혈맹과 유저 선택</small></div></div>
+        <fieldset class="alliance-choice-fieldset">
+          <legend>담당 혈맹</legend>
+          <div class="alliance-choice-grid">
+            {% for alliance in alliances %}
+            <label class="alliance-choice"><input type="radio" name="alliance_id" value="{{ alliance.alliance_id }}" {% if loop.first %}checked{% endif %}><span>{{ alliance.alliance_name }}</span></label>
+            {% endfor %}
+          </div>
+        </fieldset>
+        {{ user_picker_field() }}
+        <button class="primary-button manager-submit" type="submit" {% if not guild_id or not members or not alliances %}disabled{% endif %}>담당자로 추가</button>
+      </form>
+    </div>
+  </section>
 </div>
+
+<script id="page-users-data" type="application/json">{{ members | tojson }}</script>
+<script id="manager-assignments-data" type="application/json">{{ assigned_member_ids | tojson }}</script>
 {% endblock %}
 
 {% block scripts %}<script src="{{ url_for('static', path='/js/settings.js') }}" defer></script>{% endblock %}

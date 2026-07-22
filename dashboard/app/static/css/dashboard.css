@@ -1627,6 +1627,605 @@ a {
   display: none !important;
 }
 
+/* Manager assignments */
+.manager-workspace {
+  display: grid;
+  gap: 20px;
+  margin-top: 18px;
+}
+
+.manager-section {
+  --manager-tone: var(--alliance);
+  --manager-soft: var(--alliance-soft);
+}
+
+.manager-section-clan {
+  --manager-tone: var(--clan);
+  --manager-soft: var(--clan-soft);
+}
+
+.manager-section-header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 20px 22px;
+  border-bottom: 1px solid var(--line);
+}
+
+.manager-section-header .panel-kicker {
+  margin-bottom: 4px;
+  color: var(--manager-tone);
+}
+
+.manager-section-header h2 {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: 22px;
+}
+
+.manager-section-icon {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border: 1px solid color-mix(in srgb, var(--manager-tone) 35%, var(--line));
+  border-radius: var(--radius);
+  background: var(--manager-soft);
+  color: var(--manager-tone);
+}
+
+.manager-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 42px;
+  min-height: 28px;
+  border: 1px solid color-mix(in srgb, var(--manager-tone) 35%, var(--line));
+  border-radius: 5px;
+  background: var(--manager-soft);
+  color: var(--manager-tone);
+  font-size: 11px;
+  font-weight: 950;
+}
+
+.manager-section-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.65fr);
+  min-height: 260px;
+}
+
+.manager-current-area,
+.manager-add-area {
+  min-width: 0;
+  padding: 20px 22px;
+}
+
+.manager-current-area > h3 {
+  margin: 0 0 12px;
+  color: var(--muted-strong);
+  font-size: 12px;
+}
+
+.manager-add-area {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  border-left: 1px solid var(--line);
+  background: var(--panel-subtle);
+}
+
+.manager-add-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.manager-add-heading > span {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius);
+  background: var(--manager-soft);
+  color: var(--manager-tone);
+}
+
+.manager-add-heading strong,
+.manager-add-heading small {
+  display: block;
+}
+
+.manager-add-heading strong {
+  color: var(--text-strong);
+  font-size: 13px;
+}
+
+.manager-add-heading small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.manager-roster {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.manager-person-row,
+.clan-manager-person {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 11px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+
+.manager-person-row strong,
+.manager-person-row small,
+.clan-manager-person strong,
+.clan-manager-person small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.manager-person-row strong,
+.clan-manager-person strong {
+  color: var(--text-strong);
+  font-size: 12px;
+}
+
+.manager-person-row small,
+.clan-manager-person small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 750;
+}
+
+.manager-person-row .danger-icon-button,
+.clan-manager-person .danger-icon-button {
+  width: 32px;
+  min-height: 32px;
+}
+
+.manager-empty {
+  grid-column: 1 / -1;
+  display: grid;
+  min-height: 112px;
+  place-items: center;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.clan-manager-groups {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.clan-manager-group {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+
+.clan-manager-group > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel-subtle);
+}
+
+.clan-manager-group > header strong {
+  color: var(--text-strong);
+  font-size: 12px;
+}
+
+.clan-manager-group > header span {
+  color: var(--clan);
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.clan-manager-people {
+  display: grid;
+  gap: 7px;
+  padding: 8px;
+}
+
+.clan-manager-person {
+  padding: 8px;
+  background: var(--panel-subtle);
+}
+
+.clan-manager-none {
+  padding: 12px;
+  color: var(--muted);
+  text-align: center;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.user-avatar-small {
+  width: 30px;
+  height: 30px;
+  font-size: 10px;
+}
+
+.alliance-choice-fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.alliance-choice-fieldset legend,
+.field-label {
+  display: block;
+  margin-bottom: 7px;
+  color: var(--text-strong);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.alliance-choice-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.alliance-choice {
+  min-width: 0;
+  cursor: pointer;
+}
+
+.alliance-choice input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.alliance-choice span {
+  display: grid;
+  min-height: 34px;
+  place-items: center;
+  overflow: hidden;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--panel);
+  color: var(--muted-strong);
+  font-size: 10px;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.alliance-choice input:checked + span {
+  border-color: var(--clan);
+  background: var(--clan-soft);
+  color: var(--clan);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--clan) 20%, transparent);
+}
+
+.user-picker-field {
+  position: relative;
+  min-width: 0;
+}
+
+.user-picker-launch {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 54px;
+  padding: 8px 11px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--text-strong);
+  cursor: pointer;
+  text-align: left;
+}
+
+.user-picker-launch:hover,
+.user-picker-launch:focus-visible {
+  border-color: var(--manager-tone, var(--accent));
+  outline: none;
+}
+
+.user-picker-launch.has-selection {
+  border-color: color-mix(in srgb, var(--manager-tone, var(--accent)) 55%, var(--line));
+  background: var(--manager-soft, var(--accent-soft));
+}
+
+.user-picker-launch-icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--panel-subtle);
+  color: var(--manager-tone, var(--accent-strong));
+}
+
+.user-picker-launch-copy strong,
+.user-picker-launch-copy small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-picker-launch-copy strong {
+  font-size: 12px;
+}
+
+.user-picker-launch-copy small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 750;
+}
+
+.picker-error {
+  margin: 6px 0 0;
+  color: var(--danger);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.manager-submit {
+  width: 100%;
+  margin-top: auto;
+}
+
+/* Reusable user picker modal */
+body.modal-open {
+  overflow: hidden;
+}
+
+.user-picker-overlay {
+  position: fixed;
+  z-index: 1000;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(4, 10, 18, 0.72);
+  backdrop-filter: blur(4px);
+}
+
+.user-picker-dialog {
+  display: grid;
+  grid-template-rows: auto auto auto minmax(220px, 1fr) auto;
+  width: min(720px, 100%);
+  height: min(720px, calc(100vh - 48px));
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--panel);
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.36);
+}
+
+.user-picker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 20px 22px;
+  border-bottom: 1px solid var(--line);
+}
+
+.user-picker-header .panel-kicker {
+  margin-bottom: 4px;
+}
+
+.user-picker-header h2 {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: 22px;
+}
+
+.modal-close-button {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel-subtle);
+  color: var(--muted-strong);
+  cursor: pointer;
+}
+
+.user-picker-search-wrap {
+  padding: 16px 22px 12px;
+}
+
+.user-picker-search-wrap label {
+  display: block;
+  margin-bottom: 7px;
+  color: var(--text-strong);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.user-picker-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 0 13px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--panel-subtle);
+  color: var(--muted);
+}
+
+.user-picker-search:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.user-picker-search input {
+  width: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text-strong);
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.user-picker-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 22px 12px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.user-picker-summary strong {
+  color: var(--accent-strong);
+}
+
+.user-picker-results {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 14px 14px;
+  scrollbar-gutter: stable;
+}
+
+.user-picker-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  min-height: 54px;
+  padding: 8px 12px;
+  border: 1px solid transparent;
+  border-bottom-color: var(--line);
+  background: var(--panel);
+  color: var(--text-strong);
+  cursor: pointer;
+  text-align: left;
+}
+
+.user-picker-row:hover {
+  border-color: var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--panel-subtle);
+}
+
+.user-picker-row.is-selected {
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--line));
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+}
+
+.user-picker-row.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.user-picker-row-copy strong,
+.user-picker-row-copy small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-picker-row-copy strong {
+  font-size: 12px;
+}
+
+.user-picker-row-copy small {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 750;
+}
+
+.user-picker-row-state {
+  min-width: 64px;
+  color: var(--muted);
+  text-align: right;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.user-picker-row.is-selected .user-picker-row-state {
+  color: var(--accent-strong);
+}
+
+.user-picker-empty {
+  display: grid;
+  min-height: 220px;
+  place-items: center;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.user-picker-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 22px;
+  border-top: 1px solid var(--line);
+  background: var(--panel-subtle);
+}
+
+.user-picker-footer > span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.user-picker-footer > div {
+  display: flex;
+  gap: 8px;
+}
+
+.secondary-button {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--text-strong);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 900;
+}
+
 @media (max-width: 1320px) {
   :root {
     --sidebar-width: 260px;
@@ -1701,6 +2300,15 @@ a {
   .settings-grid-sidebar,
   .settings-grid-even {
     grid-template-columns: 1fr;
+  }
+
+  .manager-section-body {
+    grid-template-columns: 1fr;
+  }
+
+  .manager-add-area {
+    border-top: 1px solid var(--line);
+    border-left: 0;
   }
 
   .form-grid-three {
@@ -1840,5 +2448,34 @@ a {
   .assignment-row form {
     grid-column: 3;
     grid-row: 1 / span 3;
+  }
+
+  .manager-roster,
+  .clan-manager-groups {
+    grid-template-columns: 1fr;
+  }
+
+  .alliance-choice-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .user-picker-overlay {
+    padding: 10px;
+  }
+
+  .user-picker-dialog {
+    height: calc(100vh - 20px);
+  }
+
+  .user-picker-header,
+  .user-picker-search-wrap,
+  .user-picker-footer {
+    padding-right: 16px;
+    padding-left: 16px;
+  }
+
+  .user-picker-summary {
+    padding-right: 16px;
+    padding-left: 16px;
   }
 }
