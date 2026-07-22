@@ -10,10 +10,10 @@
       {% endfor %}
     </select>
   </form>
-  {% if guild_id %}
-  <a class="icon-text-button" href="{{ request.url.path }}?guild_id={{ guild_id }}&refresh=true" title="Discord 정보 새로고침">
+  {% if guild_id and show_api_refresh %}
+  <a class="icon-text-button" href="{{ request.url.path }}?guild_id={{ guild_id }}&refresh=true" title="{{ api_refresh_label }}">
     {{ icon("refresh") }}
-    API 새로고침
+    {{ api_refresh_label }}
   </a>
   {% endif %}
 </div>

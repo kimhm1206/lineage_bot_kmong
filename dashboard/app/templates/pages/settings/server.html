@@ -19,7 +19,7 @@
       <article class="server-row{% if guild.is_enabled %} is-enabled{% endif %}">
         <span class="server-state"></span>
         <div><strong>{{ guild.name }}</strong><small>{{ guild.guild_id }}</small></div>
-        <span class="connection-label">{{ "API 연결" if guild.reachable else "확인 필요" }}</span>
+        <span class="connection-label">{{ "동기화됨" if guild.synced else "미동기화" }}</span>
         <form method="post" action="/settings/server">
           <input type="hidden" name="guild_id" value="{{ guild.guild_id }}">
           <input type="hidden" name="is_enabled" value="{{ 'false' if guild.is_enabled else 'true' }}">

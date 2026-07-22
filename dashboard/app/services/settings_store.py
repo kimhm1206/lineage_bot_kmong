@@ -14,7 +14,8 @@ SCOPE_CLAN_ACCOUNTANT = 3
 async def list_guilds(session: AsyncSession) -> list[dict[str, Any]]:
     result = await session.execute(
         text("""
-            SELECT g.guild_id, g.is_enabled,
+            SELECT g.guild_id, g.is_enabled, g.guild_name,
+                   g.owner_discord_id, g.icon_hash, g.discord_synced_at,
                    gs.admin_channel_id, gs.attendance_voice_channel_id,
                    gs.log_channel_id, gs.timer, gs.attendance_available_timer
             FROM guilds g
@@ -25,15 +26,64 @@ async def list_guilds(session: AsyncSession) -> list[dict[str, Any]]:
     return [dict(row) for row in result.mappings()]
 
 
-async def upsert_guild(session: AsyncSession, guild_id: int, *, is_enabled: bool = True) -> None:
+async def upsert_guild(
+    session: AsyncSession,
+    guild_id: int,
+    *,
+    is_enabled: bool = True,
+    guild_name: str | None = None,
+    owner_discord_id: int | None = None,
+    icon_hash: str | None = None,
+) -> None:
     await session.execute(
         text("""
-            INSERT INTO guilds (guild_id, is_enabled)
-            VALUES (:guild_id, :is_enabled)
-            ON CONFLICT (guild_id) DO UPDATE SET is_enabled = EXCLUDED.is_enabled
+            INSERT INTO guilds (
+                guild_id, is_enabled, guild_name, owner_discord_id,
+                icon_hash, discord_synced_at
+            ) VALUES (
+                :guild_id, :is_enabled, :guild_name, :owner_discord_id,
+                :icon_hash, CASE WHEN :guild_name IS NULL THEN NULL ELSE NOW() END
+            )
+            ON CONFLICT (guild_id) DO UPDATE SET
+                is_enabled = EXCLUDED.is_enabled,
+                guild_name = COALESCE(EXCLUDED.guild_name, guilds.guild_name),
+                owner_discord_id = COALESCE(EXCLUDED.owner_discord_id, guilds.owner_discord_id),
+                icon_hash = CASE
+                    WHEN EXCLUDED.guild_name IS NULL THEN guilds.icon_hash
+                    ELSE EXCLUDED.icon_hash
+                END,
+                discord_synced_at = CASE
+                    WHEN EXCLUDED.guild_name IS NULL THEN guilds.discord_synced_at
+                    ELSE NOW()
+                END
         """),
-        {"guild_id": guild_id, "is_enabled": is_enabled},
+        {
+            "guild_id": guild_id,
+            "is_enabled": is_enabled,
+            "guild_name": guild_name,
+            "owner_discord_id": owner_discord_id,
+            "icon_hash": icon_hash,
+        },
     )
+    await session.commit()
+
+
+async def update_guild_metadata(
+    session: AsyncSession,
+    guilds: list[dict[str, Any]],
+) -> None:
+    for guild in guilds:
+        await session.execute(
+            text("""
+                UPDATE guilds
+                SET guild_name = :guild_name,
+                    owner_discord_id = :owner_discord_id,
+                    icon_hash = :icon_hash,
+                    discord_synced_at = NOW()
+                WHERE guild_id = :guild_id
+            """),
+            guild,
+        )
     await session.commit()
 
 
@@ -51,18 +101,14 @@ async def save_attendance_settings(
         text("""
             INSERT INTO guild_settings (
                 guild_id, admin_channel_id, attendance_voice_channel_id,
-                attendance_voice_channel_ids, log_channel_id, timer,
-                attendance_available_timer, updated_at
+                log_channel_id, timer, attendance_available_timer, updated_at
             ) VALUES (
                 :guild_id, CAST(:admin_channel_id AS BIGINT), CAST(:voice_channel_id AS BIGINT),
-                CASE WHEN CAST(:voice_channel_id AS BIGINT) IS NULL THEN '[]'::jsonb
-                     ELSE jsonb_build_array(CAST(:voice_channel_id AS BIGINT)) END,
                 CAST(:log_channel_id AS BIGINT), :timer, :attendance_available_timer, NOW()
             )
             ON CONFLICT (guild_id) DO UPDATE SET
                 admin_channel_id = EXCLUDED.admin_channel_id,
                 attendance_voice_channel_id = EXCLUDED.attendance_voice_channel_id,
-                attendance_voice_channel_ids = EXCLUDED.attendance_voice_channel_ids,
                 log_channel_id = EXCLUDED.log_channel_id,
                 timer = EXCLUDED.timer,
                 attendance_available_timer = EXCLUDED.attendance_available_timer,

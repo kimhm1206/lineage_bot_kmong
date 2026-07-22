@@ -33,6 +33,8 @@ DISCORD_BOT_TOKEN=실제_봇_토큰
 /settings/alliances    혈맹과 Discord 역할 매핑
 /settings/managers     연합/각혈 관리자 유저 지정
 /settings/clan         혈맹 경리와 공개 정책
+/developer/bot         Discord REST 연동과 서버 메타데이터
+/developer/system      로컬 DB 스키마와 핵심 데이터 점검
 ```
 
 ## 화면 구조
@@ -46,7 +48,8 @@ DISCORD_BOT_TOKEN=실제_봇_토큰
 연합 운영       # 연합 관리자: 드랍 등록, 각혈 분배, 입찰, 연합 수수료
 내 혈맹 운영    # 각혈 관리자/경리: 혈맹원 분배, 혈비, 귀속, 공개 정책
 출석 · 통계     # 공통 조회와 출석 설정
-서버 운영       # 오너: 연합/각혈 관리자 유저 지정과 서버 공통 설정
+서버 운영       # 오너: 혈맹, 연합/각혈 관리자 지정과 운영 기록
+개발자 도구     # 개발자: 서버 등록, Discord REST 연동과 DB 진단
 ```
 
 ```text

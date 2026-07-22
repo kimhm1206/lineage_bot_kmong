@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import Request
 
 from dashboard.app.config import get_settings
+from dashboard.app.security import current_access_role, is_developer
 from dashboard.app.ui.navigation import get_navigation
 
 
@@ -16,11 +17,20 @@ def build_template_context(
     page_badge: str = "DESIGN BASE",
 ) -> dict[str, object]:
     settings = get_settings()
+    access_role = current_access_role(request)
     return {
         "request": request,
         "app_name": settings.app_name,
         "environment": settings.environment,
-        "navigation": get_navigation(active_nav),
+        "navigation": get_navigation(active_nav, developer_access=is_developer(request)),
+        "current_access_role": access_role,
+        "current_access_role_label": {
+            "developer": "Developer",
+            "owner": "Owner",
+            "alliance_manager": "Alliance manager",
+            "clan_manager": "Clan manager",
+            "clan_accountant": "Clan accountant",
+        }.get(access_role, "User"),
         "active_nav": active_nav,
         "page_title": page_title,
         "page_description": page_description,

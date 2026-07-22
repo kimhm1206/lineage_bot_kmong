@@ -28,6 +28,7 @@ class DiscordRestClient:
         self._ttl = max(settings.discord_cache_ttl_seconds, 0)
         self._cache: dict[str, _CacheEntry] = {}
         self._lock = asyncio.Lock()
+        self._client: httpx.AsyncClient | None = None
 
     @property
     def configured(self) -> bool:
@@ -40,6 +41,20 @@ class DiscordRestClient:
         for key in tuple(self._cache):
             if key.startswith(prefix):
                 self._cache.pop(key, None)
+
+    def _http_client(self) -> httpx.AsyncClient:
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(
+                base_url=self._base_url,
+                headers={"Authorization": f"Bot {self._token}"},
+                timeout=httpx.Timeout(15.0),
+            )
+        return self._client
+
+    async def close(self) -> None:
+        if self._client is not None and not self._client.is_closed:
+            await self._client.aclose()
+        self._client = None
 
     async def _get(self, path: str, *, params: dict[str, Any] | None = None, cache_key: str | None = None) -> Any:
         if not self._token:
@@ -56,12 +71,7 @@ class DiscordRestClient:
                 return cached.value
 
             try:
-                async with httpx.AsyncClient(
-                    base_url=self._base_url,
-                    headers={"Authorization": f"Bot {self._token}"},
-                    timeout=httpx.Timeout(15.0),
-                ) as client:
-                    response = await client.get(path, params=params)
+                response = await self._http_client().get(path, params=params)
             except httpx.HTTPError as exc:
                 raise DiscordApiError("Discord API에 연결하지 못했습니다.") from exc
 

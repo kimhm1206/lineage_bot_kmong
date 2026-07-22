@@ -22,6 +22,7 @@ class NavGroup:
     audience: str = ""
     description: str = ""
     tone: str = "common"
+    developer_only: bool = False
 
 
 NAV_GROUPS: tuple[NavGroup, ...] = (
@@ -90,19 +91,32 @@ NAV_GROUPS: tuple[NavGroup, ...] = (
             NavItem("operations.delegation", "운영 담당자 지정", "/settings/managers", "key-round", "관리자 유저 지정", "오너"),
             NavItem("operations.notifications", "알림 관리", "#", "bell", "통계와 정산 알림"),
             NavItem("operations.audit", "작업 로그", "#", "clipboard-list", "관리 작업 이력"),
-            NavItem("settings.server", "서버 기본 설정", "/settings/server", "server", "공통 서버 값"),
-            NavItem("settings.bot", "봇 설정", "#", "bot", "패널과 버전"),
-            NavItem("settings.system", "시스템 설정", "#", "database", "점검과 개발자 도구"),
         ),
         audience="오너",
-        description="권한과 서버 공통 설정",
+        description="혈맹, 담당자와 운영 기록",
+    ),
+    NavGroup(
+        id="developer",
+        label="개발자 도구",
+        icon="code",
+        items=(
+            NavItem("developer.server", "서버 기본 설정", "/settings/server", "server", "서버 등록과 활성 상태"),
+            NavItem("developer.bot", "봇 연동", "/developer/bot", "bot", "Discord REST 연결 상태"),
+            NavItem("developer.system", "시스템 점검", "/developer/system", "database", "DB 구조와 데이터 상태"),
+        ),
+        audience="개발자",
+        description="연결 정보와 시스템 진단",
+        tone="developer",
+        developer_only=True,
     ),
 )
 
 
-def get_navigation(active_item_id: str) -> list[dict[str, object]]:
+def get_navigation(active_item_id: str, *, developer_access: bool = False) -> list[dict[str, object]]:
     groups: list[dict[str, object]] = []
     for group in NAV_GROUPS:
+        if group.developer_only and not developer_access:
+            continue
         items = []
         group_is_active = False
         for item in group.items:

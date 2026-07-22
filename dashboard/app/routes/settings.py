@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from dashboard.app.config import BASE_DIR
 from dashboard.app.database import get_session
+from dashboard.app.security import require_developer
 from dashboard.app.services import settings_store
 from dashboard.app.services.discord_api import DiscordApiError, discord_api
 from dashboard.app.ui.context import build_template_context
@@ -72,12 +73,8 @@ def _redirect(
 async def _guild_context(
     session: AsyncSession,
     requested_guild_id: int | None,
-    *,
-    refresh: bool = False,
 ) -> dict[str, Any]:
     stored_guilds = await settings_store.list_guilds(session)
-    if refresh:
-        discord_api.clear_cache()
 
     selected = requested_guild_id
     known_ids = {row["guild_id"] for row in stored_guilds}
@@ -86,34 +83,15 @@ async def _guild_context(
     if selected is None and stored_guilds:
         selected = stored_guilds[0]["guild_id"]
 
-    discord_errors: dict[int, str] = {}
-    guild_details: dict[int, dict[str, Any]] = {}
-    if discord_api.configured and stored_guilds:
-        results = await asyncio.gather(
-            *(discord_api.guild(row["guild_id"]) for row in stored_guilds),
-            return_exceptions=True,
-        )
-        for row, result in zip(stored_guilds, results, strict=True):
-            if isinstance(result, Exception):
-                discord_errors[row["guild_id"]] = str(result)
-                continue
-            guild_details[row["guild_id"]] = result
-    elif not discord_api.configured:
-        discord_errors = {
-            row["guild_id"]: "dashboard/.env에 Discord 봇 토큰을 설정하면 채널·역할·유저 목록을 불러옵니다."
-            for row in stored_guilds
-        }
-
     guild_options = []
     for row in stored_guilds:
-        detail = guild_details.get(row["guild_id"], {})
         guild_options.append(
             {
                 **row,
-                "name": detail.get("name") or f"서버 {row['guild_id']}",
-                "icon": detail.get("icon"),
-                "owner_id": detail.get("owner_id"),
-                "reachable": bool(detail),
+                "name": row.get("guild_name") or f"서버 {row['guild_id']}",
+                "icon": row.get("icon_hash"),
+                "owner_id": row.get("owner_discord_id"),
+                "synced": row.get("discord_synced_at") is not None,
             }
         )
 
@@ -122,7 +100,7 @@ async def _guild_context(
         "guild_id": selected,
         "selected_guild": next((row for row in guild_options if row["guild_id"] == selected), None),
         "discord_configured": discord_api.configured,
-        "discord_error": discord_errors.get(selected, "") if selected else "",
+        "discord_error": "" if discord_api.configured else "dashboard/.env에 Discord 봇 토큰을 설정해 주세요.",
     }
 
 
@@ -157,17 +135,17 @@ def _member_rows(members: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], d
 async def server_settings(
     request: Request,
     guild_id: int | None = None,
-    refresh: bool = False,
     session: AsyncSession = Depends(get_session),
+    _: None = Depends(require_developer),
 ):
-    guild_data = await _guild_context(session, guild_id, refresh=refresh)
+    guild_data = await _guild_context(session, guild_id)
     context = build_template_context(
         request,
-        active_nav="settings.server",
+        active_nav="developer.server",
         page_title="서버 기본 설정",
         page_description="설정을 적용할 Discord 서버를 등록하고 사용 여부를 관리합니다.",
         page_kicker="Server connection",
-        page_badge="OWNER",
+        page_badge="DEVELOPER",
     )
     context.update(guild_data)
     context.update({"notice": request.query_params.get("notice", ""), "error": request.query_params.get("error", "")})
@@ -175,14 +153,24 @@ async def server_settings(
 
 
 @router.post("/server")
-async def save_server(request: Request, session: AsyncSession = Depends(get_session)):
+async def save_server(
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+    _: None = Depends(require_developer),
+):
     form = await request.form()
     try:
         guild_id = _int_value(form.get("guild_id"), minimum=1)
         enabled = str(form.get("is_enabled", "true")).lower() == "true"
-        if discord_api.configured and enabled:
-            await discord_api.guild(guild_id)
-        await settings_store.upsert_guild(session, guild_id, is_enabled=enabled)
+        guild_detail = await discord_api.guild(guild_id) if discord_api.configured and enabled else {}
+        await settings_store.upsert_guild(
+            session,
+            guild_id,
+            is_enabled=enabled,
+            guild_name=guild_detail.get("name"),
+            owner_discord_id=_optional_snowflake(guild_detail.get("owner_id")),
+            icon_hash=guild_detail.get("icon"),
+        )
     except (ValueError, TypeError):
         return _redirect("/settings/server", error="올바른 서버 ID를 입력해 주세요.")
     except DiscordApiError as exc:
@@ -197,7 +185,9 @@ async def attendance_settings(
     refresh: bool = False,
     session: AsyncSession = Depends(get_session),
 ):
-    guild_data = await _guild_context(session, guild_id, refresh=refresh)
+    guild_data = await _guild_context(session, guild_id)
+    if refresh and guild_data["guild_id"]:
+        discord_api.clear_cache(f"channels:{guild_data['guild_id']}")
     selected = guild_data["selected_guild"] or {}
     resources, api_error = await _discord_resources(guild_data["guild_id"], "channels")
     channels = resources["channels"]
@@ -218,6 +208,8 @@ async def attendance_settings(
             "discord_error": api_error or guild_data["discord_error"],
             "notice": request.query_params.get("notice", ""),
             "error": request.query_params.get("error", ""),
+            "show_api_refresh": True,
+            "api_refresh_label": "채널 목록 새로고침",
         }
     )
     return templates.TemplateResponse(request, "pages/settings/attendance.html", context)
@@ -267,7 +259,9 @@ async def alliance_settings(
     refresh: bool = False,
     session: AsyncSession = Depends(get_session),
 ):
-    guild_data = await _guild_context(session, guild_id, refresh=refresh)
+    guild_data = await _guild_context(session, guild_id)
+    if refresh and guild_data["guild_id"]:
+        discord_api.clear_cache(f"roles:{guild_data['guild_id']}")
     alliances = await settings_store.list_guild_alliances(session, guild_data["guild_id"]) if guild_data["guild_id"] else []
     mappings = await settings_store.list_role_mappings(session, guild_data["guild_id"]) if guild_data["guild_id"] else []
     resources, api_error = await _discord_resources(guild_data["guild_id"], "roles")
@@ -289,6 +283,8 @@ async def alliance_settings(
             "discord_error": api_error or guild_data["discord_error"],
             "notice": request.query_params.get("notice", ""),
             "error": request.query_params.get("error", ""),
+            "show_api_refresh": True,
+            "api_refresh_label": "역할 목록 새로고침",
         }
     )
     return templates.TemplateResponse(request, "pages/settings/alliances.html", context)
@@ -335,10 +331,9 @@ async def remove_alliance_mapping(mapping_id: int, request: Request, session: As
 async def manager_settings(
     request: Request,
     guild_id: int | None = None,
-    refresh: bool = False,
     session: AsyncSession = Depends(get_session),
 ):
-    guild_data = await _guild_context(session, guild_id, refresh=refresh)
+    guild_data = await _guild_context(session, guild_id)
     assignments = await settings_store.list_assignments(session, guild_data["guild_id"]) if guild_data["guild_id"] else []
     alliances = await settings_store.list_guild_alliances(session, guild_data["guild_id"]) if guild_data["guild_id"] else []
     resources, api_error = await _discord_resources(guild_data["guild_id"], "members")
@@ -455,10 +450,9 @@ async def clan_settings(
     request: Request,
     guild_id: int | None = None,
     alliance_id: int | None = None,
-    refresh: bool = False,
     session: AsyncSession = Depends(get_session),
 ):
-    guild_data = await _guild_context(session, guild_id, refresh=refresh)
+    guild_data = await _guild_context(session, guild_id)
     alliances = await settings_store.list_guild_alliances(session, guild_data["guild_id"]) if guild_data["guild_id"] else []
     valid_alliance_ids = {row["alliance_id"] for row in alliances}
     if alliance_id not in valid_alliance_ids:

@@ -1,0 +1,43 @@
+{% extends "layouts/app_shell.html" %}
+{% from "components/icons.html" import icon %}
+
+{% block title %}{{ page_title }} · {{ app_name }}{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div><p class="page-kicker">{{ page_kicker }}</p><h1>{{ page_title }}</h1><p>{{ page_description }}</p></div>
+  <span class="page-badge">{{ page_badge }}</span>
+</section>
+
+<section class="diagnostic-summary-grid diagnostic-summary-grid-three">
+  <article class="diagnostic-summary-card"><span>데이터베이스</span><strong>{{ overview.database_name }}</strong><small>로컬 PostgreSQL 연결 정상</small></article>
+  <article class="diagnostic-summary-card"><span>테이블</span><strong>{{ overview.table_count }}개</strong><small>설계 기준 {{ overview.expected_table_count }}개</small></article>
+  <article class="diagnostic-summary-card"><span>스키마 상태</span><strong>{{ "정상" if schema_ok else "확인 필요" }}</strong><small>{{ "불필요한 테이블 없음" if schema_ok else "아래 차이 목록 확인" }}</small></article>
+</section>
+
+{% if not schema_ok %}
+<section class="schema-alert-grid">
+  <article class="notice-banner notice-error"><div><strong>누락 테이블</strong><span>{{ overview.missing_tables|join(', ') if overview.missing_tables else '없음' }}</span></div></article>
+  <article class="notice-banner notice-info"><div><strong>설계 외 테이블</strong><span>{{ overview.unexpected_tables|join(', ') if overview.unexpected_tables else '없음' }}</span></div></article>
+</section>
+{% endif %}
+
+<div class="developer-grid">
+  <section class="panel developer-panel">
+    <div class="panel-header"><div><span class="panel-kicker">Core data</span><h2>핵심 데이터 현황</h2></div></div>
+    <div class="diagnostic-data-grid">
+      {% for row in overview.data_counts %}
+      <article><span>{{ row.label }}</span><strong>{{ "{:,}".format(row.row_count) }}</strong><small>{{ row.table_name }}</small></article>
+      {% endfor %}
+    </div>
+  </section>
+
+  <aside class="panel developer-panel">
+    <div class="panel-header"><div><span class="panel-kicker">Schema history</span><h2>스키마 이력</h2></div></div>
+    <div class="schema-version-list">
+      {% for migration in overview.schema_versions %}
+      <article><span class="status-chip status-success">v{{ migration.version }}</span><div><strong>적용 완료</strong><small>Unix {{ migration.applied_at }}</small></div></article>
+      {% else %}<div class="empty-state">기록된 스키마 이력이 없습니다.</div>{% endfor %}
+    </div>
+  </aside>
+</div>
+{% endblock %}

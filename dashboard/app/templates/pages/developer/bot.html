@@ -1,0 +1,46 @@
+{% extends "layouts/app_shell.html" %}
+{% from "components/icons.html" import icon %}
+
+{% block title %}{{ page_title }} · {{ app_name }}{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div><p class="page-kicker">{{ page_kicker }}</p><h1>{{ page_title }}</h1><p>{{ page_description }}</p></div>
+  <span class="page-badge">{{ page_badge }}</span>
+</section>
+
+{% if notice %}<div class="notice-banner notice-success">{{ icon("check") }}<span>{{ notice }}</span></div>{% endif %}
+{% if error %}<div class="notice-banner notice-error">{{ icon("alert") }}<span>{{ error }}</span></div>{% endif %}
+
+<section class="diagnostic-summary-grid">
+  <article class="diagnostic-summary-card"><span>연결 방식</span><strong>REST API</strong><small>Gateway 실행 안 함</small></article>
+  <article class="diagnostic-summary-card"><span>봇 토큰</span><strong>{{ "설정됨" if discord_configured else "미설정" }}</strong><small>원문은 화면에 표시하지 않음</small></article>
+  <article class="diagnostic-summary-card"><span>등록 서버</span><strong>{{ guilds|length }}개</strong><small>로컬 DB 기준</small></article>
+  <article class="diagnostic-summary-card"><span>API 캐시</span><strong>{{ cache_ttl }}초</strong><small>채널·역할·유저 조회</small></article>
+</section>
+
+<section class="panel developer-panel">
+  <div class="panel-header panel-header-inline">
+    <div><span class="panel-kicker">Discord servers</span><h2>서버 메타데이터</h2></div>
+    <form method="post" action="/developer/bot/sync">
+      <button class="primary-button" type="submit" {% if not discord_configured or not guilds %}disabled{% endif %}>{{ icon("refresh") }} 서버 정보 동기화</button>
+    </form>
+  </div>
+  <div class="diagnostic-table-wrap">
+    <table class="diagnostic-table">
+      <thead><tr><th>서버</th><th>서버 ID</th><th>오너 ID</th><th>상태</th><th>최근 동기화</th></tr></thead>
+      <tbody>
+        {% for guild in guilds %}
+        <tr>
+          <td><strong>{{ guild.guild_name or "이름 미동기화" }}</strong></td>
+          <td>{{ guild.guild_id }}</td>
+          <td>{{ guild.owner_discord_id or "-" }}</td>
+          <td><span class="status-chip status-{{ 'success' if guild.is_enabled else 'muted' }}">{{ "사용 중" if guild.is_enabled else "사용 중지" }}</span></td>
+          <td>{{ guild.discord_synced_at.strftime('%Y-%m-%d %H:%M') if guild.discord_synced_at else "-" }}</td>
+        </tr>
+        {% else %}<tr><td colspan="5" class="empty-table-cell">등록된 서버가 없습니다.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <footer class="developer-panel-footer"><span>{{ icon("info") }} API 주소</span><code>{{ api_base }}</code></footer>
+</section>
+{% endblock %}

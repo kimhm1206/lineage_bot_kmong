@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from sqlalchemy import BigInteger, Boolean, CheckConstraint, ForeignKey, Integer, SmallInteger, Text, UniqueConstraint
+from datetime import datetime
+
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey, Integer, SmallInteger, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -13,6 +15,10 @@ class Guild(Base):
 
     guild_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     is_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    guild_name: Mapped[str | None] = mapped_column(Text)
+    owner_discord_id: Mapped[int | None] = mapped_column(BigInteger)
+    icon_hash: Mapped[str | None] = mapped_column(Text)
+    discord_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class Alliance(Base):
@@ -183,4 +189,3 @@ class TreasuryEntry(Base):
     created_at: Mapped[int] = mapped_column(BigInteger, nullable=False)
     created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.user_id", ondelete="SET NULL"))
     reversal_of_entry_id: Mapped[int | None] = mapped_column(ForeignKey("treasury_entries.treasury_entry_id", ondelete="RESTRICT"), unique=True)
-

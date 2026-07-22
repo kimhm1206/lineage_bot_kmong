@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     db_echo: bool = False
     discord_bot_token: str = ""
     discord_api_base: str = "https://discord.com/api/v10"
-    discord_cache_ttl_seconds: int = 60
+    discord_cache_ttl_seconds: int = 300
 
     model_config = SettingsConfigDict(
         env_file=BASE_DIR / ".env",
