@@ -1,0 +1,65 @@
+{% extends "layouts/app_shell.html" %}
+{% from "components/icons.html" import icon %}
+{% from "components/attendance.html" import filters, summary, pagination as pagination_controls %}
+
+{% block title %}{{ page_title }} · {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="attendance-page attendance-status-page">
+  {{ filters(
+    request.url.path, guilds, guild_id, period_options, query,
+    settings_href='/settings/attendance' ~ ('?guild_id=' ~ guild_id if guild_id else '')
+  ) }}
+  {{ summary(summary_cards) }}
+
+  <section class="attendance-section-heading">
+    <div>
+      <h2>회차별 출석</h2>
+      <p>회차를 펼치면 혈맹별 참여 명단을 확인할 수 있습니다.</p>
+    </div>
+    <span>{{ pagination.total }}회차</span>
+  </section>
+
+  {{ pagination_controls(request, pagination, "출석 현황 상단 페이지 이동") }}
+
+  <section class="attendance-session-list" aria-label="회차별 출석 현황">
+    {% for attendance in sessions %}
+    <details class="attendance-session-card" id="attendance-{{ attendance.attendance_id }}">
+      <summary>
+        <div class="attendance-session-identity">
+          <span class="attendance-session-id">#{{ attendance.attendance_id }}</span>
+          <div>
+            <strong>{{ attendance.started_at_label }}</strong>
+            <span>{{ attendance.started_by }} · {{ attendance.participant_label }} · {{ attendance.ended_at_label }} 종료</span>
+          </div>
+        </div>
+        <div class="attendance-alliance-chips">
+          {% for alliance in attendance.alliances %}
+          <span>{{ alliance.alliance_name }} <b>{{ alliance.count }}명</b></span>
+          {% else %}
+          <span class="is-empty">출석 없음</span>
+          {% endfor %}
+        </div>
+        <span class="attendance-expand-icon">{{ icon("chevron-right") }}</span>
+      </summary>
+      <div class="attendance-session-detail">
+        {% for alliance in attendance.alliances %}
+        <article class="attendance-alliance-group">
+          <header><h3>{{ alliance.alliance_name }}</h3><span>{{ alliance.count }}명</span></header>
+          <div class="attendance-member-list">
+            {% for member in alliance.members %}<span>{{ member.discord_nickname }}</span>{% endfor %}
+          </div>
+        </article>
+        {% else %}
+        <div class="attendance-empty">이 회차에는 출석자가 없습니다.</div>
+        {% endfor %}
+      </div>
+    </details>
+    {% else %}
+    <div class="panel attendance-empty">선택한 조건에 해당하는 출석 회차가 없습니다.</div>
+    {% endfor %}
+  </section>
+
+  {{ pagination_controls(request, pagination, "출석 현황 하단 페이지 이동") }}
+</div>
+{% endblock %}

@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import csv
+import io
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -128,6 +130,43 @@ async def _render_workspace(
         }
     )
     return templates.TemplateResponse(request, "pages/workspace/index.html", context)
+
+
+async def _attendance_context(
+    request: Request,
+    session: AsyncSession,
+    *,
+    active_nav: str,
+    page_title: str,
+    page_description: str,
+    guild_id: int | None,
+    alliance_id: int | None,
+    period: int | None,
+    query: str,
+) -> tuple[dict[str, Any], dict[str, Any], int, str]:
+    workspace = await workspace_store.resolve_workspace(session, guild_id, alliance_id)
+    selected_period = workspace_store.normalize_period(period)
+    clean_query = query.strip()[:100]
+    context = build_template_context(
+        request,
+        active_nav=active_nav,
+        page_title=page_title,
+        page_description=page_description,
+        page_kicker="Attendance",
+        page_badge="USER",
+    )
+    context.update(workspace)
+    context.update(
+        {
+            "query": clean_query,
+            "period": selected_period,
+            "period_options": workspace_store.filter_options(
+                workspace_store.PERIOD_OPTIONS,
+                selected_period,
+            ),
+        }
+    )
+    return context, workspace, selected_period, clean_query
 
 
 def _treasury_redirect(
@@ -426,33 +465,120 @@ async def attendance_status(
     request: Request, guild_id: int | None = None, period: int | None = None,
     q: str = "", page: int = 1, session: AsyncSession = Depends(get_session),
 ):
-    return await _render_workspace(
-        request, session,
+    context, workspace, selected_period, clean_query = await _attendance_context(
+        request,
+        session,
         active_nav="attendance.status",
         page_title="출석 현황",
         page_description="회차별 시작 시각과 참여 인원을 최근 기록부터 확인합니다.",
-        page_kicker="Attendance sessions",
-        page_badge="USER",
-        builder=workspace_store.attendance_sessions_page,
-        guild_id=guild_id, alliance_id=None, period=period, query=q, page=page,
-        settings_href="/settings/attendance", settings_label="출석 설정",
+        guild_id=guild_id,
+        alliance_id=None,
+        period=period,
+        query=q,
     )
+    if workspace["guild_id"] is None:
+        page_data = {
+            "summary_cards": [],
+            "sessions": [],
+            "pagination": _empty_page("등록된 서버가 없습니다.")["pagination"],
+        }
+    else:
+        page_data = await workspace_store.attendance_sessions_page(
+            session,
+            guild_id=workspace["guild_id"],
+            period_days=selected_period,
+            query=clean_query,
+            page=max(page, 1),
+        )
+    context.update(page_data)
+    return templates.TemplateResponse(request, "pages/attendance/status.html", context)
 
 
 @router.get("/attendance/statistics")
 async def attendance_statistics(
     request: Request, guild_id: int | None = None, period: int | None = None,
-    q: str = "", page: int = 1, session: AsyncSession = Depends(get_session),
+    alliance_id: int | None = None, q: str = "", page: int = 1,
+    session: AsyncSession = Depends(get_session),
 ):
-    return await _render_workspace(
-        request, session,
+    context, workspace, selected_period, clean_query = await _attendance_context(
+        request,
+        session,
         active_nav="attendance.stats",
         page_title="출석 통계",
         page_description="기간 내 유저별 출석 횟수와 마지막 참여 시각을 비교합니다.",
-        page_kicker="Attendance analytics",
-        page_badge="USER",
-        builder=workspace_store.attendance_statistics_page,
-        guild_id=guild_id, alliance_id=None, period=period, query=q, page=page,
+        guild_id=guild_id,
+        alliance_id=None,
+        period=period,
+        query=q,
+    )
+    valid_alliance_ids = {int(row["alliance_id"]) for row in workspace["alliances"]}
+    filter_alliance_id = alliance_id if alliance_id in valid_alliance_ids else None
+    if workspace["guild_id"] is None:
+        page_data = {
+            "summary_cards": [], "user_rankings": [], "daily_stats": [],
+            "alliance_stats": [], "hour_stats": [],
+            "pagination": _empty_page("등록된 서버가 없습니다.")["pagination"],
+        }
+    else:
+        page_data = await workspace_store.attendance_statistics_page(
+            session,
+            guild_id=workspace["guild_id"],
+            period_days=selected_period,
+            query=clean_query,
+            page=max(page, 1),
+            alliance_id=filter_alliance_id,
+        )
+    context.update(page_data)
+    context["filter_alliance_id"] = filter_alliance_id
+    return templates.TemplateResponse(request, "pages/attendance/statistics.html", context)
+
+
+@router.get("/attendance/statistics/export")
+async def attendance_statistics_export(
+    request: Request, guild_id: int | None = None, period: int | None = None,
+    alliance_id: int | None = None, q: str = "",
+    session: AsyncSession = Depends(get_session),
+):
+    _context, workspace, selected_period, clean_query = await _attendance_context(
+        request,
+        session,
+        active_nav="attendance.stats",
+        page_title="출석 통계",
+        page_description="출석 통계 CSV",
+        guild_id=guild_id,
+        alliance_id=None,
+        period=period,
+        query=q,
+    )
+    if workspace["guild_id"] is None:
+        raise HTTPException(status_code=404, detail="등록된 서버가 없습니다.")
+    valid_alliance_ids = {int(row["alliance_id"]) for row in workspace["alliances"]}
+    filter_alliance_id = alliance_id if alliance_id in valid_alliance_ids else None
+    rows = await workspace_store.attendance_statistics_export_rows(
+        session,
+        guild_id=workspace["guild_id"],
+        period_days=selected_period,
+        query=clean_query,
+        alliance_id=filter_alliance_id,
+    )
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["순위", "닉네임", "혈맹", "출석 횟수", "첫 출석", "마지막 출석"])
+    for index, row in enumerate(rows, start=1):
+        writer.writerow(
+            [
+                index,
+                row["user_name"],
+                row["alliance_name"],
+                row["attendance_count"],
+                row["first_attendance"],
+                row["last_attendance"],
+            ]
+        )
+    return Response(
+        content="\ufeff" + output.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": "attachment; filename=attendance-statistics.csv"},
     )
 
 
@@ -462,17 +588,35 @@ async def clan_attendance(
     period: int | None = None, q: str = "", page: int = 1,
     session: AsyncSession = Depends(get_session),
 ):
-    return await _render_workspace(
-        request, session,
+    context, workspace, selected_period, clean_query = await _attendance_context(
+        request,
+        session,
         active_nav="attendance.alliance",
         page_title="내 혈맹 통계",
         page_description="혈맹원을 기준으로 출석 횟수와 기간 참여율을 확인합니다.",
-        page_kicker="Clan attendance",
-        page_badge="USER",
-        builder=workspace_store.clan_attendance_page,
-        guild_id=guild_id, alliance_id=alliance_id, period=period, query=q, page=page,
-        needs_alliance=True,
+        guild_id=guild_id,
+        alliance_id=alliance_id,
+        period=period,
+        query=q,
     )
+    if workspace["guild_id"] is None or workspace["alliance_id"] is None:
+        page_data = {
+            "summary_cards": [], "user_rankings": [], "hour_stats": [],
+            "weekday_stats": [], "daily_rows": [], "weekly_rankings": [],
+            "monthly_rankings": [],
+            "pagination": _empty_page("역할과 연결된 혈맹이 없습니다.")["pagination"],
+        }
+    else:
+        page_data = await workspace_store.clan_attendance_page(
+            session,
+            guild_id=workspace["guild_id"],
+            alliance_id=workspace["alliance_id"],
+            period_days=selected_period,
+            query=clean_query,
+            page=max(page, 1),
+        )
+    context.update(page_data)
+    return templates.TemplateResponse(request, "pages/attendance/clan.html", context)
 
 
 @router.get("/operations/notifications")

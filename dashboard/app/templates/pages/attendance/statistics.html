@@ -1,0 +1,74 @@
+{% extends "layouts/app_shell.html" %}
+{% from "components/attendance.html" import filters, summary, pagination as pagination_controls %}
+
+{% block title %}{{ page_title }} · {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="attendance-page attendance-statistics-page">
+  {{ filters(
+    request.url.path, guilds, guild_id, period_options, query,
+    alliances=alliances, alliance_id=filter_alliance_id, alliance_mode='optional',
+    export_href=request.url_for('attendance_statistics_export') ~ ('?' ~ request.url.query if request.url.query else '')
+  ) }}
+  {{ summary(summary_cards) }}
+
+  <nav class="attendance-anchor-nav" aria-label="통계 항목 바로가기">
+    <a href="#daily-flow">일자별</a>
+    <a href="#time-flow">시간대</a>
+    <a href="#alliance-ranking">혈맹별</a>
+    <a href="#user-ranking">인원별</a>
+  </nav>
+
+  <section class="attendance-analysis-grid">
+    <article class="panel attendance-analysis-panel" id="daily-flow">
+      <header class="panel-header"><div><h2>일자별 흐름</h2><span class="panel-caption">최근 31일</span></div></header>
+      <div class="attendance-table-wrap">
+        <table class="attendance-table">
+          <thead><tr><th>날짜</th><th>회차</th><th>누적</th><th>인원</th></tr></thead>
+          <tbody>
+            {% for row in daily_stats %}
+            <tr><td><strong>{{ row.attendance_date }}</strong></td><td>{{ row.session_count }}회</td><td>{{ row.attendance_count }}명</td><td>{{ row.unique_user_count }}명</td></tr>
+            {% else %}<tr><td colspan="4" class="attendance-table-empty">출석 기록이 없습니다.</td></tr>{% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </article>
+
+    <article class="panel attendance-analysis-panel" id="time-flow">
+      <header class="panel-header"><div><h2>인원 많은 시간대</h2><span class="panel-caption">누적 출석 기준</span></div></header>
+      <div class="attendance-rank-list">
+        {% for row in hour_stats %}
+        <div class="attendance-rank-row"><span class="attendance-rank-number">{{ loop.index }}</span><div><strong>{{ row.hour_label }}</strong><small>{{ row.session_count }}회 · {{ row.average_label }}</small></div><b>{{ row.attendance_count }}명</b></div>
+        {% else %}<div class="attendance-empty">시간대 통계가 없습니다.</div>{% endfor %}
+      </div>
+    </article>
+
+    <article class="panel attendance-analysis-panel attendance-analysis-wide" id="alliance-ranking">
+      <header class="panel-header"><div><h2>혈맹별 통계</h2><span class="panel-caption">{{ alliance_stats|length }}개 혈맹</span></div></header>
+      <div class="attendance-alliance-stats">
+        {% for row in alliance_stats %}
+        <article><span>{{ loop.index }}위</span><strong>{{ row.alliance_name }}</strong><b>{{ row.attendance_count }}명</b><small>{{ row.session_count }}회차 · {{ row.unique_user_count }}명 참여</small></article>
+        {% else %}<div class="attendance-empty">혈맹 통계가 없습니다.</div>{% endfor %}
+      </div>
+    </article>
+
+    <article class="panel attendance-analysis-panel attendance-analysis-wide" id="user-ranking">
+      <header class="panel-header"><div><h2>유저 출석 순위</h2><span class="panel-caption">총 {{ pagination.total }}명</span></div></header>
+      <div class="attendance-table-wrap">
+        <table class="attendance-table attendance-ranking-table">
+          <thead><tr><th>순위</th><th>닉네임</th><th>혈맹</th><th>출석</th><th>상대 빈도</th><th>마지막 출석</th></tr></thead>
+          <tbody>
+            {% for row in user_rankings %}
+            <tr>
+              <td>{{ row.rank }}</td><td><strong>{{ row.user_name }}</strong></td><td>{{ row.alliance_name }}</td><td>{{ row.attendance_label }}</td>
+              <td><div class="attendance-rate"><i style="width: {{ row.share }}%"></i><span>{{ row.share }}%</span></div></td><td>{{ row.last_attendance }}</td>
+            </tr>
+            {% else %}<tr><td colspan="6" class="attendance-table-empty">조건에 맞는 유저가 없습니다.</td></tr>{% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {{ pagination_controls(request, pagination, "유저 출석 순위 페이지 이동") }}
+    </article>
+  </section>
+</div>
+{% endblock %}

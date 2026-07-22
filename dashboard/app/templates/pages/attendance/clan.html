@@ -1,0 +1,85 @@
+{% extends "layouts/app_shell.html" %}
+{% from "components/attendance.html" import filters, summary, pagination as pagination_controls %}
+
+{% block title %}{{ page_title }} · {{ app_name }}{% endblock %}
+
+{% block content %}
+<div class="attendance-page attendance-clan-page">
+  {{ filters(
+    request.url.path, guilds, guild_id, period_options, query,
+    alliances=alliances, alliance_id=alliance_id, alliance_mode='required'
+  ) }}
+  {{ summary(summary_cards) }}
+
+  <nav class="attendance-anchor-nav" aria-label="내 혈맹 통계 바로가기">
+    <a href="#clan-users">유저별</a>
+    <a href="#clan-time">시간대</a>
+    <a href="#clan-weekday">요일별</a>
+    <a href="#clan-period">기간별</a>
+  </nav>
+
+  <section class="attendance-analysis-grid attendance-clan-grid">
+    <article class="panel attendance-analysis-panel" id="clan-time">
+      <header class="panel-header"><div><h2>인원 많은 시간대</h2><span class="panel-caption">상위 {{ hour_stats|length }}개</span></div></header>
+      <div class="attendance-rank-list">
+        {% for row in hour_stats %}
+        <div class="attendance-rank-row"><span class="attendance-rank-number">{{ loop.index }}</span><div><strong>{{ row.label }}</strong><small>{{ row.session_count }}회 · 평균 {{ row.average_count }}명</small></div><b>{{ row.attendance_count }}명</b></div>
+        {% else %}<div class="attendance-empty">시간대 통계가 없습니다.</div>{% endfor %}
+      </div>
+    </article>
+
+    <article class="panel attendance-analysis-panel" id="clan-weekday">
+      <header class="panel-header"><div><h2>요일 흐름</h2><span class="panel-caption">누적 출석 기준</span></div></header>
+      <div class="attendance-weekday-grid">
+        {% for row in weekday_stats %}
+        <article><span>{{ row.label }}</span><strong>{{ row.attendance_count }}명</strong><small>{{ row.session_count }}회 · 평균 {{ row.average_count }}명</small></article>
+        {% else %}<div class="attendance-empty">요일 통계가 없습니다.</div>{% endfor %}
+      </div>
+    </article>
+
+    <article class="panel attendance-analysis-panel attendance-analysis-wide" id="clan-users">
+      <header class="panel-header"><div><h2>혈맹원 참여율</h2><span class="panel-caption">활성 혈맹원 {{ pagination.total }}명</span></div></header>
+      <div class="attendance-table-wrap">
+        <table class="attendance-table attendance-ranking-table">
+          <thead><tr><th>순위</th><th>닉네임</th><th>출석</th><th>참여율</th><th>마지막 출석</th></tr></thead>
+          <tbody>
+            {% for row in user_rankings %}
+            <tr><td>{{ row.rank }}</td><td><strong>{{ row.user_name }}</strong></td><td>{{ row.attendance_label }}</td><td><div class="attendance-rate"><i style="width: {{ row.rate }}%"></i><span>{{ row.rate_label }}</span></div></td><td>{{ row.last_attendance }}</td></tr>
+            {% else %}<tr><td colspan="5" class="attendance-table-empty">혈맹원 기록이 없습니다.</td></tr>{% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {{ pagination_controls(request, pagination, "혈맹원 참여율 페이지 이동") }}
+    </article>
+
+    <article class="panel attendance-analysis-panel">
+      <header class="panel-header"><div><h2>이번 주 순위</h2><span class="panel-caption">현재 주</span></div></header>
+      <div class="attendance-rank-list attendance-rank-list-compact">
+        {% for row in weekly_rankings %}<div class="attendance-rank-row"><span class="attendance-rank-number">{{ row.rank }}</span><div><strong>{{ row.user_name }}</strong></div><b>{{ row.attendance_count }}회</b></div>
+        {% else %}<div class="attendance-empty">이번 주 출석 기록이 없습니다.</div>{% endfor %}
+      </div>
+    </article>
+
+    <article class="panel attendance-analysis-panel">
+      <header class="panel-header"><div><h2>이번 달 순위</h2><span class="panel-caption">현재 월</span></div></header>
+      <div class="attendance-rank-list attendance-rank-list-compact">
+        {% for row in monthly_rankings %}<div class="attendance-rank-row"><span class="attendance-rank-number">{{ row.rank }}</span><div><strong>{{ row.user_name }}</strong></div><b>{{ row.attendance_count }}회</b></div>
+        {% else %}<div class="attendance-empty">이번 달 출석 기록이 없습니다.</div>{% endfor %}
+      </div>
+    </article>
+
+    <article class="panel attendance-analysis-panel attendance-analysis-wide" id="clan-period">
+      <header class="panel-header"><div><h2>일자별 상세</h2><span class="panel-caption">최근 {{ daily_rows|length }}일</span></div></header>
+      <div class="attendance-table-wrap">
+        <table class="attendance-table">
+          <thead><tr><th>날짜</th><th>회차</th><th>누적 출석</th><th>참여 인원</th></tr></thead>
+          <tbody>
+            {% for row in daily_rows %}<tr><td><strong>{{ row.attendance_date }}</strong></td><td>{{ row.session_count }}회</td><td>{{ row.attendance_count }}명</td><td>{{ row.unique_user_count }}명</td></tr>
+            {% else %}<tr><td colspan="4" class="attendance-table-empty">일자별 출석 기록이 없습니다.</td></tr>{% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </article>
+  </section>
+</div>
+{% endblock %}

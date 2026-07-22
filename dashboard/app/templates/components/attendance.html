@@ -1,0 +1,96 @@
+{% from "components/icons.html" import icon %}
+
+{% macro filters(action, guilds, guild_id, period_options, query, alliances=[], alliance_id=None, alliance_mode="none", settings_href="", export_href="") %}
+<form class="attendance-filter-bar" method="get" action="{{ action }}">
+  <label class="attendance-filter-field">
+    <span>서버</span>
+    <select name="guild_id" onchange="this.form.submit()" {% if not guilds %}disabled{% endif %}>
+      {% if not guilds %}<option>등록된 서버 없음</option>{% endif %}
+      {% for guild in guilds %}
+      <option value="{{ guild.guild_id }}" {% if guild.guild_id == guild_id %}selected{% endif %}>{{ guild.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+
+  {% if alliance_mode != "none" %}
+  <label class="attendance-filter-field">
+    <span>혈맹</span>
+    <select name="alliance_id" onchange="this.form.submit()" {% if not alliances %}disabled{% endif %}>
+      {% if alliance_mode == "optional" %}<option value="">전체 혈맹</option>{% endif %}
+      {% if not alliances %}<option>연결된 혈맹 없음</option>{% endif %}
+      {% for alliance in alliances %}
+      <option value="{{ alliance.alliance_id }}" {% if alliance.alliance_id == alliance_id %}selected{% endif %}>{{ alliance.display_name or alliance.alliance_name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  {% endif %}
+
+  <label class="attendance-filter-field attendance-period-field">
+    <span>기간</span>
+    <select name="period" onchange="this.form.submit()">
+      {% for option in period_options %}
+      <option value="{{ option.value }}" {% if option.selected %}selected{% endif %}>{{ option.label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+
+  <label class="attendance-filter-field attendance-search-field">
+    <span>검색</span>
+    <span class="attendance-search-control">
+      {{ icon("search") }}
+      <input type="search" name="q" value="{{ query }}" placeholder="닉네임, 혈맹 또는 회차 검색">
+    </span>
+  </label>
+  <button class="primary-button attendance-search-button" type="submit">조회</button>
+  {% if export_href %}
+  <a class="secondary-button attendance-tool-button" href="{{ export_href }}">{{ icon("download") }} CSV</a>
+  {% endif %}
+  {% if settings_href %}
+  <a class="secondary-button attendance-tool-button" href="{{ settings_href }}">{{ icon("settings") }} 출석 설정</a>
+  {% endif %}
+</form>
+{% endmacro %}
+
+{% macro summary(cards) %}
+<section class="attendance-summary-grid" aria-label="출석 요약">
+  {% for card in cards %}
+  <article class="attendance-summary-card">
+    <span>{{ card.label }}</span>
+    <strong>{{ card.value }}</strong>
+    <small>{{ card.meta }}</small>
+  </article>
+  {% endfor %}
+</section>
+{% endmacro %}
+
+{% macro pagination(request, pagination, label="페이지 이동") %}
+{% if pagination.total_pages > 1 %}
+<nav class="attendance-pagination" aria-label="{{ label }}">
+  {% if pagination.has_previous %}
+  <a class="page-control" href="{{ request.url.include_query_params(page=1) }}" aria-label="첫 페이지">&lt;&lt;</a>
+  <a class="page-control" href="{{ request.url.include_query_params(page=pagination.page - 1) }}" aria-label="이전 페이지">&lt;</a>
+  {% else %}
+  <span class="page-control is-disabled" aria-hidden="true">&lt;&lt;</span>
+  <span class="page-control is-disabled" aria-hidden="true">&lt;</span>
+  {% endif %}
+  {% if pagination.pages and pagination.pages[0] > 1 %}
+  <a class="page-control" href="{{ request.url.include_query_params(page=1) }}">1</a>
+  {% if pagination.pages[0] > 2 %}<span class="attendance-page-ellipsis">...</span>{% endif %}
+  {% endif %}
+  {% for number in pagination.pages %}
+  <a class="page-control{% if number == pagination.page %} is-active{% endif %}" href="{{ request.url.include_query_params(page=number) }}" {% if number == pagination.page %}aria-current="page"{% endif %}>{{ number }}</a>
+  {% endfor %}
+  {% if pagination.pages and pagination.pages[-1] < pagination.total_pages %}
+  {% if pagination.pages[-1] < pagination.total_pages - 1 %}<span class="attendance-page-ellipsis">...</span>{% endif %}
+  <a class="page-control" href="{{ request.url.include_query_params(page=pagination.total_pages) }}">{{ pagination.total_pages }}</a>
+  {% endif %}
+  {% if pagination.has_next %}
+  <a class="page-control" href="{{ request.url.include_query_params(page=pagination.page + 1) }}" aria-label="다음 페이지">&gt;</a>
+  <a class="page-control" href="{{ request.url.include_query_params(page=pagination.total_pages) }}" aria-label="마지막 페이지">&gt;&gt;</a>
+  {% else %}
+  <span class="page-control is-disabled" aria-hidden="true">&gt;</span>
+  <span class="page-control is-disabled" aria-hidden="true">&gt;&gt;</span>
+  {% endif %}
+</nav>
+{% endif %}
+{% endmacro %}

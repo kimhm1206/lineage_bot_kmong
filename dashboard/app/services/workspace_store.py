@@ -12,6 +12,7 @@ from dashboard.app.services import settings_store
 
 
 PAGE_SIZE = 20
+ATTENDANCE_PAGE_SIZE = 10
 PERIOD_OPTIONS = (
     {"value": 7, "label": "최근 7일"},
     {"value": 30, "label": "최근 한 달"},
@@ -72,7 +73,11 @@ def _period_clause(column: str, period_days: int, *, unix: bool) -> str:
         return ""
     if unix:
         return f" AND {column} >= EXTRACT(EPOCH FROM NOW() - (:period_days * INTERVAL '1 day'))::BIGINT"
-    return f" AND {column}::timestamp >= NOW() - (:period_days * INTERVAL '1 day')"
+    return (
+        f" AND {column} >= TO_CHAR("
+        "(NOW() AT TIME ZONE 'Asia/Seoul') - (:period_days * INTERVAL '1 day'), "
+        "'YYYY-MM-DD HH24:MI:SS')"
+    )
 
 
 def _pagination(page: int, total: int, page_size: int = PAGE_SIZE) -> dict[str, Any]:
@@ -157,11 +162,27 @@ async def attendance_sessions_page(
     page: int,
 ) -> dict[str, Any]:
     period = _period_clause("s.started_at", period_days, unix=False)
-    search = " AND (CAST(s.attendance_id AS TEXT) ILIKE :query OR COALESCE(u.discord_nickname, '') ILIKE :query)" if query else ""
+    search = """
+        AND (
+            CAST(s.attendance_id AS TEXT) ILIKE :query
+            OR COALESCE(starter.discord_nickname, '') ILIKE :query
+            OR EXISTS (
+                SELECT 1
+                FROM attendance_entries search_entry
+                JOIN users search_user ON search_user.user_id = search_entry.user_id
+                LEFT JOIN alliances search_alliance ON search_alliance.alliance_id = search_user.alliance_id
+                WHERE search_entry.attendance_id = s.attendance_id
+                  AND (
+                      search_user.discord_nickname ILIKE :query
+                      OR COALESCE(search_alliance.display_name, search_alliance.alliance_name, '') ILIKE :query
+                  )
+            )
+        )
+    """ if query else ""
     params = {"guild_id": guild_id, "period_days": period_days, "query": f"%{query}%"}
     count_from_sql = f"""
         FROM attendance_sessions s
-        LEFT JOIN users u ON u.discord_id = s.started_by_discord_id
+        LEFT JOIN users starter ON starter.discord_id = s.started_by_discord_id
         WHERE s.guild_id = :guild_id {period} {search}
     """
     rows, pagination = await _fetch_page(
@@ -171,21 +192,69 @@ async def attendance_sessions_page(
             SELECT s.attendance_id,
                    TO_CHAR(s.started_at::timestamp, 'YYYY-MM-DD HH24:MI') AS started_at_label,
                    TO_CHAR(s.ended_at::timestamp, 'HH24:MI') AS ended_at_label,
-                   COALESCE(u.discord_nickname, CAST(s.started_by_discord_id AS TEXT), '-') AS started_by,
+                   COALESCE(starter.discord_nickname, CAST(s.started_by_discord_id AS TEXT), '-') AS started_by,
                    COUNT(e.user_id) AS participant_count,
                    COUNT(DISTINCT au.alliance_id) FILTER (WHERE au.alliance_id IS NOT NULL) AS alliance_count
             FROM attendance_sessions s
-            LEFT JOIN users u ON u.discord_id = s.started_by_discord_id
+            LEFT JOIN users starter ON starter.discord_id = s.started_by_discord_id
             LEFT JOIN attendance_entries e ON e.attendance_id = s.attendance_id
             LEFT JOIN users au ON au.user_id = e.user_id
             WHERE s.guild_id = :guild_id {period} {search}
-            GROUP BY s.attendance_id, s.started_at, s.ended_at, u.discord_nickname, s.started_by_discord_id
+            GROUP BY s.attendance_id, s.started_at, s.ended_at, starter.discord_nickname, s.started_by_discord_id
             ORDER BY s.started_at::timestamp DESC
             LIMIT :limit OFFSET :offset
         """,
         params=params,
         page=page,
+        page_size=ATTENDANCE_PAGE_SIZE,
     )
+
+    session_map = {int(row["attendance_id"]): row for row in rows}
+    for row in rows:
+        row["alliances"] = []
+    if session_map:
+        detail_params: dict[str, Any] = {}
+        placeholders: list[str] = []
+        for index, attendance_id in enumerate(session_map):
+            key = f"attendance_id_{index}"
+            detail_params[key] = attendance_id
+            placeholders.append(f":{key}")
+        detail_rows = (await session.execute(text(f"""
+            SELECT e.attendance_id, u.user_id, u.discord_nickname,
+                   a.alliance_id,
+                   COALESCE(a.display_name, a.alliance_name, '미분류') AS alliance_name,
+                   COALESCE(a.sort_order, 2147483647) AS alliance_sort
+            FROM attendance_entries e
+            JOIN users u ON u.user_id = e.user_id
+            LEFT JOIN alliances a ON a.alliance_id = u.alliance_id
+            WHERE e.attendance_id IN ({', '.join(placeholders)})
+            ORDER BY e.attendance_id DESC, alliance_sort, alliance_name, u.discord_nickname
+        """), detail_params)).mappings().all()
+        alliance_maps: dict[int, dict[int | None, dict[str, Any]]] = {
+            attendance_id: {} for attendance_id in session_map
+        }
+        for detail in detail_rows:
+            attendance_id = int(detail["attendance_id"])
+            alliance_id = int(detail["alliance_id"]) if detail["alliance_id"] is not None else None
+            alliance = alliance_maps[attendance_id].setdefault(
+                alliance_id,
+                {
+                    "alliance_id": alliance_id,
+                    "alliance_name": str(detail["alliance_name"]),
+                    "members": [],
+                    "count": 0,
+                },
+            )
+            alliance["members"].append(
+                {
+                    "user_id": int(detail["user_id"]),
+                    "discord_nickname": str(detail["discord_nickname"]),
+                }
+            )
+            alliance["count"] += 1
+        for attendance_id, alliances in alliance_maps.items():
+            session_map[attendance_id]["alliances"] = list(alliances.values())
+
     for row in rows:
         row["attendance_label"] = f"#{row['attendance_id']}"
         row["participant_label"] = f"{_int(row['participant_count']):,}명"
@@ -199,21 +268,16 @@ async def attendance_sessions_page(
         LEFT JOIN attendance_entries e ON e.attendance_id = s.attendance_id
         WHERE s.guild_id = :guild_id {period}
     """), params)).mappings().one()
+    session_count = _int(summary["session_count"])
+    entry_count = _int(summary["entry_count"])
     return {
         "summary_cards": [
-            {"label": "출석 회차", "value": f"{_int(summary['session_count']):,}", "meta": "선택 기간"},
-            {"label": "누적 참여", "value": f"{_int(summary['entry_count']):,}", "meta": "중복 포함"},
+            {"label": "출석 회차", "value": f"{session_count:,}", "meta": "선택 기간"},
+            {"label": "누적 참여", "value": f"{entry_count:,}", "meta": "중복 포함"},
             {"label": "참여 인원", "value": f"{_int(summary['unique_users']):,}", "meta": "고유 유저"},
+            {"label": "회차당 평균", "value": f"{(entry_count / session_count):.1f}명" if session_count else "0명", "meta": "평균 참여 인원"},
         ],
-        "columns": [
-            {"key": "attendance_label", "label": "회차", "emphasis": True},
-            {"key": "started_at_label", "label": "시작 시각"},
-            {"key": "ended_at_label", "label": "종료"},
-            {"key": "started_by", "label": "시작자"},
-            {"key": "participant_label", "label": "참여"},
-            {"key": "alliance_label", "label": "혈맹"},
-        ],
-        "rows": rows,
+        "sessions": rows,
         "pagination": pagination,
     }
 
@@ -225,16 +289,23 @@ async def attendance_statistics_page(
     period_days: int,
     query: str,
     page: int,
+    alliance_id: int | None = None,
 ) -> dict[str, Any]:
     period = _period_clause("s.started_at", period_days, unix=False)
     search = " AND COALESCE(u.game_nickname, u.discord_nickname) ILIKE :query" if query else ""
-    params = {"guild_id": guild_id, "period_days": period_days, "query": f"%{query}%"}
+    alliance_filter = " AND u.alliance_id = :alliance_id" if alliance_id is not None else ""
+    params = {
+        "guild_id": guild_id,
+        "period_days": period_days,
+        "query": f"%{query}%",
+        "alliance_id": alliance_id,
+    }
     from_sql = f"""
         FROM attendance_entries e
         JOIN attendance_sessions s ON s.attendance_id = e.attendance_id
         JOIN users u ON u.user_id = e.user_id
         LEFT JOIN alliances a ON a.alliance_id = u.alliance_id
-        WHERE s.guild_id = :guild_id {period} {search}
+        WHERE s.guild_id = :guild_id {period} {alliance_filter} {search}
     """
     count_sql = f"SELECT COUNT(*) FROM (SELECT u.user_id {from_sql} GROUP BY u.user_id) ranked"
     rows, pagination = await _fetch_page(
@@ -254,7 +325,14 @@ async def attendance_statistics_page(
         params=params,
         page=page,
     )
-    max_count = max((_int(row["attendance_count"]) for row in rows), default=0)
+    max_count = _int(await session.scalar(text(f"""
+        SELECT COALESCE(MAX(attendance_count), 0)
+        FROM (
+            SELECT COUNT(*) AS attendance_count
+            {from_sql}
+            GROUP BY u.user_id
+        ) ranked
+    """), params))
     for index, row in enumerate(rows, start=(pagination["page"] - 1) * PAGE_SIZE + 1):
         row["rank"] = f"{index}위"
         row["attendance_label"] = f"{_int(row['attendance_count']):,}회"
@@ -264,22 +342,92 @@ async def attendance_statistics_page(
         SELECT COUNT(*) FROM attendance_sessions s
         WHERE s.guild_id = :guild_id {period}
     """), params))
+    overview = (await session.execute(text(f"""
+        SELECT COUNT(*) AS attendance_count,
+               COUNT(DISTINCT e.user_id) AS unique_user_count
+        {from_sql}
+    """), params)).mappings().one()
+    attendance_count = _int(overview["attendance_count"])
+
+    daily_stats = [dict(row) for row in (await session.execute(text(f"""
+        SELECT DATE(s.started_at::timestamp)::TEXT AS attendance_date,
+               COUNT(DISTINCT s.attendance_id) AS session_count,
+               COUNT(*) AS attendance_count,
+               COUNT(DISTINCT e.user_id) AS unique_user_count
+        {from_sql}
+        GROUP BY DATE(s.started_at::timestamp)
+        ORDER BY DATE(s.started_at::timestamp) DESC
+        LIMIT 31
+    """), params)).mappings().all()]
+    alliance_stats = [dict(row) for row in (await session.execute(text(f"""
+        SELECT COALESCE(a.display_name, a.alliance_name, '미분류') AS alliance_name,
+               COUNT(DISTINCT s.attendance_id) AS session_count,
+               COUNT(*) AS attendance_count,
+               COUNT(DISTINCT e.user_id) AS unique_user_count
+        {from_sql}
+        GROUP BY a.alliance_id, a.display_name, a.alliance_name, a.sort_order
+        ORDER BY attendance_count DESC, COALESCE(a.sort_order, 2147483647), alliance_name
+    """), params)).mappings().all()]
+    hour_stats = [dict(row) for row in (await session.execute(text(f"""
+        SELECT EXTRACT(HOUR FROM s.started_at::timestamp)::INTEGER AS hour,
+               COUNT(DISTINCT s.attendance_id) AS session_count,
+               COUNT(*) AS attendance_count,
+               ROUND(COUNT(*)::NUMERIC / NULLIF(COUNT(DISTINCT s.attendance_id), 0), 1) AS average_count
+        {from_sql}
+        GROUP BY EXTRACT(HOUR FROM s.started_at::timestamp)
+        ORDER BY attendance_count DESC, hour
+        LIMIT 12
+    """), params)).mappings().all()]
+    for row in hour_stats:
+        row["hour_label"] = f"{_int(row['hour']):02d}:00"
+        row["average_label"] = f"평균 {float(row['average_count'] or 0):.1f}명"
     return {
         "summary_cards": [
             {"label": "기간 내 회차", "value": f"{session_count:,}", "meta": "최근 한 달 기본"},
-            {"label": "집계 유저", "value": f"{pagination['total']:,}", "meta": "출석 이력 보유"},
-            {"label": "최다 출석", "value": f"{max_count:,}회", "meta": "현재 페이지 기준"},
+            {"label": "누적 출석", "value": f"{attendance_count:,}", "meta": "필터 조건 기준"},
+            {"label": "참여 인원", "value": f"{_int(overview['unique_user_count']):,}", "meta": "고유 유저"},
+            {"label": "평균 참여", "value": f"{(attendance_count / session_count):.1f}명" if session_count else "0명", "meta": "회차당 참여"},
         ],
-        "columns": [
-            {"key": "rank", "label": "순위"},
-            {"key": "user_name", "label": "유저", "emphasis": True},
-            {"key": "alliance_name", "label": "혈맹"},
-            {"key": "attendance_label", "label": "출석"},
-            {"key": "last_attendance", "label": "마지막 출석"},
-        ],
-        "rows": rows,
+        "user_rankings": rows,
+        "daily_stats": daily_stats,
+        "alliance_stats": alliance_stats,
+        "hour_stats": hour_stats,
         "pagination": pagination,
     }
+
+
+async def attendance_statistics_export_rows(
+    session: AsyncSession,
+    *,
+    guild_id: int,
+    period_days: int,
+    query: str,
+    alliance_id: int | None = None,
+) -> list[dict[str, Any]]:
+    period = _period_clause("s.started_at", period_days, unix=False)
+    search = " AND COALESCE(u.game_nickname, u.discord_nickname) ILIKE :query" if query else ""
+    alliance_filter = " AND u.alliance_id = :alliance_id" if alliance_id is not None else ""
+    params = {
+        "guild_id": guild_id,
+        "period_days": period_days,
+        "query": f"%{query}%",
+        "alliance_id": alliance_id,
+    }
+    rows = (await session.execute(text(f"""
+        SELECT COALESCE(u.game_nickname, u.discord_nickname) AS user_name,
+               COALESCE(a.display_name, a.alliance_name, '미분류') AS alliance_name,
+               COUNT(*) AS attendance_count,
+               TO_CHAR(MIN(s.started_at::timestamp), 'YYYY-MM-DD HH24:MI') AS first_attendance,
+               TO_CHAR(MAX(s.started_at::timestamp), 'YYYY-MM-DD HH24:MI') AS last_attendance
+        FROM attendance_entries e
+        JOIN attendance_sessions s ON s.attendance_id = e.attendance_id
+        JOIN users u ON u.user_id = e.user_id
+        LEFT JOIN alliances a ON a.alliance_id = u.alliance_id
+        WHERE s.guild_id = :guild_id {period} {alliance_filter} {search}
+        GROUP BY u.user_id, u.game_nickname, u.discord_nickname, a.display_name, a.alliance_name
+        ORDER BY attendance_count DESC, user_name
+    """), params)).mappings().all()
+    return [dict(row) for row in rows]
 
 
 async def clan_attendance_page(
@@ -325,24 +473,106 @@ async def clan_attendance_page(
         SELECT COUNT(*) FROM attendance_sessions s
         WHERE s.guild_id = :guild_id {period}
     """), params))
-    for row in rows:
+    for index, row in enumerate(rows, start=(pagination["page"] - 1) * PAGE_SIZE + 1):
         count = _int(row["attendance_count"])
+        row["rank"] = f"{index}위"
         row["attendance_label"] = f"{count:,}회"
         row["rate_label"] = f"{(count / total_sessions * 100):.1f}%" if total_sessions else "0%"
+        row["rate"] = round(count / total_sessions * 100, 1) if total_sessions else 0
         row["last_attendance"] = row["last_attendance"] or "기록 없음"
+
+    overview = (await session.execute(text(f"""
+        SELECT COUNT(DISTINCT s.attendance_id) AS alliance_session_count,
+               COUNT(s.attendance_id) AS attendance_count,
+               COUNT(DISTINCT u.user_id) FILTER (WHERE s.attendance_id IS NOT NULL) AS participating_users
+        {from_sql}
+    """), params)).mappings().one()
+    alliance_session_count = _int(overview["alliance_session_count"])
+    attendance_count = _int(overview["attendance_count"])
+
+    hour_stats = [dict(row) for row in (await session.execute(text(f"""
+        SELECT EXTRACT(HOUR FROM s.started_at::timestamp)::INTEGER AS hour,
+               COUNT(DISTINCT s.attendance_id) AS session_count,
+               COUNT(*) AS attendance_count,
+               ROUND(COUNT(*)::NUMERIC / NULLIF(COUNT(DISTINCT s.attendance_id), 0), 1) AS average_count
+        FROM attendance_entries e
+        JOIN attendance_sessions s ON s.attendance_id = e.attendance_id
+        JOIN users u ON u.user_id = e.user_id
+        WHERE s.guild_id = :guild_id AND u.alliance_id = :alliance_id {period}
+        GROUP BY EXTRACT(HOUR FROM s.started_at::timestamp)
+        ORDER BY attendance_count DESC, hour
+        LIMIT 10
+    """), params)).mappings().all()]
+    for row in hour_stats:
+        row["label"] = f"{_int(row['hour']):02d}:00"
+
+    weekday_labels = {1: "월", 2: "화", 3: "수", 4: "목", 5: "금", 6: "토", 7: "일"}
+    weekday_stats = [dict(row) for row in (await session.execute(text(f"""
+        SELECT EXTRACT(ISODOW FROM s.started_at::timestamp)::INTEGER AS weekday,
+               COUNT(DISTINCT s.attendance_id) AS session_count,
+               COUNT(*) AS attendance_count,
+               ROUND(COUNT(*)::NUMERIC / NULLIF(COUNT(DISTINCT s.attendance_id), 0), 1) AS average_count
+        FROM attendance_entries e
+        JOIN attendance_sessions s ON s.attendance_id = e.attendance_id
+        JOIN users u ON u.user_id = e.user_id
+        WHERE s.guild_id = :guild_id AND u.alliance_id = :alliance_id {period}
+        GROUP BY EXTRACT(ISODOW FROM s.started_at::timestamp)
+        ORDER BY weekday
+    """), params)).mappings().all()]
+    for row in weekday_stats:
+        row["label"] = weekday_labels.get(_int(row["weekday"]), "-")
+
+    daily_rows = [dict(row) for row in (await session.execute(text(f"""
+        SELECT DATE(s.started_at::timestamp)::TEXT AS attendance_date,
+               COUNT(DISTINCT s.attendance_id) AS session_count,
+               COUNT(*) AS attendance_count,
+               COUNT(DISTINCT e.user_id) AS unique_user_count
+        FROM attendance_entries e
+        JOIN attendance_sessions s ON s.attendance_id = e.attendance_id
+        JOIN users u ON u.user_id = e.user_id
+        WHERE s.guild_id = :guild_id AND u.alliance_id = :alliance_id {period}
+        GROUP BY DATE(s.started_at::timestamp)
+        ORDER BY DATE(s.started_at::timestamp) DESC
+        LIMIT 31
+    """), params)).mappings().all()]
+
+    async def current_rankings(date_clause: str) -> list[dict[str, Any]]:
+        ranking_rows = [dict(row) for row in (await session.execute(text(f"""
+            SELECT COALESCE(u.game_nickname, u.discord_nickname) AS user_name,
+                   COUNT(*) AS attendance_count
+            FROM attendance_entries e
+            JOIN attendance_sessions s ON s.attendance_id = e.attendance_id
+            JOIN users u ON u.user_id = e.user_id
+            WHERE s.guild_id = :guild_id
+              AND u.alliance_id = :alliance_id
+              AND {date_clause}
+            GROUP BY u.user_id, u.game_nickname, u.discord_nickname
+            ORDER BY attendance_count DESC, user_name
+            LIMIT 10
+        """), params)).mappings().all()]
+        for index, ranking in enumerate(ranking_rows, start=1):
+            ranking["rank"] = index
+        return ranking_rows
+
+    weekly_rankings = await current_rankings(
+        "s.started_at::timestamp >= DATE_TRUNC('week', NOW() AT TIME ZONE 'Asia/Seoul')"
+    )
+    monthly_rankings = await current_rankings(
+        "s.started_at::timestamp >= DATE_TRUNC('month', NOW() AT TIME ZONE 'Asia/Seoul')"
+    )
     return {
         "summary_cards": [
             {"label": "혈맹원", "value": f"{pagination['total']:,}", "meta": "활성 유저"},
-            {"label": "출석 회차", "value": f"{total_sessions:,}", "meta": "서버 전체"},
-            {"label": "평균 참여", "value": f"{(sum(_int(r['attendance_count']) for r in rows) / len(rows)):.1f}회" if rows else "0회", "meta": "현재 페이지"},
+            {"label": "혈맹 참여 회차", "value": f"{alliance_session_count:,}", "meta": f"전체 {total_sessions:,}회"},
+            {"label": "참여 회차율", "value": f"{(alliance_session_count / total_sessions * 100):.1f}%" if total_sessions else "0%", "meta": "서버 전체 회차 기준"},
+            {"label": "평균 인원", "value": f"{(attendance_count / alliance_session_count):.1f}명" if alliance_session_count else "0명", "meta": f"누적 {attendance_count:,}명"},
         ],
-        "columns": [
-            {"key": "user_name", "label": "혈맹원", "emphasis": True},
-            {"key": "attendance_label", "label": "출석"},
-            {"key": "rate_label", "label": "참여율"},
-            {"key": "last_attendance", "label": "마지막 출석"},
-        ],
-        "rows": rows,
+        "user_rankings": rows,
+        "hour_stats": hour_stats,
+        "weekday_stats": weekday_stats,
+        "daily_rows": daily_rows,
+        "weekly_rankings": weekly_rankings,
+        "monthly_rankings": monthly_rankings,
         "pagination": pagination,
     }
 
