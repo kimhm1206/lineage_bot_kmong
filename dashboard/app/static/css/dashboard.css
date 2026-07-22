@@ -99,16 +99,20 @@ a {
 }
 
 .app-shell {
-  display: grid;
-  grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+  display: block;
   min-height: 100vh;
 }
 
 .sidebar-shell {
-  position: sticky;
+  position: fixed;
   top: 0;
-  height: 100vh;
+  bottom: 0;
+  left: 0;
+  z-index: 30;
+  width: var(--sidebar-width);
+  height: 100dvh;
   overflow-y: auto;
+  overscroll-behavior: contain;
   border-right: 1px solid var(--line);
   background: color-mix(in srgb, var(--sidebar) 94%, transparent);
   padding: 22px 18px;
@@ -339,6 +343,7 @@ a {
 
 .app-main {
   min-width: 0;
+  margin-left: var(--sidebar-width);
 }
 
 .topbar {
@@ -2838,11 +2843,19 @@ body.modal-open {
   }
 
   .sidebar-shell {
-    position: static;
+    position: sticky;
+    top: 0;
+    bottom: auto;
+    z-index: 40;
+    width: 100%;
     height: auto;
-    max-height: none;
+    max-height: 100dvh;
     border-right: 0;
     border-bottom: 1px solid var(--line);
+  }
+
+  .app-main {
+    margin-left: 0;
   }
 
   .side-nav {
