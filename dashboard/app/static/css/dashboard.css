@@ -7079,6 +7079,7 @@ body.modal-open {
   display: grid;
   min-height: 0;
   align-content: start;
+  grid-template-columns: minmax(0, 1fr);
   grid-auto-rows: max-content;
   gap: 10px;
   padding-right: 5px;
@@ -7087,19 +7088,13 @@ body.modal-open {
   scrollbar-gutter: stable;
 }
 
-.drop-history-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.clan-item-history-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
 .drop-history-card,
 .clan-item-history-card {
   display: grid;
   min-width: 0;
-  align-content: start;
+  min-height: 112px;
+  grid-template-columns: minmax(180px, .9fr) minmax(400px, 2.1fr) minmax(170px, .8fr);
+  align-items: stretch;
   overflow: hidden;
   border: 1px solid var(--line);
   border-left: 3px solid var(--success);
@@ -7115,7 +7110,7 @@ body.modal-open {
   justify-content: space-between;
   gap: 12px;
   padding: 13px 14px;
-  border-bottom: 1px solid var(--line);
+  border-right: 1px solid var(--line);
   background: var(--panel-subtle);
 }
 
@@ -7152,16 +7147,10 @@ body.modal-open {
 .drop-history-card-metrics,
 .clan-item-history-metrics {
   display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: stretch;
   gap: 7px;
   padding: 10px 12px;
-}
-
-.drop-history-card-metrics {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.clan-item-history-metrics {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .drop-history-card-metrics > div,
@@ -7203,15 +7192,16 @@ body.modal-open {
 
 .drop-history-card > footer,
 .clan-item-history-card > footer {
-  display: flex;
+  display: grid;
   min-width: 0;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  align-content: center;
+  justify-items: end;
+  gap: 7px;
   padding: 10px 13px;
-  border-top: 1px solid var(--line);
+  border-left: 1px solid var(--line);
   color: var(--muted);
   font-size: 10px;
+  text-align: right;
 }
 
 .drop-history-card > footer > div {
@@ -7965,8 +7955,6 @@ body.modal-open {
   .drop-actions { grid-column: 1 / -1; justify-content: flex-end; padding-top: 10px; border-top: 1px solid var(--line); }
   .fee-rule-grid { grid-template-columns: 1fr; }
   .personal-distribution-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .drop-history-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .clan-item-history-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 980px) {
@@ -8029,7 +8017,30 @@ body.modal-open {
   .history-modal-toolbar { align-items: stretch; flex-direction: column; }
   .drop-history-overview,
   .clan-item-history-overview { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .drop-history-grid { grid-template-columns: 1fr; }
+  .drop-history-card,
+  .clan-item-history-card {
+    min-height: 0;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .drop-history-card > header,
+  .clan-item-history-card > header {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .drop-history-card > footer,
+  .clan-item-history-card > footer {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    justify-items: start;
+    border-top: 1px solid var(--line);
+    border-left: 0;
+    text-align: left;
+  }
+  .drop-history-card > footer > :last-child,
+  .clan-item-history-card > footer > :last-child {
+    justify-self: end;
+    text-align: right;
+  }
+  .drop-history-card-metrics,
   .clan-item-history-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .drop-record-main { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px; }
   .drop-record-main.is-readonly { grid-template-columns: repeat(2, minmax(0, 1fr)); }
