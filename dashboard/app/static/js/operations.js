@@ -224,6 +224,27 @@
     if (isOpen) window.setTimeout(() => editor.elements.item_name?.focus(), 20);
   };
 
+  const setFeeRuleEditor = (form, isOpen, { reset = false } = {}) => {
+    if (!form) return;
+    const view = form.querySelector("[data-fee-rule-view]");
+    const editor = form.querySelector("[data-fee-rule-editor]");
+    const toggle = form.querySelector("[data-fee-rule-edit]");
+    if (!view || !editor || !toggle) return;
+    if (reset) form.reset();
+    view.hidden = isOpen;
+    editor.hidden = !isOpen;
+    form.classList.toggle("is-editing", isOpen);
+    toggle.setAttribute("aria-expanded", String(isOpen));
+    editor.querySelectorAll("input, select, textarea").forEach((control) => {
+      control.disabled = !isOpen;
+    });
+    if (isOpen) {
+      window.setTimeout(() => {
+        editor.querySelector("input:not([type=hidden]), select, textarea")?.focus();
+      }, 20);
+    }
+  };
+
   const saleBuyerUsers = () => {
     const data = document.querySelector("#drop-buyer-users-data");
     if (!data) return [];
@@ -1189,7 +1210,12 @@
     const modalOpen = event.target.closest("[data-modal-open]");
     if (modalOpen) openModal(modalOpen.dataset.modalOpen);
     const modalClose = event.target.closest("[data-modal-close]");
-    if (modalClose) closeModal(modalClose);
+    if (modalClose) {
+      modalClose.closest(".ops-modal")?.querySelectorAll("[data-fee-rule-form]").forEach((form) => {
+        setFeeRuleEditor(form, false, { reset: true });
+      });
+      closeModal(modalClose);
+    }
     const dropEdit = event.target.closest("[data-drop-edit]");
     if (dropEdit) populateDropEdit(dropEdit);
     const saleOpen = event.target.closest("[data-sale-open]");
@@ -1227,6 +1253,18 @@
     }
     const itemEditCancel = event.target.closest("[data-item-edit-cancel]");
     if (itemEditCancel) setItemEditor(itemEditCancel.closest("[data-item-row]"), false);
+    const feeRuleEdit = event.target.closest("[data-fee-rule-edit]");
+    if (feeRuleEdit) {
+      const form = feeRuleEdit.closest("[data-fee-rule-form]");
+      document.querySelectorAll("[data-fee-rule-form].is-editing").forEach((openForm) => {
+        if (openForm !== form) setFeeRuleEditor(openForm, false, { reset: true });
+      });
+      setFeeRuleEditor(form, true);
+    }
+    const feeRuleCancel = event.target.closest("[data-fee-rule-cancel]");
+    if (feeRuleCancel) {
+      setFeeRuleEditor(feeRuleCancel.closest("[data-fee-rule-form]"), false, { reset: true });
+    }
     const feeEdit = event.target.closest("[data-fee-edit]");
     if (feeEdit) populateFeeEdit(feeEdit);
     const feeHistoryOpen = event.target.closest("[data-fee-history-open]");

@@ -6906,47 +6906,114 @@ body.modal-open {
 }
 
 #settlement-fee-settings-modal .ops-modal-dialog {
-  width: min(1040px, calc(100vw - 40px));
-  height: min(820px, calc(100dvh - 48px));
+  width: min(1120px, calc(100vw - 40px));
+  height: min(840px, calc(100dvh - 48px));
   max-height: none;
 }
 
 .settlement-fee-settings {
   display: grid;
+  height: 100%;
   min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 14px;
 }
 
 .settlement-fee-create {
   display: grid;
-  grid-template-columns: minmax(150px, .7fr) minmax(180px, 1fr) minmax(130px, .55fr) auto;
+  grid-template-columns: minmax(250px, 1.15fr) minmax(190px, .85fr) minmax(140px, .55fr) auto;
   align-items: end;
-  gap: 10px;
-  padding: 14px;
+  gap: 12px;
+  padding: 16px;
   border: 1px solid var(--line);
   border-left: 4px solid var(--accent);
   border-radius: 8px;
-  background: var(--panel-subtle);
+  background: color-mix(in srgb, var(--accent) 4%, var(--panel-subtle));
 }
 
-.settlement-fee-create > div,
+.settlement-fee-create-copy {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+}
+
+.settlement-fee-create-copy > div,
 .settlement-fee-identity {
   display: grid;
   min-width: 0;
-  gap: 4px;
+  gap: 3px;
 }
 
-.settlement-fee-create > div span,
+.settlement-fee-create-icon,
+.settlement-fee-kind-icon {
+  display: grid;
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--line));
+  border-radius: 7px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.settlement-fee-create-icon .icon,
+.settlement-fee-kind-icon .icon {
+  width: 18px;
+  height: 18px;
+}
+
+.settlement-fee-create-copy small,
 .settlement-fee-identity small,
 .settlement-fee-readonly small {
   color: var(--muted);
   font-size: 11px;
 }
 
-.settlement-fee-create > div strong,
+.settlement-fee-create-copy strong,
 .settlement-fee-identity strong {
   color: var(--text-strong);
   font-size: 15px;
+}
+
+.settlement-fee-create-copy p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.settlement-fee-list-section {
+  display: grid;
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 10px;
+}
+
+.settlement-fee-list-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 2px;
+}
+
+.settlement-fee-list-heading > div {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.settlement-fee-list-heading span,
+.settlement-fee-list-heading p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.settlement-fee-list-heading strong {
+  color: var(--text-strong);
+  font-size: 14px;
 }
 
 .settlement-fee-list {
@@ -6954,31 +7021,96 @@ body.modal-open {
   min-height: 0;
   align-content: start;
   gap: 8px;
+  padding-right: 5px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .settlement-fee-row {
+  min-width: 0;
+  overflow: hidden;
   border: 1px solid var(--line);
   border-left: 3px solid var(--accent);
   border-radius: 8px;
   background: var(--panel);
+  transition: border-color 160ms ease, background 160ms ease;
+}
+
+.settlement-fee-row:has(form.is-editing) {
+  border-color: color-mix(in srgb, var(--accent) 48%, var(--line));
+  border-left-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 3%, var(--panel));
 }
 
 .settlement-fee-row.is-inactive {
   border-left-color: var(--muted);
-  opacity: .68;
 }
 
-.settlement-fee-row > form,
+.settlement-fee-view,
 .settlement-fee-readonly {
   display: grid;
-  grid-template-columns: minmax(190px, 1fr) minmax(140px, .45fr) auto auto;
-  align-items: end;
+  grid-template-columns: 42px minmax(190px, 1fr) minmax(120px, .38fr) auto auto;
+  align-items: center;
   gap: 12px;
+  min-height: 76px;
   padding: 12px 14px;
 }
 
-.settlement-fee-identity input {
-  width: 100%;
+.settlement-fee-value {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.settlement-fee-value small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.settlement-fee-value strong {
+  overflow: hidden;
+  color: var(--text-strong);
+  font-size: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settlement-fee-edit-button {
+  min-width: 82px;
+}
+
+.settlement-fee-edit-button .icon,
+.settlement-fee-editor-actions .icon {
+  width: 15px;
+  height: 15px;
+}
+
+.settlement-fee-editor {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 16px;
+  padding: 15px 14px 16px 68px;
+  border-top: 1px solid var(--line);
+  background: var(--panel-subtle);
+}
+
+.settlement-fee-editor[hidden],
+.settlement-fee-view[hidden] {
+  display: none;
+}
+
+.settlement-fee-editor-fields {
+  display: grid;
+  grid-template-columns: minmax(190px, 1fr) minmax(150px, .55fr) minmax(170px, .65fr);
+  align-items: end;
+  gap: 12px;
+}
+
+.settlement-fee-editor-fields > :only-child {
+  grid-column: 1 / 2;
+  max-width: 240px;
 }
 
 .settlement-fee-toggle {
@@ -6991,15 +7123,33 @@ body.modal-open {
   font-weight: 700;
 }
 
+.settlement-fee-toggle > span {
+  display: grid;
+  gap: 2px;
+}
+
+.settlement-fee-toggle strong {
+  color: var(--muted-strong);
+  font-size: 11px;
+}
+
+.settlement-fee-toggle small {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 500;
+}
+
 .settlement-fee-toggle input {
   width: 17px;
   height: 17px;
   accent-color: var(--accent);
 }
 
-.settlement-fee-readonly {
-  grid-template-columns: minmax(0, 1fr) auto auto;
+.settlement-fee-editor-actions {
+  display: flex;
   align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .settlement-fee-readonly > div {
@@ -7007,8 +7157,8 @@ body.modal-open {
   gap: 3px;
 }
 
-.settlement-fee-readonly > strong {
-  color: var(--text-strong);
+.settlement-fee-readonly {
+  grid-template-columns: 42px minmax(0, 1fr) minmax(120px, .38fr) auto;
 }
 
 .drop-sale-history,
@@ -7970,7 +8120,9 @@ body.modal-open {
   .settlement-command-layout.is-clan .settlement-command-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .clan-settlement-search { grid-column: 1 / -1; }
   .settlement-fee-create { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .settlement-fee-create > div { grid-column: 1 / -1; }
+  .settlement-fee-create-copy { grid-column: 1 / -1; }
+  .settlement-fee-editor-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .settlement-fee-toggle { grid-column: 1 / -1; }
   .clan-item-history-overview { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .clan-item-history-grid { grid-template-columns: 1fr; }
   .drop-record-main { grid-template-columns: minmax(210px, 1fr) repeat(2, minmax(110px, .5fr)); }
@@ -7995,7 +8147,8 @@ body.modal-open {
   #clan-settlement-history-modal .ops-modal-dialog,
   #fee-history-modal .ops-modal-dialog,
   #drop-sale-history-modal .ops-modal-dialog,
-  #clan-item-history-modal .ops-modal-dialog {
+  #clan-item-history-modal .ops-modal-dialog,
+  #settlement-fee-settings-modal .ops-modal-dialog {
     width: calc(100vw - 20px);
     height: calc(100dvh - 20px);
   }
@@ -8087,9 +8240,28 @@ body.modal-open {
   .alliance-history-row > form { grid-column: 2; grid-row: 2 / span 2; align-self: center; }
   .fee-rule-grid,
   .personal-distribution-grid { grid-template-columns: 1fr; }
-  .settlement-fee-create,
-  .settlement-fee-row > form,
-  .settlement-fee-readonly { grid-template-columns: 1fr; align-items: stretch; }
+  .settlement-fee-settings { height: auto; grid-template-rows: auto auto; }
+  .settlement-fee-create { grid-template-columns: 1fr; align-items: stretch; }
+  .settlement-fee-create-copy { grid-column: auto; }
+  .settlement-fee-list-heading { align-items: flex-start; flex-direction: column; gap: 4px; }
+  .settlement-fee-list { overflow: visible; }
+  .settlement-fee-view,
+  .settlement-fee-readonly {
+    grid-template-columns: 40px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 9px;
+  }
+  .settlement-fee-value { grid-column: 2; }
+  .settlement-fee-edit-button { grid-column: 2 / -1; width: 100%; }
+  .settlement-fee-editor {
+    grid-template-columns: 1fr;
+    padding: 14px;
+  }
+  .settlement-fee-editor-fields { grid-template-columns: 1fr; }
+  .settlement-fee-editor-fields > :only-child { max-width: none; }
+  .settlement-fee-toggle { grid-column: auto; }
+  .settlement-fee-editor-actions { justify-content: stretch; }
+  .settlement-fee-editor-actions button { flex: 1 1 0; }
   .fee-rule-card { grid-template-columns: 38px minmax(0, 1fr) auto; }
   .fee-rule-rate { grid-column: 2; }
   .fee-rule-card > .ops-status { grid-column: 2; justify-self: start; }

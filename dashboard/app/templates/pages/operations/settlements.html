@@ -68,7 +68,7 @@
       </button>
       {% endif %}
       <article class="settlement-command-card is-fee-preview">
-        <span>수수료 간략히 보기</span>
+        <span>수수료 현황</span>
         <strong>
           {% if active_fee_rules %}
             {% for fee in active_fee_rules[:3] %}{{ fee.rule_name }} {{ fee.rate_label }}{% if not loop.last %}<em>·</em>{% endif %}{% endfor %}
@@ -210,9 +210,13 @@
     <input type="hidden" name="guild_id" value="{{ guild_id }}">
     <input type="hidden" name="alliance_id" value="{{ alliance_id or '' }}">
     <input type="hidden" name="scope_code" value="{{ scope_code }}">
-    <div>
-      <span>새 수수료</span>
-      <strong>수수료 규칙 추가</strong>
+    <div class="settlement-fee-create-copy">
+      <span class="settlement-fee-create-icon">{{ icon("plus-square") }}</span>
+      <div>
+        <small>새 규칙</small>
+        <strong>수수료 추가</strong>
+        <p>이후 생성되는 미정산 금액부터 적용됩니다.</p>
+      </div>
     </div>
     <label class="ops-field">
       <span>수수료 이름</span>
@@ -226,41 +230,80 @@
   </form>
   {% endif %}
 
-  <div class="settlement-fee-list">
+  <section class="settlement-fee-list-section">
+    <header class="settlement-fee-list-heading">
+      <div>
+        <span>현재 설정</span>
+        <strong>{{ fee_rules|length }}개</strong>
+      </div>
+      {% if can_edit_fee_rules %}
+      <p>수정 버튼을 누른 항목만 편집할 수 있습니다.</p>
+      {% else %}
+      <p>현재 적용 중인 수수료 설정입니다.</p>
+      {% endif %}
+    </header>
+    <div class="settlement-fee-list">
     {% for fee in fee_rules %}
     <article class="settlement-fee-row{% if not fee.is_active %} is-inactive{% endif %}">
       {% if can_edit_fee_rules %}
-      <form data-async-form method="post" action="/api/fee-rules/{{ fee.fee_rule_id }}">
+      <form data-async-form data-fee-rule-form method="post"
+            action="/api/fee-rules/{{ fee.fee_rule_id }}">
         <input type="hidden" name="guild_id" value="{{ guild_id }}">
-        <div class="settlement-fee-identity">
-          <small>{{ '고정 수수료' if fee.is_fixed else '커스텀 수수료' }}</small>
-          {% if fee.is_fixed %}
-          <strong>{{ fee.rule_name }}</strong>
-          <input type="hidden" name="rule_name" value="{{ fee.rule_name }}">
-          {% else %}
-          <input type="text" name="rule_name" maxlength="60" required value="{{ fee.rule_name }}">
-          {% endif %}
-        </div>
-        <label class="ops-field settlement-fee-rate">
-          <span>수수료율 (%)</span>
-          <input type="number" name="percent" min="0" max="100" step="0.01"
-                 required value="{{ fee.rate_ppm / 10000 }}">
-        </label>
         {% if fee.is_fixed %}
+        <input type="hidden" name="rule_name" value="{{ fee.rule_name }}">
         <input type="hidden" name="is_active" value="1">
-        <span class="ops-status ops-status-complete">고정</span>
-        {% else %}
-        <label class="settlement-fee-toggle">
-          <input type="checkbox" name="is_active" value="1" {% if fee.is_active %}checked{% endif %}>
-          <span>{{ '사용 중' if fee.is_active else '중지' }}</span>
-        </label>
         {% endif %}
-        <button class="secondary-button" type="submit">저장</button>
+        <div class="settlement-fee-view" data-fee-rule-view>
+          <span class="settlement-fee-kind-icon">{{ icon("receipt") }}</span>
+          <div class="settlement-fee-identity">
+            <small>{{ '고정 수수료' if fee.is_fixed else '커스텀 수수료' }}</small>
+            <strong>{{ fee.rule_name }}</strong>
+          </div>
+          <div class="settlement-fee-value">
+            <small>적용 비율</small>
+            <strong>{{ fee.rate_label }}</strong>
+          </div>
+          <span class="ops-status ops-status-{{ 'complete' if fee.is_active else 'muted' }}">
+            {{ '고정' if fee.is_fixed else ('사용 중' if fee.is_active else '중지') }}
+          </span>
+          <button class="secondary-button settlement-fee-edit-button" type="button"
+                  data-fee-rule-edit aria-expanded="false">
+            {{ icon("pencil") }} 수정
+          </button>
+        </div>
+        <div class="settlement-fee-editor" data-fee-rule-editor hidden>
+          <div class="settlement-fee-editor-fields">
+            {% if not fee.is_fixed %}
+            <label class="ops-field">
+              <span>수수료 이름</span>
+              <input type="text" name="rule_name" maxlength="60" required
+                     value="{{ fee.rule_name }}" disabled>
+            </label>
+            {% endif %}
+            <label class="ops-field settlement-fee-rate">
+              <span>수수료율 (%)</span>
+              <input type="number" name="percent" min="0" max="100" step="0.01"
+                     required value="{{ fee.rate_ppm / 10000 }}" disabled>
+            </label>
+            {% if not fee.is_fixed %}
+            <label class="settlement-fee-toggle">
+              <input type="checkbox" name="is_active" value="1"
+                     {% if fee.is_active %}checked{% endif %} disabled>
+              <span><strong>사용 상태</strong><small>정산 규칙 적용 여부</small></span>
+            </label>
+            {% endif %}
+          </div>
+          <div class="settlement-fee-editor-actions">
+            <button class="secondary-button" type="button" data-fee-rule-cancel>취소</button>
+            <button class="primary-button" type="submit">{{ icon("save") }} 저장</button>
+          </div>
+        </div>
       </form>
       {% else %}
       <div class="settlement-fee-readonly">
+        <span class="settlement-fee-kind-icon">{{ icon("receipt") }}</span>
         <div><small>{{ '고정 수수료' if fee.is_fixed else '커스텀 수수료' }}</small><strong>{{ fee.rule_name }}</strong></div>
-        <strong>{{ fee.rate_label }}</strong>
+        <div class="settlement-fee-value"><small>적용 비율</small><strong>{{ fee.rate_label }}</strong></div>
         <span class="ops-status ops-status-{{ 'complete' if fee.is_active else 'muted' }}">{{ '사용 중' if fee.is_active else '중지' }}</span>
       </div>
       {% endif %}
@@ -271,7 +314,8 @@
       <p>새 수수료를 추가하면 정산 대상에 자동 반영됩니다.</p>
     </div>
     {% endfor %}
-  </div>
+    </div>
+  </section>
 </section>
 {% endcall %}
 </div>
