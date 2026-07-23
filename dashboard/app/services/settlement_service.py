@@ -1040,7 +1040,12 @@ async def set_payout_group_status(
             ORDER BY po.payout_object_id
         """
     elif group_type == "fee":
-        sql = """
+        fee_scope_filter = (
+            "fr.scope_code = 1"
+            if alliance_id is None
+            else "fr.scope_code = 2 AND parent.recipient_alliance_id = :alliance_id"
+        )
+        sql = f"""
             SELECT po.payout_object_id
             FROM settlement_payout_objects po
             JOIN settlement_drops d ON d.drop_id = po.drop_id
@@ -1049,11 +1054,7 @@ async def set_payout_group_status(
             LEFT JOIN settlement_payout_objects parent ON parent.payout_object_id = po.parent_payout_object_id
             WHERE d.guild_id = :guild_id AND po.object_code = 3
               AND fr.fee_rule_id = :target_id AND po.status_code = 0
-              AND (
-                  (:alliance_id IS NULL AND fr.scope_code = 1)
-                  OR (:alliance_id IS NOT NULL AND fr.scope_code = 2
-                      AND parent.recipient_alliance_id = :alliance_id)
-              )
+              AND {fee_scope_filter}
             ORDER BY po.payout_object_id
         """
     else:
