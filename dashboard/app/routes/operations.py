@@ -17,6 +17,7 @@ from dashboard.app.security import (
     can_select_alliances,
     current_access_role,
     current_discord_user_id,
+    current_guild_id,
     current_user_alliance_id,
     require_alliance_access,
     restrict_workspace_alliance,
@@ -88,7 +89,7 @@ async def _context(
     clan_scoped: bool = False,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     workspace = await workspace_store.resolve_workspace(
-        session, guild_id, alliance_id, allowed_guild_ids(request)
+        session, current_guild_id(request), alliance_id, allowed_guild_ids(request)
     )
     can_select = await can_select_alliances(request, session, workspace["guild_id"])
     if clan_scoped:

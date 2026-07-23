@@ -1547,6 +1547,31 @@ a {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.developer-context-panel {
+  margin: 24px 0 18px;
+  overflow: hidden;
+}
+
+.developer-context-form {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) auto;
+  align-items: end;
+  gap: 14px;
+  padding: 18px 20px 20px;
+  border-top: 1px solid var(--line);
+}
+
+.server-row.is-selected {
+  background: color-mix(in srgb, var(--accent) 8%, var(--panel));
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.server-row.is-selected .connection-label {
+  color: var(--accent-strong);
+  border-color: color-mix(in srgb, var(--accent) 38%, var(--line));
+  background: color-mix(in srgb, var(--accent) 10%, var(--panel));
+}
+
 .settings-form-panel,
 .settings-side-panel {
   overflow: hidden;
@@ -3792,7 +3817,8 @@ body.modal-open {
   }
 
   .form-grid-two,
-  .inline-assign-form {
+  .inline-assign-form,
+  .developer-context-form {
     grid-template-columns: 1fr;
   }
 

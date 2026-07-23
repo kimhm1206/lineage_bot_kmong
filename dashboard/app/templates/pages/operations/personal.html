@@ -7,7 +7,6 @@
 <div data-live-page>
   <section class="personal-context-bar">
     <form method="get" action="/my/distributions">
-      <label class="ops-control"><span>서버</span><select name="guild_id" onchange="this.form.submit()">{% for guild in guilds %}<option value="{{ guild.guild_id }}" {% if guild.guild_id == guild_id %}selected{% endif %}>{{ guild.name }}</option>{% endfor %}</select></label>
       {% if can_select_personal_user %}<label class="ops-control personal-user-control"><span>유저</span><select name="user_id" onchange="this.form.submit()">{% for user in users %}<option value="{{ user.user_id }}" {% if user.user_id == user_id %}selected{% endif %}>{{ user.user_name }} · {{ user.alliance_name }}</option>{% endfor %}</select></label>{% endif %}
       <label class="ops-control ops-control-compact"><span>기간</span><select name="period" onchange="this.form.submit()">{% for option in period_options %}<option value="{{ option.value }}" {% if option.selected %}selected{% endif %}>{{ option.label }}</option>{% endfor %}</select></label>
     </form>

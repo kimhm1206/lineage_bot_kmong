@@ -185,16 +185,9 @@ class AuthContextMiddleware(BaseHTTPMiddleware):
             )
 
         allowed_ids = tuple(int(row["guild_id"]) for row in guilds)
-        raw_requested = request.query_params.get("guild_id")
-        try:
-            requested_guild_id = int(raw_requested or 0)
-        except ValueError:
-            requested_guild_id = 0
         session_guild_id = int(request.session.get("selected_guild_id") or 0)
         selected_guild_id = (
-            requested_guild_id
-            if requested_guild_id in allowed_ids
-            else session_guild_id
+            session_guild_id
             if session_guild_id in allowed_ids
             else allowed_ids[0]
         )

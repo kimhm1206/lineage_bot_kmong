@@ -6,15 +6,41 @@
 {% block content %}
 {% include "partials/settings_toolbar.html" %}
 
+<section class="panel developer-context-panel">
+  <div class="panel-header panel-header-inline">
+    <div>
+      <span class="panel-kicker">Workspace context</span>
+      <h2>작업 서버</h2>
+    </div>
+    {% if selected_guild %}
+    <span class="status-chip status-success">현재 {{ selected_guild.name }}</span>
+    {% endif %}
+  </div>
+  <form class="developer-context-form" method="post" action="/settings/server/select">
+    <label class="form-field">
+      <span>적용할 Discord 서버</span>
+      <select name="guild_id" required {% if not guilds %}disabled{% endif %}>
+        {% if not guilds %}<option value="">등록된 서버 없음</option>{% endif %}
+        {% for guild in guilds %}
+        <option value="{{ guild.guild_id }}" {% if guild.guild_id == guild_id %}selected{% endif %} {% if not guild.is_enabled %}disabled{% endif %}>
+          {{ guild.name }}{% if not guild.is_enabled %} · 사용 중지{% endif %}
+        </option>
+        {% endfor %}
+      </select>
+    </label>
+    <button class="primary-button" type="submit" {% if not guilds %}disabled{% endif %}>{{ icon("check") }} 작업 서버 변경</button>
+  </form>
+</section>
+
 <div class="settings-grid settings-grid-sidebar">
   <section class="panel settings-form-panel">
     <div class="panel-header"><div><span class="panel-kicker">Registered servers</span><h2>등록된 서버</h2></div></div>
     <div class="server-list">
       {% for guild in guilds %}
-      <article class="server-row{% if guild.is_enabled %} is-enabled{% endif %}">
+      <article class="server-row{% if guild.is_enabled %} is-enabled{% endif %}{% if guild.guild_id == guild_id %} is-selected{% endif %}">
         <span class="server-state"></span>
         <div><strong>{{ guild.name }}</strong><small>{{ guild.guild_id }}</small></div>
-        <span class="connection-label">{{ "동기화됨" if guild.synced else "미동기화" }}</span>
+        <span class="connection-label">{{ "현재 작업 서버" if guild.guild_id == guild_id else ("동기화됨" if guild.synced else "미동기화") }}</span>
         <form method="post" action="/settings/server">
           <input type="hidden" name="guild_id" value="{{ guild.guild_id }}">
           <input type="hidden" name="is_enabled" value="{{ 'false' if guild.is_enabled else 'true' }}">

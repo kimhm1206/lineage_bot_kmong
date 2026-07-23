@@ -3,7 +3,6 @@
 {% macro toolbar(guilds, guild_id, query='', period_options=[], alliances=[], alliance_id=None, status_options=[], selected_status='', action='', primary_label='', primary_modal='', search_label='검색', search_placeholder='이름 또는 회차 검색', client_search=False) %}
 <section class="ops-toolbar">
   <form class="ops-filter-form" method="get" action="{{ action or request.url.path }}"{% if client_search %} data-client-search-form{% endif %}>
-    {% if guild_id %}<input type="hidden" name="guild_id" value="{{ guild_id }}">{% endif %}
     {% if alliances %}
     <label class="ops-control">
       <span>혈맹</span>

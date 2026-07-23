@@ -11,6 +11,7 @@ from dashboard.app.security import (
     can_manage_alliance_operations,
     can_manage_clan_treasury,
     current_discord_user_id,
+    current_guild_id,
 )
 from dashboard.app.services import home_store, workspace_store
 from dashboard.app.ui.context import build_template_context
@@ -28,7 +29,7 @@ async def index(
 ):
     workspace = await workspace_store.resolve_workspace(
         session,
-        guild_id,
+        current_guild_id(request),
         None,
         allowed_guild_ids(request),
     )
@@ -42,11 +43,6 @@ async def index(
         if selected_guild_id is not None
         else {"current_user": None, "cards": []}
     )
-    guild_query = (
-        f"?guild_id={selected_guild_id}"
-        if selected_guild_id is not None
-        else ""
-    )
     workspace_cards = [
         {
             "id": "alliance-workspace",
@@ -56,7 +52,7 @@ async def index(
             "role": "연합 관리자",
             "description": "아이템 드랍 등록부터 혈맹별 1차 분배까지 담당하는 독립된 연합 업무 공간입니다.",
             "primary": "연합 대시보드",
-            "href": f"/alliance/drops{guild_query}",
+            "href": "/alliance/drops",
             "links": ["드랍 등록", "각혈 분배", "아이템 입찰", "연합 분배 설정"],
             "flow": ["드랍 등록", "연합 수수료", "혈맹별 분배"],
         },
@@ -68,7 +64,7 @@ async def index(
             "role": "각혈 관리자 · 경리",
             "description": "혈맹원 분배와 혈비를 처리하고 경리 지정 및 공개 정책을 관리하는 독립된 혈맹 업무 공간입니다.",
             "primary": "혈맹 대시보드",
-            "href": f"/clan/settlements{guild_query}",
+            "href": "/clan/settlements",
             "links": ["혈맹원 분배", "혈비 가계부", "혈맹 경리 관리", "정보 공개 설정"],
             "flow": ["혈맹 수령", "인원별 분배", "공개 정책"],
         },
@@ -90,7 +86,7 @@ async def index(
             "icon": "calendar-check",
             "title": "출석 · 통계",
             "description": "회차별 출석과 인원·혈맹 통계",
-            "href": f"/attendance/status{guild_query}",
+            "href": "/attendance/status",
         }
     ]
     if can_manage_alliance_operations(request) or can_manage_clan_treasury(request):
@@ -100,9 +96,9 @@ async def index(
                 "title": "서버 운영",
                 "description": "혈맹, 권한, 알림과 작업 로그",
                 "href": (
-                    f"/settings/alliances{guild_query}"
+                    "/settings/alliances"
                     if can_manage_alliance_operations(request)
-                    else f"/settings/clan{guild_query}"
+                    else "/settings/clan"
                 ),
             }
         )

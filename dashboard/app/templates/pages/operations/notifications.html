@@ -9,14 +9,6 @@
     <span>등록 {{ reports | length }}개</span>
     <span>사용 중 {{ active_count }}개</span>
     {% if channel_error %}<em>{{ channel_error }}</em>{% endif %}
-    <label class="report-guild-control report-guild-inline">
-      <span>서버</span>
-      <select onchange="location.href='/operations/notifications?guild_id='+this.value">
-        {% for guild in guilds %}
-        <option value="{{ guild.guild_id }}" {% if guild.guild_id == guild_id %}selected{% endif %}>{{ guild.name }}</option>
-        {% endfor %}
-      </select>
-    </label>
   </section>
 
   <section class="report-builder">

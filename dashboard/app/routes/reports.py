@@ -13,6 +13,8 @@ from dashboard.app.security import (
     allowed_guild_ids,
     can_manage_alliance_operations,
     current_discord_user_id,
+    current_guild_id,
+    require_selected_guild,
 )
 from dashboard.app.services import report_service, workspace_store
 from dashboard.app.services.discord_api import DiscordApiError, discord_api
@@ -55,7 +57,7 @@ async def notifications_page(
     _require_report_access(request)
     workspace = await workspace_store.resolve_workspace(
         session,
-        guild_id,
+        current_guild_id(request),
         None,
         allowed_guild_ids(request),
     )
@@ -113,6 +115,7 @@ async def save_report(
         )
     if allowed_guild_ids(request) is not None and guild_id not in allowed_guild_ids(request):
         raise HTTPException(status_code=403, detail="접근할 수 없는 서버입니다.")
+    require_selected_guild(request, guild_id)
     values = {key: value for key, value in form.items()}
     channels, channel_error = await _text_channels(guild_id)
     if channel_error:
@@ -161,9 +164,10 @@ async def preview_report(
         return JSONResponse({"ok": False, "message": "서버를 확인해 주세요."}, status_code=422)
     if allowed_guild_ids(request) is not None and guild_id not in allowed_guild_ids(request):
         raise HTTPException(status_code=403, detail="접근할 수 없는 서버입니다.")
+    require_selected_guild(request, guild_id)
     workspace = await workspace_store.resolve_workspace(
         session,
-        guild_id,
+        current_guild_id(request),
         None,
         allowed_guild_ids(request),
     )
@@ -195,6 +199,7 @@ async def report_status(
         return JSONResponse({"ok": False, "message": "서버를 확인해 주세요."}, status_code=422)
     if allowed_guild_ids(request) is not None and guild_id not in allowed_guild_ids(request):
         raise HTTPException(status_code=403, detail="접근할 수 없는 서버입니다.")
+    require_selected_guild(request, guild_id)
     target_status = str(form.get("status") or "")
     try:
         updated = await report_service.update_status(

@@ -8,8 +8,6 @@
 {% if error %}<div class="notice-banner notice-error">{{ icon("alert") }}<span>{{ error }}</span></div>{% endif %}
 
 <form class="workspace-filter-bar" method="get" action="{{ request.url.path }}">
-  {% if guild_id %}<input type="hidden" name="guild_id" value="{{ guild_id }}">{% endif %}
-
   {% if needs_alliance and can_select_alliance %}
   <label class="workspace-filter-field">
     <span>혈맹</span>
@@ -42,7 +40,7 @@
   </label>
   <button class="primary-button workspace-search-button" type="submit">조회</button>
   {% if settings_href %}
-  <a class="secondary-button workspace-settings-link" href="{{ settings_href }}{% if guild_id %}?guild_id={{ guild_id }}{% if needs_alliance and alliance_id %}&amp;alliance_id={{ alliance_id }}{% endif %}{% endif %}">
+  <a class="secondary-button workspace-settings-link" href="{{ settings_href }}{% if needs_alliance and alliance_id %}?alliance_id={{ alliance_id }}{% endif %}">
     {{ icon("settings") }}
     {{ settings_label }}
   </a>

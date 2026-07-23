@@ -11,10 +11,7 @@
       <h2>{{ dashboard_user.user_name if dashboard_user else '내 현황' }}</h2>
     </div>
     <div class="home-personal-actions">
-      {% if guilds | length > 1 %}
-      <label><span>서버</span><select onchange="location.href='/?guild_id='+this.value">{% for guild in guilds %}<option value="{{ guild.guild_id }}" {% if guild.guild_id == guild_id %}selected{% endif %}>{{ guild.name }}</option>{% endfor %}</select></label>
-      {% endif %}
-      <a class="text-button" href="/my/distributions{% if guild_id %}?guild_id={{ guild_id }}{% endif %}">
+      <a class="text-button" href="/my/distributions">
       내 분배금 보기
       {{ icon("chevron-right") }}
       </a>

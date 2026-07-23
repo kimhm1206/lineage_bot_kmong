@@ -20,6 +20,7 @@ from dashboard.app.security import (
     can_manage_alliance_treasury,
     can_manage_clan_treasury,
     can_select_alliances,
+    current_guild_id,
     require_alliance_access,
     restrict_workspace_alliance,
 )
@@ -101,7 +102,7 @@ async def _render_workspace(
     can_edit_treasury: bool = False,
 ):
     workspace = await workspace_store.resolve_workspace(
-        session, guild_id, alliance_id, allowed_guild_ids(request)
+        session, current_guild_id(request), alliance_id, allowed_guild_ids(request)
     )
     can_select_alliance = await can_select_alliances(request, session, workspace["guild_id"])
     if needs_alliance:
@@ -186,7 +187,7 @@ async def _attendance_context(
     clan_scoped: bool = False,
 ) -> tuple[dict[str, Any], dict[str, Any], int, str]:
     workspace = await workspace_store.resolve_workspace(
-        session, guild_id, alliance_id, allowed_guild_ids(request)
+        session, current_guild_id(request), alliance_id, allowed_guild_ids(request)
     )
     can_select_alliance = await can_select_alliances(request, session, workspace["guild_id"])
     if clan_scoped:
@@ -225,8 +226,6 @@ def _treasury_redirect(
     error: str = "",
 ) -> RedirectResponse:
     params: dict[str, str] = {}
-    if guild_id is not None:
-        params["guild_id"] = str(guild_id)
     if alliance_id is not None:
         params["alliance_id"] = str(alliance_id)
     if notice:
@@ -495,7 +494,7 @@ async def alliance_bidding(
     request: Request, guild_id: int | None = None, q: str = "", page: int = 1,
     session: AsyncSession = Depends(get_session),
 ):
-    params = {"guild_id": guild_id, "q": q}
+    params = {"q": q}
     query_string = urlencode({key: value for key, value in params.items() if value not in (None, "")})
     return RedirectResponse(
         f"/alliance/bidding{'?' + query_string if query_string else ''}",

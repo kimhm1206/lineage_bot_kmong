@@ -44,6 +44,15 @@ def allowed_guild_ids(request: Request) -> tuple[int, ...] | None:
     return tuple(int(value) for value in values)
 
 
+def current_guild_id(request: Request) -> int | None:
+    raw_value = getattr(request.state, "selected_guild_id", None)
+    try:
+        guild_id = int(raw_value)
+    except (TypeError, ValueError):
+        return None
+    return guild_id if guild_id > 0 else None
+
+
 def current_access_scopes(request: Request) -> frozenset[int]:
     values = getattr(request.state, "access_scopes", ())
     return frozenset(int(value) for value in values)
@@ -55,7 +64,7 @@ def has_assignment_scope(request: Request, *scope_codes: int) -> bool:
 
 def require_selected_guild(request: Request, guild_id: int) -> None:
     allowed = allowed_guild_ids(request)
-    selected = getattr(request.state, "selected_guild_id", None)
+    selected = current_guild_id(request)
     if allowed is not None and guild_id not in allowed:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

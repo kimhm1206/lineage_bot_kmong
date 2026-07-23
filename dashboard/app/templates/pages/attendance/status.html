@@ -9,7 +9,7 @@
 <div class="attendance-page attendance-status-page">
   {{ filters(
     request.url.path, guilds, guild_id, period_options, query,
-    settings_href='/settings/attendance' ~ ('?guild_id=' ~ guild_id if guild_id else ''),
+    settings_href='/settings/attendance',
     show_date_filter=true, date_from=date_from, date_to=date_to
   ) }}
 

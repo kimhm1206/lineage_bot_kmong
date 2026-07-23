@@ -17,6 +17,7 @@ from dashboard.app.security import (
     can_manage_clan_configuration,
     can_select_alliances,
     current_access_role,
+    current_guild_id,
     current_user_alliance_id,
     require_alliance_access,
     require_developer,
@@ -68,8 +69,6 @@ def _redirect(
     error: str = "",
 ) -> RedirectResponse:
     params: dict[str, str] = {}
-    if guild_id is not None:
-        params["guild_id"] = str(guild_id)
     if alliance_id is not None:
         params["alliance_id"] = str(alliance_id)
     if notice:
@@ -83,7 +82,6 @@ def _redirect(
 async def _guild_context(
     request: Request,
     session: AsyncSession,
-    requested_guild_id: int | None,
 ) -> dict[str, Any]:
     stored_guilds = await settings_store.list_guilds(session)
     allowed = allowed_guild_ids(request)
@@ -93,7 +91,7 @@ async def _guild_context(
             if int(row["guild_id"]) in allowed
         ]
 
-    selected = requested_guild_id
+    selected = current_guild_id(request)
     known_ids = {row["guild_id"] for row in stored_guilds}
     if selected not in known_ids:
         selected = next((row["guild_id"] for row in stored_guilds if row["is_enabled"]), None)
@@ -237,7 +235,7 @@ async def server_settings(
     session: AsyncSession = Depends(get_session),
     _: None = Depends(require_developer),
 ):
-    guild_data = await _guild_context(request, session, guild_id)
+    guild_data = await _guild_context(request, session)
     context = build_template_context(
         request,
         active_nav="developer.server",
@@ -277,6 +275,38 @@ async def save_server(
     return _redirect("/settings/server", guild_id=guild_id, notice="서버 설정을 저장했습니다.")
 
 
+@router.post("/server/select")
+async def select_server_context(
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+    _: None = Depends(require_developer),
+):
+    form = await request.form()
+    try:
+        guild_id = _int_value(form.get("guild_id"), minimum=1)
+    except (ValueError, TypeError):
+        return _redirect("/settings/server", error="변경할 서버를 선택해 주세요.")
+
+    guilds = await settings_store.list_guilds(session)
+    selected = next(
+        (
+            row
+            for row in guilds
+            if int(row["guild_id"]) == guild_id and bool(row["is_enabled"])
+        ),
+        None,
+    )
+    if selected is None:
+        return _redirect("/settings/server", error="사용 중인 서버만 선택할 수 있습니다.")
+
+    request.session["selected_guild_id"] = guild_id
+    guild_name = str(selected.get("guild_name") or f"서버 {guild_id}")
+    return _redirect(
+        "/settings/server",
+        notice=f"작업 서버를 {guild_name}(으)로 변경했습니다.",
+    )
+
+
 @router.get("/attendance")
 async def attendance_settings(
     request: Request,
@@ -284,7 +314,7 @@ async def attendance_settings(
     refresh: bool = False,
     session: AsyncSession = Depends(get_session),
 ):
-    guild_data = await _guild_context(request, session, guild_id)
+    guild_data = await _guild_context(request, session)
     if guild_data["guild_id"] is not None:
         _require_alliance_configuration(request, int(guild_data["guild_id"]))
     if refresh and guild_data["guild_id"]:
@@ -361,7 +391,7 @@ async def alliance_settings(
     refresh: bool = False,
     session: AsyncSession = Depends(get_session),
 ):
-    guild_data = await _guild_context(request, session, guild_id)
+    guild_data = await _guild_context(request, session)
     if guild_data["guild_id"] is not None:
         await _require_owner_configuration(
             request,
@@ -443,7 +473,7 @@ async def manager_settings(
     guild_id: int | None = None,
     session: AsyncSession = Depends(get_session),
 ):
-    guild_data = await _guild_context(request, session, guild_id)
+    guild_data = await _guild_context(request, session)
     if guild_data["guild_id"] is not None:
         await _require_owner_configuration(
             request,
@@ -598,7 +628,7 @@ async def clan_settings(
     alliance_id: int | None = None,
     session: AsyncSession = Depends(get_session),
 ):
-    guild_data = await _guild_context(request, session, guild_id)
+    guild_data = await _guild_context(request, session)
     alliances = await settings_store.list_guild_alliances(session, guild_data["guild_id"]) if guild_data["guild_id"] else []
     can_select_alliance = await can_select_alliances(request, session, guild_data["guild_id"])
     if not can_select_alliance:
