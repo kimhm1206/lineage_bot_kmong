@@ -48,6 +48,17 @@ def _empty_page(message: str) -> dict[str, Any]:
     }
 
 
+def _optional_query_id(value: str | int | None) -> int | None:
+    normalized = str(value or "").strip()
+    if not normalized:
+        return None
+    try:
+        parsed = int(normalized)
+    except ValueError:
+        return None
+    return parsed if parsed > 0 else None
+
+
 async def _render_workspace(
     request: Request,
     session: AsyncSession,
@@ -497,7 +508,7 @@ async def attendance_status(
 @router.get("/attendance/statistics")
 async def attendance_statistics(
     request: Request, guild_id: int | None = None, period: int | None = None,
-    alliance_id: int | None = None, q: str = "", page: int = 1,
+    alliance_id: str | None = None, q: str = "", page: int = 1,
     session: AsyncSession = Depends(get_session),
 ):
     context, workspace, selected_period, clean_query = await _attendance_context(
@@ -512,7 +523,8 @@ async def attendance_statistics(
         query=q,
     )
     valid_alliance_ids = {int(row["alliance_id"]) for row in workspace["alliances"]}
-    filter_alliance_id = alliance_id if alliance_id in valid_alliance_ids else None
+    requested_alliance_id = _optional_query_id(alliance_id)
+    filter_alliance_id = requested_alliance_id if requested_alliance_id in valid_alliance_ids else None
     if workspace["guild_id"] is None:
         page_data = {
             "summary_cards": [], "user_rankings": [], "daily_stats": [],
@@ -536,7 +548,7 @@ async def attendance_statistics(
 @router.get("/attendance/statistics/export")
 async def attendance_statistics_export(
     request: Request, guild_id: int | None = None, period: int | None = None,
-    alliance_id: int | None = None, q: str = "",
+    alliance_id: str | None = None, q: str = "",
     session: AsyncSession = Depends(get_session),
 ):
     _context, workspace, selected_period, clean_query = await _attendance_context(
@@ -553,7 +565,8 @@ async def attendance_statistics_export(
     if workspace["guild_id"] is None:
         raise HTTPException(status_code=404, detail="등록된 서버가 없습니다.")
     valid_alliance_ids = {int(row["alliance_id"]) for row in workspace["alliances"]}
-    filter_alliance_id = alliance_id if alliance_id in valid_alliance_ids else None
+    requested_alliance_id = _optional_query_id(alliance_id)
+    filter_alliance_id = requested_alliance_id if requested_alliance_id in valid_alliance_ids else None
     rows = await workspace_store.attendance_statistics_export_rows(
         session,
         guild_id=workspace["guild_id"],
