@@ -5,8 +5,55 @@
 {% block title %}{{ page_title }} · {{ app_name }}{% endblock %}
 {% block content %}
 <div data-live-page>
+  {% if settlement_level == 'alliance' %}
   {{ toolbar(guilds, guild_id, query, period_options, alliances if settlement_level == 'clan' and can_select_alliance else [], alliance_id, search_label='정산 대상 검색', search_placeholder='혈맹, 유저 또는 아이템 검색', client_search=True) }}
   {{ summary(summary_cards) }}
+  {% else %}
+  <section class="clan-settlement-toolbar">
+    <div class="clan-settlement-search">
+      {% if can_select_alliance and alliances %}
+      <form method="get" action="{{ request.url.path }}">
+        <label class="ops-control clan-alliance-control">
+          <span>혈맹</span>
+          <select name="alliance_id" onchange="this.form.submit()">
+            {% for alliance in alliances %}
+            <option value="{{ alliance.alliance_id }}"
+                    {% if alliance.alliance_id == alliance_id %}selected{% endif %}>
+              {{ alliance.display_name or alliance.alliance_name }}
+            </option>
+            {% endfor %}
+          </select>
+        </label>
+      </form>
+      {% endif %}
+      <form method="get" action="{{ request.url.path }}"
+            data-client-search-form>
+        <label class="ops-control ops-search-control">
+          <span>정산 대상 검색</span>
+          <span class="ops-search-input">
+            {{ icon("search") }}
+            <input type="search" name="q" value="{{ query }}"
+                   placeholder="혈맹원 또는 아이템 검색"
+                   autocomplete="off" data-client-search-input>
+          </span>
+        </label>
+      </form>
+    </div>
+    <article class="clan-toolbar-metric">
+      <span>미분배 아데나</span>
+      <strong>{{ summary_cards[0].value if summary_cards else '0' }}</strong>
+      <small>현재 지급할 금액</small>
+    </article>
+    <button class="clan-toolbar-history-card" type="button"
+            data-clan-item-history-open
+            data-guild-id="{{ guild_id }}"
+            data-alliance-id="{{ alliance_id }}">
+      <span>{{ icon("clipboard-list") }}</span>
+      <strong>기록 확인</strong>
+      <small>완료된 아이템별 정산</small>
+    </button>
+  </section>
+  {% endif %}
 
   <section class="ops-section-heading settlement-heading">
     <div>
@@ -65,7 +112,7 @@
                   data-alliance-id="{{ alliance_id }}"
                   data-user-id="{{ entity.target_id }}"
                   data-user-name="{{ entity.name }}"
-                  data-period="{{ period }}">
+                  data-period="0">
             {{ icon("clipboard-list") }}
             기록 확인
           </button>
@@ -164,7 +211,7 @@
 {% elif settlement_level == 'clan' %}
 {% call modal('clan-settlement-history-modal', '혈맹원 분배 기록', '선택한 혈맹원의 완료 및 혈비 귀속 내역만 표시합니다.') %}
 <div class="settlement-history-modal" data-clan-history-modal
-     data-guild-id="{{ guild_id }}" data-alliance-id="{{ alliance_id }}" data-period="{{ period }}">
+     data-guild-id="{{ guild_id }}" data-alliance-id="{{ alliance_id }}" data-period="0">
   <div class="settlement-history-person">
     <span>혈맹원</span>
     <strong data-history-user-name>-</strong>
@@ -190,6 +237,57 @@
   </div>
   <button class="secondary-button settlement-history-more" type="button" data-history-more hidden>다음 기록 불러오기</button>
 </div>
+{% endcall %}
+
+{% call modal('clan-item-history-modal', '혈맹 분배 완료 기록', '완료된 아이템별 실제 지급액과 혈비·기타 수수료를 확인합니다.') %}
+<section class="clan-item-history" data-clan-item-history
+         data-guild-id="{{ guild_id }}" data-alliance-id="{{ alliance_id }}">
+  <header class="clan-item-history-overview">
+    <article>
+      <span>완료 아이템</span>
+      <strong data-clan-item-count>0건</strong>
+      <small>선택 기간</small>
+    </article>
+    <article>
+      <span>총 분배금</span>
+      <strong data-clan-item-distribution>0</strong>
+      <small>혈맹 배정 아데나</small>
+    </article>
+    <article>
+      <span>총 혈비</span>
+      <strong data-clan-item-fund>0</strong>
+      <small>혈비와 귀속 합계</small>
+    </article>
+    <article>
+      <span>총 기타 수수료</span>
+      <strong data-clan-item-fee>0</strong>
+      <small>혈비 외 내부 수수료</small>
+    </article>
+  </header>
+  <div class="history-modal-toolbar">
+    <div class="settlement-history-segments" data-clan-item-periods>
+      <button class="is-active" type="button" data-clan-item-period="30">최근 한 달</button>
+      <button type="button" data-clan-item-period="0">전체</button>
+    </div>
+    <label class="settlement-history-search">
+      {{ icon("search") }}
+      <input type="search" placeholder="아이템 또는 출석 회차 검색"
+             autocomplete="off" data-clan-item-search>
+    </label>
+  </div>
+  <div class="settlement-history-loading" data-clan-item-loading>
+    완료 기록을 불러오는 중입니다.
+  </div>
+  <div class="clan-item-history-grid" data-clan-item-list hidden></div>
+  <div class="ops-empty-state clan-item-history-empty"
+       data-clan-item-empty hidden>
+    <span>{{ icon("clipboard-list") }}</span>
+    <strong>완료된 아이템이 없습니다.</strong>
+    <p>모든 혈맹원과 수수료 정산이 끝난 아이템이 이곳에 표시됩니다.</p>
+  </div>
+  <button class="secondary-button settlement-history-more" type="button"
+          data-clan-item-more hidden>다음 기록 불러오기</button>
+</section>
 {% endcall %}
 {% endif %}
 

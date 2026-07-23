@@ -1,18 +1,38 @@
 {% extends "layouts/app_shell.html" %}
 {% from "components/icons.html" import icon %}
-{% from "components/operations.html" import toolbar, summary, pagination_controls, empty, modal with context %}
+{% from "components/operations.html" import pagination_controls, empty, modal with context %}
 {% from "components/user_picker_field.html" import user_picker_field %}
 
 {% block title %}{{ page_title }} · {{ app_name }}{% endblock %}
 {% block content %}
 <div data-live-page>
-  {% set status_options = [
-    {'value': 'all', 'label': '전체'},
-    {'value': 'pending', 'label': '판매 대기'},
-    {'value': 'sold', 'label': '판매 완료'}
-  ] %}
-  {{ toolbar(guilds, guild_id, query, period_options, status_options=status_options, selected_status=selected_status, primary_label='드랍 등록' if can_manage_drops else '', primary_modal='drop-create-modal', search_label='드랍 검색', search_placeholder='아이템 또는 출석 회차 검색') }}
-  {{ summary(summary_cards) }}
+  <section class="drop-page-actions">
+    <div>
+      <strong>판매 대기 목록</strong>
+      <span>판매가 끝난 기록은 판매 아데나 카드에서 확인합니다.</span>
+    </div>
+    {% if can_manage_drops %}
+    <button class="primary-button" type="button" data-modal-open="drop-create-modal">
+      {{ icon("plus-square") }} 드랍 등록
+    </button>
+    {% endif %}
+  </section>
+
+  <section class="ops-summary-grid drop-summary-grid">
+    {% for card in summary_cards %}
+    <article class="ops-summary-card{% if card.key == 'sold_adena' %} has-summary-action{% endif %}">
+      <span>{{ card.label }}</span>
+      <strong>{{ card.value }}</strong>
+      <small>{{ card.meta }}</small>
+      {% if card.key == 'sold_adena' %}
+      <button class="secondary-button summary-history-button" type="button"
+              data-drop-sale-history-open>
+        {{ icon("clipboard-list") }} 기록 확인
+      </button>
+      {% endif %}
+    </article>
+    {% endfor %}
+  </section>
 
   <section class="ops-section-heading">
     <div><h2>드랍 진행 현황</h2><p>판매 완료 전에는 출석 회차와 아이템을 자유롭게 수정할 수 있습니다.</p></div>
@@ -30,29 +50,17 @@
           <p>출석 #{{ drop.attendance_id }} · {{ drop.occurred_at_label }}</p>
         </div>
         <div class="drop-metric"><span>참여 인원</span><strong>{{ drop.participant_count }}명</strong><small>{{ drop.alliance_count }}개 혈맹</small></div>
-        {% if drop.sale_status == 1 %}
-        <div class="drop-metric"><span>판매 아데나</span><strong>{{ drop.gross_label }}</strong><small>원화 {{ drop.cash_label }}</small></div>
-        {% else %}
         <div class="drop-metric"><span>등록 원화</span><strong>{{ drop.cash_label }}</strong><small>판매 완료 시 아데나 환산</small></div>
-        {% endif %}
         <div class="drop-sale-state">
           <span class="ops-status ops-status-{{ drop.sale_tone }}">{{ drop.sale_label }}</span>
-          {% if drop.sale_status == 1 %}<small>{{ drop.buyer_alliance_name }}{% if drop.buyer_user_name %} · {{ drop.buyer_user_name }}{% endif %}</small>{% else %}<small>구매 혈맹과 아데나 시세 미확정</small>{% endif %}
+          <small>구매 혈맹과 아데나 시세 미확정</small>
         </div>
         {% if can_manage_drops %}
         <div class="drop-actions">
-          {% if drop.sale_status == 0 %}
           <button class="primary-button" type="button" data-sale-open
                   data-drop='{{ drop.editor_data | tojson | forceescape }}'>판매 완료</button>
           <button class="icon-button" type="button" title="수정" data-drop-edit
                   data-drop='{{ drop.editor_data | tojson | forceescape }}'>{{ icon("settings") }}</button>
-          {% else %}
-          <button class="secondary-button" type="button" data-sale-open
-                  data-drop='{{ drop.editor_data | tojson | forceescape }}'>판매 정보</button>
-          <form data-async-form data-confirm="정산이 시작되지 않은 경우에만 판매 대기로 되돌릴 수 있습니다." method="post" action="/api/drops/{{ drop.drop_id }}/reopen">
-            <input type="hidden" name="guild_id" value="{{ guild_id }}"><button class="icon-button" type="submit" title="판매 취소">{{ icon("refresh") }}</button>
-          </form>
-          {% endif %}
           <form data-async-form data-confirm="이 드랍 기록을 삭제하시겠습니까?" method="post" action="/api/drops/{{ drop.drop_id }}/delete">
             <input type="hidden" name="guild_id" value="{{ guild_id }}"><button class="icon-button danger-button" type="submit" title="삭제">{{ icon("trash") }}</button>
           </form>
@@ -119,4 +127,49 @@
 {% endcall %}
 <script id="drop-buyer-users-data" type="application/json">{{ buyer_users | tojson }}</script>
 {% endif %}
+
+{% call modal('drop-sale-history-modal', '판매 완료 기록', '판매가 끝난 아이템의 원화와 아데나 환산 내역을 확인합니다.') %}
+<section class="drop-sale-history" data-drop-sale-history
+         data-guild-id="{{ guild_id }}">
+  <header class="drop-history-overview">
+    <article>
+      <span>판매 완료</span>
+      <strong data-drop-history-count>0건</strong>
+      <small>선택 기간</small>
+    </article>
+    <article>
+      <span>판매 원화</span>
+      <strong data-drop-history-cash>0원</strong>
+      <small>등록 원화 합계</small>
+    </article>
+    <article>
+      <span>판매 아데나</span>
+      <strong data-drop-history-adena>0</strong>
+      <small>환산 아데나 합계</small>
+    </article>
+  </header>
+  <div class="history-modal-toolbar">
+    <div class="settlement-history-segments" data-drop-history-periods>
+      <button class="is-active" type="button" data-drop-history-period="30">최근 한 달</button>
+      <button type="button" data-drop-history-period="0">전체</button>
+    </div>
+    <label class="settlement-history-search">
+      {{ icon("search") }}
+      <input type="search" placeholder="아이템, 출석 회차, 구매 혈맹 검색"
+             autocomplete="off" data-drop-history-search>
+    </label>
+  </div>
+  <div class="settlement-history-loading" data-drop-history-loading>
+    판매 기록을 불러오는 중입니다.
+  </div>
+  <div class="drop-history-grid" data-drop-history-list hidden></div>
+  <div class="ops-empty-state drop-history-empty" data-drop-history-empty hidden>
+    <span>{{ icon("clipboard-list") }}</span>
+    <strong>판매 완료 기록이 없습니다.</strong>
+    <p>선택한 기간과 검색 조건에 맞는 기록이 없습니다.</p>
+  </div>
+  <button class="secondary-button settlement-history-more" type="button"
+          data-drop-history-more hidden>다음 기록 불러오기</button>
+</section>
+{% endcall %}
 {% endblock %}

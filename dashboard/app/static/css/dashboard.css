@@ -5743,6 +5743,58 @@ body.modal-open {
   white-space: nowrap;
 }
 
+.drop-page-actions {
+  display: flex;
+  min-height: 70px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 12px;
+  padding: 13px 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.drop-page-actions > div {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.drop-page-actions strong {
+  color: var(--text-strong);
+  font-size: 15px;
+}
+
+.drop-page-actions span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.drop-summary-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.ops-summary-card.has-summary-action {
+  position: relative;
+  padding-right: 150px;
+}
+
+.summary-history-button {
+  position: absolute;
+  top: 50%;
+  right: 18px;
+  min-height: 38px;
+  transform: translateY(-50%);
+  white-space: nowrap;
+}
+
+.summary-history-button .icon {
+  width: 15px;
+  height: 15px;
+}
+
 .ops-section-heading {
   display: flex;
   align-items: flex-end;
@@ -6700,6 +6752,343 @@ body.modal-open {
   justify-self: center;
 }
 
+.clan-settlement-toolbar {
+  display: grid;
+  grid-template-columns: minmax(360px, 1fr) minmax(190px, .28fr) minmax(180px, .24fr);
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.clan-settlement-search {
+  display: flex;
+  min-width: 0;
+  align-items: flex-end;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.clan-settlement-search > form {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.clan-settlement-search > form:first-child:not(:last-child) {
+  max-width: 220px;
+}
+
+.clan-settlement-search .ops-control {
+  width: 100%;
+  min-width: 0;
+}
+
+.clan-toolbar-metric,
+.clan-toolbar-history-card {
+  display: grid;
+  min-width: 0;
+  min-height: 92px;
+  align-content: center;
+  gap: 5px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.clan-toolbar-metric span,
+.clan-toolbar-metric small,
+.clan-toolbar-history-card small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.clan-toolbar-metric strong {
+  overflow: hidden;
+  color: var(--accent-strong);
+  font-size: 23px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.clan-toolbar-history-card {
+  position: relative;
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--line));
+  color: var(--text-strong);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.clan-toolbar-history-card:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.clan-toolbar-history-card > span {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  display: grid;
+  width: 31px;
+  height: 31px;
+  place-items: center;
+  border-radius: 6px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.clan-toolbar-history-card .icon {
+  width: 16px;
+  height: 16px;
+}
+
+.clan-toolbar-history-card strong {
+  padding-right: 40px;
+  color: var(--text-strong);
+  font-size: 15px;
+}
+
+.drop-sale-history,
+.clan-item-history {
+  display: grid;
+  height: 100%;
+  min-height: 0;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  gap: 14px;
+}
+
+.drop-history-overview,
+.clan-item-history-overview {
+  display: grid;
+  gap: 9px;
+}
+
+.drop-history-overview {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.clan-item-history-overview {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.drop-history-overview article,
+.clan-item-history-overview article {
+  display: grid;
+  min-width: 0;
+  min-height: 84px;
+  align-content: center;
+  gap: 4px;
+  padding: 13px 15px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel-subtle);
+}
+
+.drop-history-overview span,
+.drop-history-overview small,
+.clan-item-history-overview span,
+.clan-item-history-overview small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.drop-history-overview strong,
+.clan-item-history-overview strong {
+  overflow: hidden;
+  color: var(--text-strong);
+  font-size: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-modal-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.drop-history-grid,
+.clan-item-history-grid {
+  display: grid;
+  min-height: 0;
+  align-content: start;
+  grid-auto-rows: max-content;
+  gap: 10px;
+  padding-right: 5px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.drop-history-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.clan-item-history-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.drop-history-card,
+.clan-item-history-card {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--success);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.drop-history-card > header,
+.clan-item-history-card > header {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 13px 14px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel-subtle);
+}
+
+.drop-history-card > header > div,
+.clan-item-history-card > header > div {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.drop-history-card > header strong,
+.clan-item-history-card > header strong {
+  overflow: hidden;
+  color: var(--text-strong);
+  font-size: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.drop-history-card > header small,
+.drop-history-card > header span,
+.clan-item-history-card > header small,
+.clan-item-history-card > header time {
+  color: var(--muted);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.drop-history-card > header span {
+  color: var(--accent-strong);
+  font-weight: 800;
+}
+
+.drop-history-card-metrics,
+.clan-item-history-metrics {
+  display: grid;
+  gap: 7px;
+  padding: 10px 12px;
+}
+
+.drop-history-card-metrics {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.clan-item-history-metrics {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.drop-history-card-metrics > div,
+.clan-item-history-metrics > div {
+  display: grid;
+  min-width: 0;
+  min-height: 58px;
+  align-content: center;
+  gap: 3px;
+  padding: 8px 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-subtle);
+}
+
+.drop-history-card-metrics span,
+.clan-item-history-metrics span,
+.clan-item-history-metrics small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.drop-history-card-metrics strong,
+.clan-item-history-metrics strong {
+  overflow: hidden;
+  color: var(--text-strong);
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.clan-item-history-metrics .is-primary {
+  border-color: color-mix(in srgb, var(--accent) 32%, var(--line));
+}
+
+.clan-item-history-metrics .is-fund {
+  border-color: color-mix(in srgb, var(--warning) 38%, var(--line));
+}
+
+.drop-history-card > footer,
+.clan-item-history-card > footer {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 13px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.drop-history-card > footer > div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.drop-history-card > footer strong {
+  overflow: hidden;
+  color: var(--muted-strong);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.drop-history-card > footer time,
+.clan-item-history-card > footer span {
+  white-space: nowrap;
+}
+
+.drop-history-empty,
+.clan-item-history-empty {
+  height: 100%;
+  min-height: 0;
+}
+
+.drop-history-grid[hidden],
+.drop-history-empty[hidden],
+.clan-item-history-grid[hidden],
+.clan-item-history-empty[hidden] {
+  display: none;
+}
+
 .detail-item,
 .detail-amount {
   display: grid;
@@ -7265,14 +7654,23 @@ body.modal-open {
 .ops-modal-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 22px; background: var(--panel); }
 #alliance-settlement-history-modal .ops-modal-dialog,
 #clan-settlement-history-modal .ops-modal-dialog,
-#fee-history-modal .ops-modal-dialog {
+#fee-history-modal .ops-modal-dialog,
+#drop-sale-history-modal .ops-modal-dialog,
+#clan-item-history-modal .ops-modal-dialog {
   width: min(1080px, calc(100vw - 40px));
   height: min(820px, calc(100dvh - 48px));
   max-height: none;
 }
+#drop-sale-history-modal .ops-modal-dialog,
+#clan-item-history-modal .ops-modal-dialog {
+  width: min(1240px, calc(100vw - 40px));
+  height: min(880px, calc(100dvh - 40px));
+}
 #alliance-settlement-history-modal .ops-modal-body,
 #clan-settlement-history-modal .ops-modal-body,
-#fee-history-modal .ops-modal-body {
+#fee-history-modal .ops-modal-body,
+#drop-sale-history-modal .ops-modal-body,
+#clan-item-history-modal .ops-modal-body {
   overflow: hidden;
 }
 .ops-form { display: grid; gap: 18px; }
@@ -7317,6 +7715,8 @@ body.modal-open {
   .drop-actions { grid-column: 1 / -1; justify-content: flex-end; padding-top: 10px; border-top: 1px solid var(--line); }
   .fee-rule-grid { grid-template-columns: 1fr; }
   .personal-distribution-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .drop-history-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .clan-item-history-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 980px) {
@@ -7326,6 +7726,13 @@ body.modal-open {
   .personal-context-bar form { flex-wrap: wrap; }
   .ops-primary-action { align-self: flex-end; }
   .ops-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .drop-summary-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .ops-summary-card.has-summary-action { padding-right: 18px; padding-bottom: 62px; }
+  .summary-history-button { top: auto; right: 18px; bottom: 15px; left: 18px; transform: none; }
+  .clan-settlement-toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .clan-settlement-search { grid-column: 1 / -1; }
+  .clan-item-history-overview { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .clan-item-history-grid { grid-template-columns: 1fr; }
   .drop-record-main { grid-template-columns: minmax(210px, 1fr) repeat(2, minmax(110px, .5fr)); }
   .drop-record-main.is-readonly { grid-template-columns: minmax(210px, 1fr) repeat(2, minmax(110px, .5fr)); }
   .drop-sale-state { grid-column: 1 / -1; }
@@ -7346,7 +7753,9 @@ body.modal-open {
 @media (max-width: 680px) {
   #alliance-settlement-history-modal .ops-modal-dialog,
   #clan-settlement-history-modal .ops-modal-dialog,
-  #fee-history-modal .ops-modal-dialog {
+  #fee-history-modal .ops-modal-dialog,
+  #drop-sale-history-modal .ops-modal-dialog,
+  #clan-item-history-modal .ops-modal-dialog {
     width: calc(100vw - 20px);
     height: calc(100dvh - 20px);
   }
@@ -7357,7 +7766,18 @@ body.modal-open {
   .ops-search-submit,
   .ops-primary-action { width: 100%; }
   .ops-summary-grid { grid-template-columns: 1fr; }
+  .drop-summary-grid { grid-template-columns: 1fr; }
   .ops-summary-card { min-height: 92px; }
+  .drop-page-actions { align-items: stretch; flex-direction: column; }
+  .drop-page-actions .primary-button { width: 100%; }
+  .clan-settlement-toolbar { grid-template-columns: 1fr; }
+  .clan-settlement-search { align-items: stretch; flex-direction: column; }
+  .clan-settlement-search > form:first-child:not(:last-child) { max-width: none; }
+  .history-modal-toolbar { align-items: stretch; flex-direction: column; }
+  .drop-history-overview,
+  .clan-item-history-overview { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .drop-history-grid { grid-template-columns: 1fr; }
+  .clan-item-history-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .drop-record-main { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px; }
   .drop-record-main.is-readonly { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .drop-item-identity,

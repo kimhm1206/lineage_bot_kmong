@@ -224,6 +224,150 @@
     openModal("drop-sale-modal");
   };
 
+  const dropHistoryState = {
+    guildId: "",
+    period: "30",
+    query: "",
+    page: 1,
+    request: 0,
+    loading: false,
+    hasNext: false,
+    searchTimer: 0,
+  };
+
+  const renderDropHistoryCard = (record) => {
+    const card = document.createElement("article");
+    card.className = "drop-history-card";
+
+    const heading = document.createElement("header");
+    const identity = document.createElement("div");
+    const itemName = document.createElement("strong");
+    itemName.textContent = record.item_name || "이름 없는 아이템";
+    const attendance = document.createElement("small");
+    attendance.textContent =
+      `출석 #${record.attendance_id || "-"} · ${record.occurred_at_label || "-"}`;
+    identity.append(itemName, attendance);
+    const dropNumber = document.createElement("span");
+    dropNumber.textContent = `DROP #${record.drop_id || "-"}`;
+    heading.append(identity, dropNumber);
+
+    const metrics = document.createElement("div");
+    metrics.className = "drop-history-card-metrics";
+    [
+      ["판매 원화", record.cash_label || "0원"],
+      ["판매 아데나", record.adena_label || "0"],
+      ["아데나 시세", record.rate_label || "-"],
+      ["참여 인원", `${Number(record.participant_count || 0).toLocaleString("ko-KR")}명`],
+    ].forEach(([label, value]) => {
+      const metric = document.createElement("div");
+      const labelNode = document.createElement("span");
+      labelNode.textContent = label;
+      const valueNode = document.createElement("strong");
+      valueNode.textContent = value;
+      metric.append(labelNode, valueNode);
+      metrics.append(metric);
+    });
+
+    const footer = document.createElement("footer");
+    const buyer = document.createElement("div");
+    const buyerLabel = document.createElement("span");
+    buyerLabel.textContent = "구매";
+    const buyerName = document.createElement("strong");
+    buyerName.textContent = record.buyer_user_name
+      ? `${record.buyer_alliance_name || "-"} · ${record.buyer_user_name}`
+      : record.buyer_alliance_name || "-";
+    buyer.append(buyerLabel, buyerName);
+    const completedAt = document.createElement("time");
+    completedAt.textContent = `판매 완료 ${record.completed_at_label || "-"}`;
+    footer.append(buyer, completedAt);
+
+    card.append(heading, metrics, footer);
+    return card;
+  };
+
+  const loadDropHistory = async ({ reset = false } = {}) => {
+    const modal = document.querySelector("[data-drop-sale-history]");
+    if (!modal || (dropHistoryState.loading && !reset)) return;
+    if (reset && dropHistoryState.loading) {
+      dropHistoryState.request += 1;
+      dropHistoryState.loading = false;
+    }
+    if (reset) {
+      dropHistoryState.page = 1;
+      dropHistoryState.hasNext = false;
+    }
+    const requestNumber = ++dropHistoryState.request;
+    const list = modal.querySelector("[data-drop-history-list]");
+    const loading = modal.querySelector("[data-drop-history-loading]");
+    const empty = modal.querySelector("[data-drop-history-empty]");
+    const more = modal.querySelector("[data-drop-history-more]");
+    dropHistoryState.loading = true;
+    loading.hidden = false;
+    loading.textContent = "판매 기록을 불러오는 중입니다.";
+    empty.hidden = true;
+    more.hidden = true;
+    if (reset) {
+      list.hidden = true;
+      list.replaceChildren();
+    }
+
+    const params = new URLSearchParams({
+      guild_id: dropHistoryState.guildId,
+      period: dropHistoryState.period,
+      q: dropHistoryState.query,
+      page: String(dropHistoryState.page),
+    });
+    try {
+      const response = await fetch(`/api/drop-sale-history?${params.toString()}`, {
+        headers: { Accept: "application/json" },
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.detail || payload.message || "판매 기록을 불러오지 못했습니다.");
+      }
+      if (requestNumber !== dropHistoryState.request) return;
+      modal.querySelector("[data-drop-history-count]").textContent =
+        `${Number(payload.summary?.total_count || 0).toLocaleString("ko-KR")}건`;
+      modal.querySelector("[data-drop-history-cash]").textContent =
+        payload.summary?.total_cash_label || "0원";
+      modal.querySelector("[data-drop-history-adena]").textContent =
+        payload.summary?.total_adena_label || "0";
+
+      const records = Array.isArray(payload.history) ? payload.history : [];
+      const fragment = document.createDocumentFragment();
+      records.forEach((record) => fragment.append(renderDropHistoryCard(record)));
+      list.append(fragment);
+      list.hidden = list.children.length === 0;
+      empty.hidden = list.children.length > 0;
+      dropHistoryState.hasNext = Boolean(payload.pagination?.has_next);
+      more.hidden = !dropHistoryState.hasNext;
+      loading.hidden = true;
+    } catch (error) {
+      if (requestNumber !== dropHistoryState.request) return;
+      loading.hidden = false;
+      loading.textContent = error.message || "판매 기록을 불러오지 못했습니다.";
+    } finally {
+      if (requestNumber === dropHistoryState.request) {
+        dropHistoryState.loading = false;
+      }
+    }
+  };
+
+  const openDropHistory = (button) => {
+    const modal = document.querySelector("[data-drop-sale-history]");
+    if (!modal) return;
+    window.clearTimeout(dropHistoryState.searchTimer);
+    dropHistoryState.guildId = button.dataset.guildId || modal.dataset.guildId || "";
+    dropHistoryState.period = "30";
+    dropHistoryState.query = "";
+    modal.querySelector("[data-drop-history-search]").value = "";
+    modal.querySelectorAll("[data-drop-history-period]").forEach((periodButton) => {
+      periodButton.classList.toggle("is-active", periodButton.dataset.dropHistoryPeriod === "30");
+    });
+    openModal("drop-sale-history-modal");
+    loadDropHistory({ reset: true });
+  };
+
   const populateFeeEdit = (button) => {
     const fee = JSON.parse(button.dataset.fee);
     const form = document.querySelector("[data-fee-edit-form]");
@@ -520,7 +664,7 @@
       guild_id: modal.dataset.guildId,
       alliance_id: modal.dataset.allianceId,
       user_id: clanHistoryState.userId,
-      period: modal.dataset.period || "30",
+      period: modal.dataset.period || "0",
       history_status: clanHistoryState.status,
       page: String(clanHistoryState.page),
     });
@@ -574,6 +718,155 @@
     });
     openModal("clan-settlement-history-modal");
     loadClanHistory({ reset: true });
+  };
+
+  const clanItemHistoryState = {
+    guildId: "",
+    allianceId: "",
+    period: "30",
+    query: "",
+    page: 1,
+    request: 0,
+    loading: false,
+    hasNext: false,
+    searchTimer: 0,
+  };
+
+  const renderClanItemHistoryCard = (record) => {
+    const card = document.createElement("article");
+    card.className = "clan-item-history-card";
+
+    const heading = document.createElement("header");
+    const identity = document.createElement("div");
+    const itemName = document.createElement("strong");
+    itemName.textContent = record.item_name || "이름 없는 아이템";
+    const context = document.createElement("small");
+    context.textContent =
+      `출석 #${record.attendance_id || "-"} · ${record.occurred_at_label || "-"}`;
+    identity.append(itemName, context);
+    const completed = document.createElement("time");
+    completed.textContent = `완료 ${record.completed_at_label || "-"}`;
+    heading.append(identity, completed);
+
+    const metrics = document.createElement("div");
+    metrics.className = "clan-item-history-metrics";
+    [
+      ["총 분배금", record.distribution_amount_label || "0", "is-primary"],
+      ["지급 완료", record.paid_amount_label || "0", ""],
+      ["총 혈비", record.clan_fund_amount_label || "0", "is-fund"],
+      ["기타 수수료", record.custom_fee_amount_label || "0", ""],
+    ].forEach(([label, value, tone]) => {
+      const metric = document.createElement("div");
+      if (tone) metric.className = tone;
+      const labelNode = document.createElement("span");
+      labelNode.textContent = label;
+      const valueNode = document.createElement("strong");
+      valueNode.textContent = value;
+      const unit = document.createElement("small");
+      unit.textContent = "아데나";
+      metric.append(labelNode, valueNode, unit);
+      metrics.append(metric);
+    });
+
+    const footer = document.createElement("footer");
+    const paid = document.createElement("span");
+    paid.textContent =
+      `지급 ${Number(record.paid_member_count || 0).toLocaleString("ko-KR")}명`;
+    const forfeited = document.createElement("span");
+    forfeited.textContent =
+      `귀속 ${Number(record.forfeited_member_count || 0).toLocaleString("ko-KR")}명 · ${record.forfeited_amount_label || "0"} 아데나`;
+    footer.append(paid, forfeited);
+
+    card.append(heading, metrics, footer);
+    return card;
+  };
+
+  const loadClanItemHistory = async ({ reset = false } = {}) => {
+    const modal = document.querySelector("[data-clan-item-history]");
+    if (!modal || (clanItemHistoryState.loading && !reset)) return;
+    if (reset && clanItemHistoryState.loading) {
+      clanItemHistoryState.request += 1;
+      clanItemHistoryState.loading = false;
+    }
+    if (reset) {
+      clanItemHistoryState.page = 1;
+      clanItemHistoryState.hasNext = false;
+    }
+    const requestNumber = ++clanItemHistoryState.request;
+    const list = modal.querySelector("[data-clan-item-list]");
+    const loading = modal.querySelector("[data-clan-item-loading]");
+    const empty = modal.querySelector("[data-clan-item-empty]");
+    const more = modal.querySelector("[data-clan-item-more]");
+    clanItemHistoryState.loading = true;
+    loading.hidden = false;
+    loading.textContent = "완료 기록을 불러오는 중입니다.";
+    empty.hidden = true;
+    more.hidden = true;
+    if (reset) {
+      list.hidden = true;
+      list.replaceChildren();
+    }
+
+    const params = new URLSearchParams({
+      guild_id: clanItemHistoryState.guildId,
+      alliance_id: clanItemHistoryState.allianceId,
+      period: clanItemHistoryState.period,
+      q: clanItemHistoryState.query,
+      page: String(clanItemHistoryState.page),
+    });
+    try {
+      const response = await fetch(`/api/clan-completed-item-history?${params.toString()}`, {
+        headers: { Accept: "application/json" },
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.detail || payload.message || "완료 기록을 불러오지 못했습니다.");
+      }
+      if (requestNumber !== clanItemHistoryState.request) return;
+      modal.querySelector("[data-clan-item-count]").textContent =
+        `${Number(payload.summary?.total_count || 0).toLocaleString("ko-KR")}건`;
+      modal.querySelector("[data-clan-item-distribution]").textContent =
+        payload.summary?.distribution_amount_label || "0";
+      modal.querySelector("[data-clan-item-fund]").textContent =
+        payload.summary?.clan_fund_amount_label || "0";
+      modal.querySelector("[data-clan-item-fee]").textContent =
+        payload.summary?.custom_fee_amount_label || "0";
+
+      const records = Array.isArray(payload.history) ? payload.history : [];
+      const fragment = document.createDocumentFragment();
+      records.forEach((record) => fragment.append(renderClanItemHistoryCard(record)));
+      list.append(fragment);
+      list.hidden = list.children.length === 0;
+      empty.hidden = list.children.length > 0;
+      clanItemHistoryState.hasNext = Boolean(payload.pagination?.has_next);
+      more.hidden = !clanItemHistoryState.hasNext;
+      loading.hidden = true;
+    } catch (error) {
+      if (requestNumber !== clanItemHistoryState.request) return;
+      loading.hidden = false;
+      loading.textContent = error.message || "완료 기록을 불러오지 못했습니다.";
+    } finally {
+      if (requestNumber === clanItemHistoryState.request) {
+        clanItemHistoryState.loading = false;
+      }
+    }
+  };
+
+  const openClanItemHistory = (button) => {
+    const modal = document.querySelector("[data-clan-item-history]");
+    if (!modal) return;
+    window.clearTimeout(clanItemHistoryState.searchTimer);
+    clanItemHistoryState.guildId = button.dataset.guildId || modal.dataset.guildId || "";
+    clanItemHistoryState.allianceId =
+      button.dataset.allianceId || modal.dataset.allianceId || "";
+    clanItemHistoryState.period = "30";
+    clanItemHistoryState.query = "";
+    modal.querySelector("[data-clan-item-search]").value = "";
+    modal.querySelectorAll("[data-clan-item-period]").forEach((periodButton) => {
+      periodButton.classList.toggle("is-active", periodButton.dataset.clanItemPeriod === "30");
+    });
+    openModal("clan-item-history-modal");
+    loadClanItemHistory({ reset: true });
   };
 
   const allianceHistoryState = {
@@ -739,6 +1032,22 @@
     if (dropEdit) populateDropEdit(dropEdit);
     const saleOpen = event.target.closest("[data-sale-open]");
     if (saleOpen) populateSale(saleOpen);
+    const dropHistoryOpen = event.target.closest("[data-drop-sale-history-open]");
+    if (dropHistoryOpen) openDropHistory(dropHistoryOpen);
+    const dropHistoryPeriod = event.target.closest("[data-drop-history-period]");
+    if (dropHistoryPeriod) {
+      window.clearTimeout(dropHistoryState.searchTimer);
+      dropHistoryState.period = dropHistoryPeriod.dataset.dropHistoryPeriod || "30";
+      dropHistoryPeriod.parentElement.querySelectorAll("[data-drop-history-period]").forEach((button) => {
+        button.classList.toggle("is-active", button === dropHistoryPeriod);
+      });
+      loadDropHistory({ reset: true });
+    }
+    const dropHistoryMore = event.target.closest("[data-drop-history-more]");
+    if (dropHistoryMore && dropHistoryState.hasNext) {
+      dropHistoryState.page += 1;
+      loadDropHistory();
+    }
     const saleBuyerOpen = event.target.closest("[data-sale-form] [data-user-picker-open]");
     if (saleBuyerOpen) openSaleBuyerPicker(saleBuyerOpen);
     const saleBuyerClear = event.target.closest("[data-sale-form] [data-user-picker-clear]");
@@ -767,6 +1076,22 @@
     if (bidHistoryOpen) openBidHistory(bidHistoryOpen);
     const clanHistoryOpen = event.target.closest("[data-clan-history-open]");
     if (clanHistoryOpen) openClanHistory(clanHistoryOpen);
+    const clanItemHistoryOpen = event.target.closest("[data-clan-item-history-open]");
+    if (clanItemHistoryOpen) openClanItemHistory(clanItemHistoryOpen);
+    const clanItemPeriod = event.target.closest("[data-clan-item-period]");
+    if (clanItemPeriod) {
+      window.clearTimeout(clanItemHistoryState.searchTimer);
+      clanItemHistoryState.period = clanItemPeriod.dataset.clanItemPeriod || "30";
+      clanItemPeriod.parentElement.querySelectorAll("[data-clan-item-period]").forEach((button) => {
+        button.classList.toggle("is-active", button === clanItemPeriod);
+      });
+      loadClanItemHistory({ reset: true });
+    }
+    const clanItemMore = event.target.closest("[data-clan-item-more]");
+    if (clanItemMore && clanItemHistoryState.hasNext) {
+      clanItemHistoryState.page += 1;
+      loadClanItemHistory();
+    }
     const allianceHistoryOpen = event.target.closest("[data-alliance-history-open]");
     if (allianceHistoryOpen) {
       event.preventDefault();
@@ -809,6 +1134,22 @@
   document.addEventListener("input", (event) => {
     const clientSearchInput = event.target.closest("[data-client-search-input]");
     if (clientSearchInput) applyClientSearch(clientSearchInput);
+    const dropHistorySearch = event.target.closest("[data-drop-history-search]");
+    if (dropHistorySearch) {
+      window.clearTimeout(dropHistoryState.searchTimer);
+      dropHistoryState.searchTimer = window.setTimeout(() => {
+        dropHistoryState.query = dropHistorySearch.value.trim();
+        loadDropHistory({ reset: true });
+      }, 280);
+    }
+    const clanItemSearch = event.target.closest("[data-clan-item-search]");
+    if (clanItemSearch) {
+      window.clearTimeout(clanItemHistoryState.searchTimer);
+      clanItemHistoryState.searchTimer = window.setTimeout(() => {
+        clanItemHistoryState.query = clanItemSearch.value.trim();
+        loadClanItemHistory({ reset: true });
+      }, 280);
+    }
     const saleInput = event.target.closest("[data-sale-rate]");
     if (saleInput) updateSalePreview(saleInput.form);
   });

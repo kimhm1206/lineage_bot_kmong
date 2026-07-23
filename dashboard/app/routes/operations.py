@@ -157,9 +157,6 @@ async def _require_clan_management(
 async def drops_page(
     request: Request,
     guild_id: int | None = None,
-    period: int | None = None,
-    q: str = "",
-    status: str = "all",
     page: int = 1,
     session: AsyncSession = Depends(get_session),
 ):
@@ -174,32 +171,21 @@ async def drops_page(
         page_description="출석 회차와 아이템을 연결하고 판매 완료 후 분배를 시작합니다.",
         page_badge="ALLIANCE MANAGER",
     )
-    selected_period = workspace_store.normalize_period(period)
     page_data = (
         await operations_store.drop_management_page(
             session,
             guild_id=int(workspace["guild_id"]),
-            period_days=selected_period,
-            query=_query(q),
-            status=status,
             page=max(page, 1),
         )
         if workspace["guild_id"] is not None
         else {
             "rows": [], "pagination": operations_store._pagination(0, 1),
             "summary_cards": [], "attendance_options": [], "item_options": [],
-            "alliance_options": [], "buyer_users": [], "selected_status": "all",
+            "alliance_options": [], "buyer_users": [],
         }
     )
     context.update(page_data)
-    context.update(
-        {
-            "period": selected_period,
-            "period_options": workspace_store.filter_options(workspace_store.PERIOD_OPTIONS, selected_period),
-            "query": _query(q),
-            "can_manage_drops": can_manage,
-        }
-    )
+    context.update({"can_manage_drops": can_manage})
     return templates.TemplateResponse(request, "pages/operations/drops.html", context)
 
 
@@ -251,7 +237,6 @@ async def clan_settlements_page(
     request: Request,
     guild_id: int | None = None,
     alliance_id: int | None = None,
-    period: int | None = None,
     q: str = "",
     session: AsyncSession = Depends(get_session),
 ):
@@ -266,13 +251,12 @@ async def clan_settlements_page(
         page_badge="CLAN MANAGER",
         clan_scoped=True,
     )
-    selected_period = workspace_store.normalize_period(period)
     page_data = (
         await operations_store.clan_settlement_entities(
             session,
             guild_id=int(workspace["guild_id"]),
             alliance_id=int(workspace["alliance_id"]),
-            period_days=selected_period,
+            period_days=0,
             query="",
         )
         if workspace["guild_id"] is not None and workspace["alliance_id"] is not None
@@ -281,8 +265,6 @@ async def clan_settlements_page(
     context.update(page_data)
     context.update(
         {
-            "period": selected_period,
-            "period_options": workspace_store.filter_options(workspace_store.PERIOD_OPTIONS, selected_period),
             "query": _query(q),
             "settlement_level": "clan",
             "can_manage_settlement": can_manage_clan_treasury(request),
@@ -802,6 +784,29 @@ async def bid_purchase_history(
     }
 
 
+@router.get("/api/drop-sale-history")
+async def drop_sale_history(
+    request: Request,
+    guild_id: int,
+    period: int = 30,
+    q: str = "",
+    page: int = 1,
+    session: AsyncSession = Depends(get_session),
+):
+    require_selected_guild(request, guild_id)
+    selected_period = period if period in {0, 30} else 30
+    return {
+        "ok": True,
+        **await operations_store.drop_sale_history_page(
+            session,
+            guild_id=guild_id,
+            period_days=selected_period,
+            query=_query(q),
+            page=max(page, 1),
+        ),
+    }
+
+
 @router.get("/api/fee-rules/{fee_rule_id}/history")
 async def fee_rule_history(
     fee_rule_id: int,
@@ -867,6 +872,36 @@ async def clan_settlement_history(
             user_id=user_id,
             period_days=workspace_store.normalize_period(period),
             status_filter=selected_status,
+            page=max(page, 1),
+        ),
+    }
+
+
+@router.get("/api/clan-completed-item-history")
+async def clan_completed_item_history(
+    request: Request,
+    guild_id: int,
+    alliance_id: int,
+    period: int = 30,
+    q: str = "",
+    page: int = 1,
+    session: AsyncSession = Depends(get_session),
+):
+    await require_alliance_access(
+        request,
+        session,
+        guild_id=guild_id,
+        alliance_id=alliance_id,
+    )
+    selected_period = period if period in {0, 30} else 30
+    return {
+        "ok": True,
+        **await operations_store.clan_completed_item_history_page(
+            session,
+            guild_id=guild_id,
+            alliance_id=alliance_id,
+            period_days=selected_period,
+            query=_query(q),
             page=max(page, 1),
         ),
     }

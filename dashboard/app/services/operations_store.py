@@ -41,20 +41,9 @@ async def drop_management_page(
     session: AsyncSession,
     *,
     guild_id: int,
-    period_days: int,
-    query: str,
-    status: str,
     page: int,
 ) -> dict[str, Any]:
-    status = status if status in {"all", "pending", "sold"} else "all"
-    period_clause = "" if period_days == 0 else "AND d.occurred_at >= EXTRACT(EPOCH FROM NOW() - (:period_days * INTERVAL '1 day'))::BIGINT"
-    status_clause = {"all": "", "pending": "AND s.status_code = 0", "sold": "AND s.status_code = 1"}[status]
-    search_clause = "AND (v.item_name ILIKE :query OR CAST(d.attendance_id AS TEXT) ILIKE :query)" if query else ""
-    params = {
-        "guild_id": guild_id,
-        "period_days": period_days,
-        "query": f"%{query}%",
-    }
+    params = {"guild_id": guild_id}
     base_sql = """
         FROM settlement_drops d
         JOIN catalog_item_versions v ON v.item_version_id = d.item_version_id
@@ -63,7 +52,7 @@ async def drop_management_page(
         LEFT JOIN alliances buyer_a ON buyer_a.alliance_id = s.buyer_alliance_id
         LEFT JOIN users buyer_u ON buyer_u.user_id = s.buyer_user_id
     """
-    where_sql = f"WHERE d.guild_id = :guild_id {period_clause} {status_clause} {search_clause}"
+    where_sql = "WHERE d.guild_id = :guild_id AND s.status_code = 0"
     total = int(await session.scalar(text(f"SELECT COUNT(*) {base_sql} {where_sql}"), params) or 0)
     pagination = _pagination(total, page)
     rows = [
@@ -174,14 +163,28 @@ async def drop_management_page(
 
     overview = (
         await session.execute(
-            text(f"""
-                SELECT COUNT(*) AS drop_count,
-                       COUNT(*) FILTER (WHERE s.status_code = 0) AS pending_sales,
-                       COUNT(*) FILTER (WHERE s.status_code = 1) AS sold_count,
-                       COALESCE(SUM(d.gross_adena) FILTER (WHERE s.status_code = 1), 0) AS sold_adena
+            text("""
+                SELECT COUNT(*) FILTER (WHERE s.status_code = 0) AS pending_sales,
+                       COALESCE(
+                           SUM(
+                               COALESCE(
+                                   NULLIF(d.cash_price_krw, 0),
+                                   i.default_price,
+                                   0
+                               )
+                           ) FILTER (WHERE s.status_code = 0),
+                           0
+                       ) AS pending_cash,
+                       COALESCE(
+                           SUM(d.gross_adena) FILTER (WHERE s.status_code = 1),
+                           0
+                       ) AS sold_adena
                 FROM settlement_drops d
                 JOIN settlement_drop_sales s ON s.drop_id = d.drop_id
-                WHERE d.guild_id = :guild_id {period_clause}
+                JOIN catalog_item_versions version
+                  ON version.item_version_id = d.item_version_id
+                JOIN items i ON i.item_id = version.item_id
+                WHERE d.guild_id = :guild_id
             """),
             params,
         )
@@ -249,10 +252,10 @@ async def drop_management_page(
                            COALESCE(u.game_nickname, u.discord_nickname) AS display_name,
                            u.discord_nickname AS username
                     FROM users u
-                    JOIN attendance_entries e ON e.user_id = u.user_id
-                    JOIN attendance_sessions s ON s.attendance_id = e.attendance_id
-                    WHERE s.guild_id = :guild_id AND u.is_active IS TRUE
-                      AND u.alliance_id IS NOT NULL
+                    JOIN guild_alliance_role_mappings mapping
+                      ON mapping.alliance_id = u.alliance_id
+                     AND mapping.guild_id = :guild_id
+                    WHERE u.is_active IS TRUE
                     ORDER BY display_name
                 """),
                 {"guild_id": guild_id},
@@ -262,17 +265,174 @@ async def drop_management_page(
     return {
         "rows": rows,
         "pagination": pagination,
-        "selected_status": status,
         "summary_cards": [
-            {"label": "등록 드랍", "value": f"{int(overview['drop_count']):,}", "meta": "선택 기간"},
-            {"label": "판매 대기", "value": f"{int(overview['pending_sales']):,}", "meta": "구매 혈맹·아데나 시세 확정 전"},
-            {"label": "판매 완료", "value": f"{int(overview['sold_count']):,}", "meta": "분배 계산 생성"},
-            {"label": "판매 아데나", "value": _money(overview["sold_adena"]), "meta": "수수료 차감 전"},
+            {
+                "key": "pending_count",
+                "label": "판매 대기",
+                "value": f"{int(overview['pending_sales']):,}",
+                "meta": "구매 혈맹·아데나 시세 확정 전",
+            },
+            {
+                "key": "pending_cash",
+                "label": "판매 대기 금액",
+                "value": f"{_money(overview['pending_cash'])}원",
+                "meta": "등록 원화 합계",
+            },
+            {
+                "key": "sold_adena",
+                "label": "판매 아데나",
+                "value": _money(overview["sold_adena"]),
+                "meta": "판매 완료 누적",
+            },
         ],
         "attendance_options": attendance_options,
         "item_options": item_options,
         "alliance_options": alliance_options,
         "buyer_users": buyer_users,
+    }
+
+
+async def drop_sale_history_page(
+    session: AsyncSession,
+    *,
+    guild_id: int,
+    period_days: int,
+    query: str,
+    page: int,
+) -> dict[str, Any]:
+    period_clause = (
+        ""
+        if period_days == 0
+        else """
+            AND sale.completed_at >= EXTRACT(
+                EPOCH FROM NOW() - (:period_days * INTERVAL '1 day')
+            )::BIGINT
+        """
+    )
+    search_clause = (
+        """
+            AND (
+                version.item_name ILIKE :query
+                OR CAST(drop_row.attendance_id AS TEXT) ILIKE :query
+                OR COALESCE(
+                    buyer_alliance.display_name,
+                    buyer_alliance.alliance_name,
+                    ''
+                ) ILIKE :query
+                OR COALESCE(
+                    buyer_user.game_nickname,
+                    buyer_user.discord_nickname,
+                    ''
+                ) ILIKE :query
+            )
+        """
+        if query
+        else ""
+    )
+    params = {
+        "guild_id": guild_id,
+        "period_days": period_days,
+        "query": f"%{query}%",
+    }
+    history_from = f"""
+        FROM settlement_drops drop_row
+        JOIN settlement_drop_sales sale
+          ON sale.drop_id = drop_row.drop_id AND sale.status_code = 1
+        JOIN catalog_item_versions version
+          ON version.item_version_id = drop_row.item_version_id
+        LEFT JOIN alliances buyer_alliance
+          ON buyer_alliance.alliance_id = sale.buyer_alliance_id
+        LEFT JOIN users buyer_user ON buyer_user.user_id = sale.buyer_user_id
+        WHERE drop_row.guild_id = :guild_id
+          {period_clause}
+          {search_clause}
+    """
+    summary = (
+        await session.execute(
+            text(f"""
+                SELECT COUNT(*) AS total_count,
+                       COALESCE(SUM(drop_row.cash_price_krw), 0)
+                           AS total_cash,
+                       COALESCE(SUM(drop_row.gross_adena), 0)
+                           AS total_adena
+                {history_from}
+            """),
+            params,
+        )
+    ).mappings().one()
+    total = int(summary["total_count"] or 0)
+    pagination = _pagination(total, page, 18)
+    rows = [
+        dict(row)
+        for row in (
+            await session.execute(
+                text(f"""
+                    SELECT drop_row.drop_id, drop_row.attendance_id,
+                           drop_row.cash_price_krw,
+                           drop_row.adena_market_rate,
+                           drop_row.gross_adena,
+                           version.item_name,
+                           COALESCE(
+                               buyer_alliance.display_name,
+                               buyer_alliance.alliance_name,
+                               '구매 혈맹 미지정'
+                           ) AS buyer_alliance_name,
+                           COALESCE(
+                               buyer_user.game_nickname,
+                               buyer_user.discord_nickname
+                           ) AS buyer_user_name,
+                           TO_CHAR(
+                               TO_TIMESTAMP(drop_row.occurred_at),
+                               'YYYY-MM-DD HH24:MI'
+                           ) AS occurred_at_label,
+                           TO_CHAR(
+                               TO_TIMESTAMP(sale.completed_at),
+                               'YYYY-MM-DD HH24:MI'
+                           ) AS completed_at_label,
+                           (
+                               SELECT COUNT(*)
+                               FROM settlement_drop_participants participant
+                               WHERE participant.drop_id = drop_row.drop_id
+                           ) AS participant_count
+                    {history_from}
+                    ORDER BY sale.completed_at DESC NULLS LAST,
+                             drop_row.drop_id DESC
+                    LIMIT :limit OFFSET :offset
+                """),
+                {
+                    **params,
+                    "limit": pagination["page_size"],
+                    "offset": pagination["offset"],
+                },
+            )
+        ).mappings().all()
+    ]
+    for row in rows:
+        for key in (
+            "drop_id",
+            "attendance_id",
+            "cash_price_krw",
+            "adena_market_rate",
+            "gross_adena",
+            "participant_count",
+        ):
+            row[key] = int(row[key] or 0)
+        row["cash_label"] = f"{_money(row['cash_price_krw'])}원"
+        row["adena_label"] = _money(row["gross_adena"])
+        row["rate_label"] = (
+            f"{_money(row['adena_market_rate'])}원"
+            if row["adena_market_rate"]
+            else "-"
+        )
+
+    return {
+        "history": rows,
+        "pagination": pagination,
+        "summary": {
+            "total_count": total,
+            "total_cash_label": f"{_money(summary['total_cash'])}원",
+            "total_adena_label": _money(summary["total_adena"]),
+        },
     }
 
 
@@ -1074,6 +1234,212 @@ async def clan_settlement_history_page(
             "complete_count": int(summary["complete_count"] or 0),
             "forfeited_count": int(summary["forfeited_count"] or 0),
             "total_amount_label": _money(summary["total_amount"]),
+        },
+    }
+
+
+async def clan_completed_item_history_page(
+    session: AsyncSession,
+    *,
+    guild_id: int,
+    alliance_id: int,
+    period_days: int,
+    query: str,
+    page: int,
+) -> dict[str, Any]:
+    period_clause = (
+        ""
+        if period_days == 0
+        else """
+            AND completed_items.completed_at >= EXTRACT(
+                EPOCH FROM NOW() - (:period_days * INTERVAL '1 day')
+            )::BIGINT
+        """
+    )
+    search_clause = (
+        """
+            AND (
+                completed_items.item_name ILIKE :query
+                OR CAST(completed_items.attendance_id AS TEXT) ILIKE :query
+            )
+        """
+        if query
+        else ""
+    )
+    params = {
+        "guild_id": guild_id,
+        "alliance_id": alliance_id,
+        "period_days": period_days,
+        "query": f"%{query}%",
+    }
+    completed_cte = """
+        WITH completed_items AS (
+            SELECT parent.payout_object_id AS parent_payout_object_id,
+                   drop_row.drop_id,
+                   drop_row.attendance_id,
+                   item.item_name,
+                   drop_row.occurred_at,
+                   parent.amount_adena AS distribution_amount,
+                   COALESCE(
+                       SUM(child.amount_adena) FILTER (
+                           WHERE child.object_code = 2
+                             AND child.status_code = 1
+                       ),
+                       0
+                   ) AS paid_amount,
+                   COALESCE(
+                       SUM(child.amount_adena) FILTER (
+                           WHERE child.object_code = 2
+                             AND child.status_code = 2
+                       ),
+                       0
+                   ) AS forfeited_amount,
+                   COALESCE(
+                       SUM(child.amount_adena) FILTER (
+                           WHERE child.object_code = 3
+                             AND fee_rule.fixed_code = 'clan_fund'
+                       ),
+                       0
+                   )
+                   + COALESCE(
+                       SUM(child.amount_adena) FILTER (
+                           WHERE child.object_code = 2
+                             AND child.status_code = 2
+                       ),
+                       0
+                   ) AS clan_fund_amount,
+                   COALESCE(
+                       SUM(child.amount_adena) FILTER (
+                           WHERE child.object_code = 3
+                             AND fee_rule.fixed_code IS DISTINCT FROM 'clan_fund'
+                       ),
+                       0
+                   ) AS custom_fee_amount,
+                   COUNT(*) FILTER (
+                       WHERE child.object_code = 2
+                         AND child.status_code = 1
+                   ) AS paid_member_count,
+                   COUNT(*) FILTER (
+                       WHERE child.object_code = 2
+                         AND child.status_code = 2
+                   ) AS forfeited_member_count,
+                   MAX(child.completed_at) AS completed_at
+            FROM settlement_payout_objects parent
+            JOIN settlement_drops drop_row
+              ON drop_row.drop_id = parent.drop_id
+            JOIN settlement_drop_sales sale
+              ON sale.drop_id = drop_row.drop_id AND sale.status_code = 1
+            JOIN catalog_item_versions item
+              ON item.item_version_id = drop_row.item_version_id
+            JOIN settlement_payout_objects child
+              ON child.parent_payout_object_id = parent.payout_object_id
+            LEFT JOIN settlement_fee_rule_versions fee_version
+              ON fee_version.fee_rule_version_id =
+                 child.fee_rule_version_id
+            LEFT JOIN settlement_fee_rules fee_rule
+              ON fee_rule.fee_rule_id = fee_version.fee_rule_id
+            WHERE drop_row.guild_id = :guild_id
+              AND parent.object_code = 1
+              AND parent.recipient_alliance_id = :alliance_id
+            GROUP BY parent.payout_object_id, drop_row.drop_id,
+                     drop_row.attendance_id, item.item_name,
+                     drop_row.occurred_at, parent.amount_adena
+            HAVING COUNT(child.payout_object_id) > 0
+               AND COUNT(*) FILTER (WHERE child.status_code = 0) = 0
+        )
+    """
+    from_sql = f"""
+        FROM completed_items
+        WHERE TRUE
+          {period_clause}
+          {search_clause}
+    """
+    summary = (
+        await session.execute(
+            text(f"""
+                {completed_cte}
+                SELECT COUNT(*) AS total_count,
+                       COALESCE(SUM(distribution_amount), 0)
+                           AS distribution_amount,
+                       COALESCE(SUM(clan_fund_amount), 0)
+                           AS clan_fund_amount,
+                       COALESCE(SUM(custom_fee_amount), 0)
+                           AS custom_fee_amount
+                {from_sql}
+            """),
+            params,
+        )
+    ).mappings().one()
+    total = int(summary["total_count"] or 0)
+    pagination = _pagination(total, page, 18)
+    rows = [
+        dict(row)
+        for row in (
+            await session.execute(
+                text(f"""
+                    {completed_cte}
+                    SELECT parent_payout_object_id, drop_id,
+                           attendance_id, item_name,
+                           distribution_amount, paid_amount,
+                           forfeited_amount, clan_fund_amount,
+                           custom_fee_amount, paid_member_count,
+                           forfeited_member_count,
+                           TO_CHAR(
+                               TO_TIMESTAMP(occurred_at),
+                               'YYYY-MM-DD HH24:MI'
+                           ) AS occurred_at_label,
+                           TO_CHAR(
+                               TO_TIMESTAMP(completed_at),
+                               'YYYY-MM-DD HH24:MI'
+                           ) AS completed_at_label
+                    {from_sql}
+                    ORDER BY completed_at DESC NULLS LAST,
+                             parent_payout_object_id DESC
+                    LIMIT :limit OFFSET :offset
+                """),
+                {
+                    **params,
+                    "limit": pagination["page_size"],
+                    "offset": pagination["offset"],
+                },
+            )
+        ).mappings().all()
+    ]
+    for row in rows:
+        for key in (
+            "parent_payout_object_id",
+            "drop_id",
+            "attendance_id",
+            "distribution_amount",
+            "paid_amount",
+            "forfeited_amount",
+            "clan_fund_amount",
+            "custom_fee_amount",
+            "paid_member_count",
+            "forfeited_member_count",
+        ):
+            row[key] = int(row[key] or 0)
+        for key in (
+            "distribution_amount",
+            "paid_amount",
+            "forfeited_amount",
+            "clan_fund_amount",
+            "custom_fee_amount",
+        ):
+            row[f"{key}_label"] = _money(row[key])
+
+    return {
+        "history": rows,
+        "pagination": pagination,
+        "summary": {
+            "total_count": total,
+            "distribution_amount_label": _money(
+                summary["distribution_amount"]
+            ),
+            "clan_fund_amount_label": _money(summary["clan_fund_amount"]),
+            "custom_fee_amount_label": _money(
+                summary["custom_fee_amount"]
+            ),
         },
     }
 
