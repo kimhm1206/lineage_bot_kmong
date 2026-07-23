@@ -1,6 +1,7 @@
 {% extends "layouts/app_shell.html" %}
 {% from "components/icons.html" import icon %}
-{% from "components/attendance.html" import filters, summary, pagination as pagination_controls %}
+{% from "components/attendance.html" import filters, pagination as pagination_controls %}
+{% from "components/operations.html" import modal %}
 
 {% block title %}{{ page_title }} · {{ app_name }}{% endblock %}
 
@@ -8,9 +9,9 @@
 <div class="attendance-page attendance-status-page">
   {{ filters(
     request.url.path, guilds, guild_id, period_options, query,
-    settings_href='/settings/attendance' ~ ('?guild_id=' ~ guild_id if guild_id else '')
+    settings_href='/settings/attendance' ~ ('?guild_id=' ~ guild_id if guild_id else ''),
+    show_date_filter=true, date_from=date_from, date_to=date_to
   ) }}
-  {{ summary(summary_cards) }}
 
   <section class="attendance-section-heading">
     <div>
@@ -24,30 +25,52 @@
 
   <section class="attendance-session-list" aria-label="회차별 출석 현황">
     {% for attendance in sessions %}
-    <details class="attendance-session-card" id="attendance-{{ attendance.attendance_id }}">
+    <details class="attendance-session-card" id="attendance-{{ attendance.attendance_id }}" data-attendance-card>
       <summary>
         <div class="attendance-session-identity">
           <span class="attendance-session-id">#{{ attendance.attendance_id }}</span>
           <div>
             <strong>{{ attendance.started_at_label }}</strong>
-            <span>{{ attendance.started_by }} · {{ attendance.participant_label }}</span>
+            <span>{{ attendance.started_by }} · <b data-attendance-participant-label>{{ attendance.participant_label }}</b></span>
           </div>
         </div>
-        <div class="attendance-alliance-chips">
+        <div class="attendance-alliance-chips" data-attendance-alliance-chips>
           {% for alliance in attendance.alliances %}
           <span>{{ alliance.alliance_name }} <b>{{ alliance.count }}명</b></span>
           {% else %}
           <span class="is-empty">출석 없음</span>
           {% endfor %}
         </div>
+        {% if can_edit_attendance %}
+        <button
+          class="secondary-button attendance-edit-button"
+          type="button"
+          data-attendance-edit
+          data-modal-open="attendance-edit-modal"
+          data-attendance-id="{{ attendance.attendance_id }}"
+          data-attendance-time="{{ attendance.started_at_label }}"
+          data-attendance-starter="{{ attendance.started_by }}"
+          data-attendance-count="{{ attendance.participant_count }}"
+        >{{ icon("users-round") }} 출석 수정</button>
+        {% endif %}
         <span class="attendance-expand-icon">{{ icon("chevron-right") }}</span>
       </summary>
-      <div class="attendance-session-detail">
+      <div class="attendance-session-detail" data-attendance-session-detail>
         {% for alliance in attendance.alliances %}
-        <article class="attendance-alliance-group">
+        <article
+          class="attendance-alliance-group"
+          data-attendance-alliance-group
+          data-alliance-id="{{ alliance.alliance_id or '' }}"
+          data-alliance-name="{{ alliance.alliance_name }}"
+        >
           <header><h3>{{ alliance.alliance_name }}</h3><span>{{ alliance.count }}명</span></header>
           <div class="attendance-member-list">
-            {% for member in alliance.members %}<span>{{ member.discord_nickname }}</span>{% endfor %}
+            {% for member in alliance.members %}
+            <span
+              data-attendance-member
+              data-user-id="{{ member.user_id }}"
+            >{{ member.discord_nickname }}</span>
+            {% endfor %}
           </div>
         </article>
         {% else %}
@@ -61,5 +84,30 @@
   </section>
 
   {{ pagination_controls(request, pagination, "출석 현황 하단 페이지 이동") }}
+
+  {% if can_edit_attendance %}
+  {% call modal("attendance-edit-modal", "출석 인원 수정", "누락된 유저를 추가하거나 잘못 등록된 유저를 삭제합니다.") %}
+  <div class="attendance-editor" data-attendance-editor data-guild-id="{{ guild_id or '' }}">
+    <section class="attendance-editor-summary">
+      <div>
+        <span data-attendance-editor-id>#-</span>
+        <strong data-attendance-editor-time>-</strong>
+      </div>
+      <b data-attendance-editor-count>0명</b>
+    </section>
+    <div class="attendance-editor-toolbar">
+      <button class="primary-button" type="button" data-attendance-member-add>
+        {{ icon("plus-square") }} 누락 인원 추가
+      </button>
+      <label class="attendance-editor-search">
+        {{ icon("search") }}
+        <input type="search" placeholder="닉네임 또는 혈맹 검색" data-attendance-member-search autocomplete="off">
+      </label>
+    </div>
+    <div class="attendance-editor-list" data-attendance-member-list></div>
+    <div class="attendance-editor-empty" data-attendance-member-empty hidden>검색 결과가 없습니다.</div>
+  </div>
+  {% endcall %}
+  {% endif %}
 </div>
 {% endblock %}

@@ -3,25 +3,26 @@ from __future__ import annotations
 import csv
 import io
 from collections.abc import Awaitable, Callable
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi.responses import RedirectResponse, Response
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dashboard.app.config import BASE_DIR
 from dashboard.app.database import get_session
 from dashboard.app.security import (
+    can_manage_alliance_operations,
     can_manage_alliance_treasury,
     can_manage_clan_treasury,
     can_select_alliances,
     require_alliance_access,
     restrict_workspace_alliance,
 )
-from dashboard.app.services import workspace_store
+from dashboard.app.services import attendance_service, workspace_store
 from dashboard.app.ui.context import build_template_context
 
 
@@ -63,6 +64,16 @@ def _optional_query_id(value: str | int | None) -> int | None:
     except ValueError:
         return None
     return parsed if parsed > 0 else None
+
+
+def _date_query(value: str) -> str:
+    normalized = value.strip()
+    if not normalized:
+        return ""
+    try:
+        return date.fromisoformat(normalized).isoformat()
+    except ValueError:
+        return ""
 
 
 async def _render_workspace(
@@ -661,7 +672,8 @@ async def clan_settings(
 @router.get("/attendance/status")
 async def attendance_status(
     request: Request, guild_id: int | None = None, period: int | None = None,
-    q: str = "", page: int = 1, session: AsyncSession = Depends(get_session),
+    q: str = "", date_from: str = "", date_to: str = "", page: int = 1,
+    session: AsyncSession = Depends(get_session),
 ):
     context, workspace, selected_period, clean_query = await _attendance_context(
         request,
@@ -674,9 +686,14 @@ async def attendance_status(
         period=period,
         query=q,
     )
+    clean_date_from = _date_query(date_from)
+    clean_date_to = _date_query(date_to)
+    if clean_date_from and clean_date_to and clean_date_from > clean_date_to:
+        clean_date_from, clean_date_to = clean_date_to, clean_date_from
+    effective_period = 0 if clean_date_from or clean_date_to else selected_period
+    can_edit_attendance = can_manage_alliance_operations(request)
     if workspace["guild_id"] is None:
         page_data = {
-            "summary_cards": [],
             "sessions": [],
             "pagination": _empty_page("등록된 서버가 없습니다.")["pagination"],
         }
@@ -684,12 +701,124 @@ async def attendance_status(
         page_data = await workspace_store.attendance_sessions_page(
             session,
             guild_id=workspace["guild_id"],
-            period_days=selected_period,
+            period_days=effective_period,
             query=clean_query,
             page=max(page, 1),
+            date_from=clean_date_from,
+            date_to=clean_date_to,
         )
     context.update(page_data)
+    context.update(
+        {
+            "can_edit_attendance": can_edit_attendance,
+            "date_from": clean_date_from,
+            "date_to": clean_date_to,
+        }
+    )
+    if clean_date_from or clean_date_to:
+        context["period"] = 0
+        context["period_options"] = workspace_store.filter_options(
+            workspace_store.PERIOD_OPTIONS,
+            0,
+        )
     return templates.TemplateResponse(request, "pages/attendance/status.html", context)
+
+
+@router.get("/api/attendance/member-options")
+async def attendance_member_options(
+    request: Request,
+    guild_id: int,
+    session: AsyncSession = Depends(get_session),
+):
+    if not can_manage_alliance_operations(request):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="출석을 수정할 권한이 없습니다.")
+    users = await workspace_store.attendance_member_options(session, guild_id=guild_id)
+    return JSONResponse({"ok": True, "users": users})
+
+
+async def _attendance_edit_response(
+    session: AsyncSession,
+    *,
+    guild_id: int,
+    attendance_id: int,
+    operation: Awaitable[Any],
+    success_message: str,
+) -> JSONResponse:
+    try:
+        await operation
+        attendance = await workspace_store.attendance_session_detail(
+            session,
+            guild_id=guild_id,
+            attendance_id=attendance_id,
+        )
+        await session.commit()
+        return JSONResponse(
+            {
+                "ok": True,
+                "message": success_message,
+                "attendance": attendance,
+            }
+        )
+    except attendance_service.AttendanceEditError as exc:
+        await session.rollback()
+        return JSONResponse({"ok": False, "message": str(exc)}, status_code=422)
+    except Exception:
+        await session.rollback()
+        raise
+
+
+@router.post("/api/attendance/{attendance_id}/members")
+async def attendance_add_members(
+    request: Request,
+    attendance_id: int,
+    session: AsyncSession = Depends(get_session),
+):
+    if not can_manage_alliance_operations(request):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="출석을 수정할 권한이 없습니다.")
+    form = await request.form()
+    guild_id = _optional_query_id(form.get("guild_id"))
+    if guild_id is None:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="서버를 선택해 주세요.")
+    user_ids = form.getlist("user_ids")
+    return await _attendance_edit_response(
+        session,
+        guild_id=guild_id,
+        attendance_id=attendance_id,
+        operation=attendance_service.add_members(
+            session,
+            guild_id=guild_id,
+            attendance_id=attendance_id,
+            user_ids=user_ids,
+        ),
+        success_message="출석 인원을 추가했습니다.",
+    )
+
+
+@router.post("/api/attendance/{attendance_id}/members/{user_id}/delete")
+async def attendance_delete_member(
+    request: Request,
+    attendance_id: int,
+    user_id: int,
+    session: AsyncSession = Depends(get_session),
+):
+    if not can_manage_alliance_operations(request):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="출석을 수정할 권한이 없습니다.")
+    form = await request.form()
+    guild_id = _optional_query_id(form.get("guild_id"))
+    if guild_id is None:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="서버를 선택해 주세요.")
+    return await _attendance_edit_response(
+        session,
+        guild_id=guild_id,
+        attendance_id=attendance_id,
+        operation=attendance_service.remove_member(
+            session,
+            guild_id=guild_id,
+            attendance_id=attendance_id,
+            user_id=user_id,
+        ),
+        success_message="출석 인원을 삭제했습니다.",
+    )
 
 
 @router.get("/attendance/statistics")

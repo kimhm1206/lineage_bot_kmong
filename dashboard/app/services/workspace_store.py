@@ -160,8 +160,15 @@ async def attendance_sessions_page(
     period_days: int,
     query: str,
     page: int,
+    date_from: str = "",
+    date_to: str = "",
 ) -> dict[str, Any]:
     period = _period_clause("s.started_at", period_days, unix=False)
+    date_filter = ""
+    if date_from:
+        date_filter += " AND s.started_at::timestamp >= CAST(:date_from AS VARCHAR)::DATE"
+    if date_to:
+        date_filter += " AND s.started_at::timestamp < CAST(:date_to AS VARCHAR)::DATE + INTERVAL '1 day'"
     search = """
         AND (
             CAST(s.attendance_id AS TEXT) ILIKE :query
@@ -179,11 +186,17 @@ async def attendance_sessions_page(
             )
         )
     """ if query else ""
-    params = {"guild_id": guild_id, "period_days": period_days, "query": f"%{query}%"}
+    params = {
+        "guild_id": guild_id,
+        "period_days": period_days,
+        "query": f"%{query}%",
+        "date_from": date_from or None,
+        "date_to": date_to or None,
+    }
     count_from_sql = f"""
         FROM attendance_sessions s
         LEFT JOIN users starter ON starter.discord_id = s.started_by_discord_id
-        WHERE s.guild_id = :guild_id {period} {search}
+        WHERE s.guild_id = :guild_id {period} {date_filter} {search}
     """
     rows, pagination = await _fetch_page(
         session,
@@ -198,7 +211,7 @@ async def attendance_sessions_page(
             LEFT JOIN users starter ON starter.discord_id = s.started_by_discord_id
             LEFT JOIN attendance_entries e ON e.attendance_id = s.attendance_id
             LEFT JOIN users au ON au.user_id = e.user_id
-            WHERE s.guild_id = :guild_id {period} {search}
+            WHERE s.guild_id = :guild_id {period} {date_filter} {search}
             GROUP BY s.attendance_id, s.started_at, starter.discord_nickname, s.started_by_discord_id
             ORDER BY s.started_at::timestamp DESC
             LIMIT :limit OFFSET :offset
@@ -219,7 +232,8 @@ async def attendance_sessions_page(
             detail_params[key] = attendance_id
             placeholders.append(f":{key}")
         detail_rows = (await session.execute(text(f"""
-            SELECT e.attendance_id, u.user_id, u.discord_nickname,
+            SELECT e.attendance_id, u.user_id, u.discord_id,
+                   COALESCE(u.game_nickname, u.discord_nickname) AS discord_nickname,
                    a.alliance_id,
                    COALESCE(a.display_name, a.alliance_name, '미분류') AS alliance_name,
                    COALESCE(a.sort_order, 2147483647) AS alliance_sort
@@ -247,6 +261,7 @@ async def attendance_sessions_page(
             alliance["members"].append(
                 {
                     "user_id": int(detail["user_id"]),
+                    "discord_id": str(detail["discord_id"]),
                     "discord_nickname": str(detail["discord_nickname"]),
                 }
             )
@@ -258,27 +273,130 @@ async def attendance_sessions_page(
         row["attendance_label"] = f"#{row['attendance_id']}"
         row["participant_label"] = f"{_int(row['participant_count']):,}명"
         row["alliance_label"] = f"{_int(row['alliance_count']):,}개 혈맹"
-
-    summary = (await session.execute(text(f"""
-        SELECT COUNT(DISTINCT s.attendance_id) AS session_count,
-               COUNT(e.user_id) AS entry_count,
-               COUNT(DISTINCT e.user_id) AS unique_users
-        FROM attendance_sessions s
-        LEFT JOIN attendance_entries e ON e.attendance_id = s.attendance_id
-        WHERE s.guild_id = :guild_id {period}
-    """), params)).mappings().one()
-    session_count = _int(summary["session_count"])
-    entry_count = _int(summary["entry_count"])
     return {
-        "summary_cards": [
-            {"label": "출석 회차", "value": f"{session_count:,}", "meta": "선택 기간"},
-            {"label": "누적 참여", "value": f"{entry_count:,}", "meta": "중복 포함"},
-            {"label": "참여 인원", "value": f"{_int(summary['unique_users']):,}", "meta": "고유 유저"},
-            {"label": "회차당 평균", "value": f"{(entry_count / session_count):.1f}명" if session_count else "0명", "meta": "평균 참여 인원"},
-        ],
         "sessions": rows,
         "pagination": pagination,
     }
+
+
+async def attendance_member_options(
+    session: AsyncSession,
+    *,
+    guild_id: int,
+) -> list[dict[str, Any]]:
+    rows = (
+        await session.execute(
+            text("""
+                SELECT DISTINCT
+                       u.user_id,
+                       u.discord_id,
+                       COALESCE(u.game_nickname, u.discord_nickname) AS display_name,
+                       u.discord_nickname,
+                       u.alliance_id,
+                       COALESCE(a.display_name, a.alliance_name, '미분류') AS alliance_name,
+                       COALESCE(a.sort_order, 2147483647) AS alliance_sort
+                FROM users u
+                LEFT JOIN alliances a ON a.alliance_id = u.alliance_id
+                WHERE u.is_active IS TRUE
+                  AND (
+                      EXISTS (
+                          SELECT 1
+                          FROM guild_alliance_role_mappings mapping
+                          WHERE mapping.guild_id = :guild_id
+                            AND mapping.alliance_id = u.alliance_id
+                      )
+                      OR EXISTS (
+                          SELECT 1
+                          FROM attendance_entries entry
+                          JOIN attendance_sessions attendance
+                            ON attendance.attendance_id = entry.attendance_id
+                          WHERE entry.user_id = u.user_id
+                            AND attendance.guild_id = :guild_id
+                      )
+                  )
+                ORDER BY alliance_sort, alliance_name, display_name, u.user_id
+            """),
+            {"guild_id": guild_id},
+        )
+    ).mappings().all()
+    return [
+        {
+            "user_id": int(row["user_id"]),
+            "discord_id": str(row["discord_id"]),
+            "display_name": str(row["display_name"]),
+            "username": str(row["alliance_name"]),
+            "alliance_id": int(row["alliance_id"]) if row["alliance_id"] is not None else None,
+        }
+        for row in rows
+    ]
+
+
+async def attendance_session_detail(
+    session: AsyncSession,
+    *,
+    guild_id: int,
+    attendance_id: int,
+) -> dict[str, Any] | None:
+    attendance = (
+        await session.execute(
+            text("""
+                SELECT s.attendance_id,
+                       TO_CHAR(s.started_at::timestamp, 'YYYY-MM-DD HH24:MI') AS started_at_label,
+                       COALESCE(starter.discord_nickname, CAST(s.started_by_discord_id AS TEXT), '-') AS started_by
+                FROM attendance_sessions s
+                LEFT JOIN users starter ON starter.discord_id = s.started_by_discord_id
+                WHERE s.guild_id = :guild_id
+                  AND s.attendance_id = :attendance_id
+            """),
+            {"guild_id": guild_id, "attendance_id": attendance_id},
+        )
+    ).mappings().one_or_none()
+    if attendance is None:
+        return None
+
+    member_rows = (
+        await session.execute(
+            text("""
+                SELECT u.user_id, u.discord_id,
+                       COALESCE(u.game_nickname, u.discord_nickname) AS discord_nickname,
+                       a.alliance_id,
+                       COALESCE(a.display_name, a.alliance_name, '미분류') AS alliance_name,
+                       COALESCE(a.sort_order, 2147483647) AS alliance_sort
+                FROM attendance_entries e
+                JOIN users u ON u.user_id = e.user_id
+                LEFT JOIN alliances a ON a.alliance_id = u.alliance_id
+                WHERE e.attendance_id = :attendance_id
+                ORDER BY alliance_sort, alliance_name, discord_nickname, u.user_id
+            """),
+            {"attendance_id": attendance_id},
+        )
+    ).mappings().all()
+    alliances: dict[int | None, dict[str, Any]] = {}
+    for member in member_rows:
+        alliance_id = int(member["alliance_id"]) if member["alliance_id"] is not None else None
+        alliance = alliances.setdefault(
+            alliance_id,
+            {
+                "alliance_id": alliance_id,
+                "alliance_name": str(member["alliance_name"]),
+                "members": [],
+                "count": 0,
+            },
+        )
+        alliance["members"].append(
+            {
+                "user_id": int(member["user_id"]),
+                "discord_id": str(member["discord_id"]),
+                "discord_nickname": str(member["discord_nickname"]),
+            }
+        )
+        alliance["count"] += 1
+
+    result = dict(attendance)
+    result["participant_count"] = len(member_rows)
+    result["participant_label"] = f"{len(member_rows):,}명"
+    result["alliances"] = list(alliances.values())
+    return result
 
 
 async def attendance_statistics_page(

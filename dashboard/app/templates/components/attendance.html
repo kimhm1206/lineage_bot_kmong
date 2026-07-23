@@ -1,6 +1,6 @@
 {% from "components/icons.html" import icon %}
 
-{% macro filters(action, guilds, guild_id, period_options, query, alliances=[], alliance_id=None, alliance_mode="none", settings_href="", export_href="") %}
+{% macro filters(action, guilds, guild_id, period_options, query, alliances=[], alliance_id=None, alliance_mode="none", settings_href="", export_href="", show_date_filter=false, date_from="", date_to="") %}
 <form class="attendance-filter-bar" method="get" action="{{ action }}">
   {% if guild_id %}<input type="hidden" name="guild_id" value="{{ guild_id }}">{% endif %}
 
@@ -25,6 +25,20 @@
       {% endfor %}
     </select>
   </label>
+
+  {% if show_date_filter %}
+  <div class="attendance-date-range">
+    <label class="attendance-filter-field">
+      <span>시작일</span>
+      <input type="date" name="date_from" value="{{ date_from }}">
+    </label>
+    <span class="attendance-date-separator">-</span>
+    <label class="attendance-filter-field">
+      <span>종료일</span>
+      <input type="date" name="date_to" value="{{ date_to }}">
+    </label>
+  </div>
+  {% endif %}
 
   <label class="attendance-filter-field attendance-search-field">
     <span>검색</span>
