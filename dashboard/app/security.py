@@ -25,6 +25,10 @@ def is_developer(request: Request) -> bool:
     return current_access_role(request) == "developer"
 
 
+def is_global_developer(request: Request) -> bool:
+    return bool(getattr(request.state, "is_global_developer", False))
+
+
 def current_discord_user_id(request: Request) -> int | None:
     for field_name in ("discord_user_id", "discord_id"):
         raw_value = getattr(request.state, field_name, None)
@@ -82,7 +86,7 @@ async def can_select_alliances(
     session: AsyncSession,
     guild_id: int | None,
 ) -> bool:
-    if current_access_role(request) == "developer":
+    if current_access_role(request) in {"developer", "owner"}:
         return True
     discord_user_id = current_discord_user_id(request)
     if guild_id is None or discord_user_id is None:
@@ -99,6 +103,16 @@ async def current_user_alliance_id(
     session: AsyncSession,
     guild_id: int | None,
 ) -> int | None:
+    if current_access_role(request) in {"clan_manager", "clan_accountant"}:
+        try:
+            developer_view_alliance_id = int(
+                getattr(request.state, "developer_view_alliance_id", None) or 0
+            )
+        except (TypeError, ValueError):
+            developer_view_alliance_id = 0
+        if developer_view_alliance_id > 0:
+            return developer_view_alliance_id
+
     discord_user_id = current_discord_user_id(request)
     if guild_id is None or discord_user_id is None:
         return None

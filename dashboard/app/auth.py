@@ -6,7 +6,7 @@ from typing import Any
 from urllib.parse import urlencode
 
 import httpx
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import text
@@ -38,6 +38,40 @@ ROLE_PRIORITY = {
 }
 SCOPE_ROLES = {1: "alliance_manager", 2: "clan_manager", 3: "clan_accountant"}
 GLOBAL_DEVELOPER_DISCORD_ID = 238978205078388747
+DEVELOPER_VIEW_MODE_SESSION_KEY = "developer_view_mode"
+DEVELOPER_VIEW_ALLIANCE_SESSION_KEY = "developer_view_alliance_id"
+DEVELOPER_VIEW_MODES = {
+    "developer": {
+        "label": "디벨로퍼",
+        "role": "developer",
+        "scopes": (1, 2, 3),
+        "requires_alliance": False,
+    },
+    "owner": {
+        "label": "오너",
+        "role": "owner",
+        "scopes": (1, 2, 3),
+        "requires_alliance": False,
+    },
+    "alliance_manager": {
+        "label": "연합관리자",
+        "role": "alliance_manager",
+        "scopes": (1,),
+        "requires_alliance": False,
+    },
+    "clan_manager": {
+        "label": "혈맹관리자",
+        "role": "clan_manager",
+        "scopes": (2,),
+        "requires_alliance": True,
+    },
+    "clan_accountant": {
+        "label": "혈맹경리",
+        "role": "clan_accountant",
+        "scopes": (3,),
+        "requires_alliance": True,
+    },
+}
 
 
 def _safe_next(value: str | None) -> str:
@@ -61,6 +95,27 @@ def _wants_json(request: Request) -> bool:
     return request.url.path.startswith("/api/") or "application/json" in request.headers.get(
         "accept", ""
     )
+
+
+def _developer_view_mode(session: dict[str, Any]) -> str:
+    mode = str(session.get(DEVELOPER_VIEW_MODE_SESSION_KEY) or "developer")
+    return mode if mode in DEVELOPER_VIEW_MODES else "developer"
+
+
+def _developer_view_alliance_id(session: dict[str, Any]) -> int | None:
+    try:
+        alliance_id = int(session.get(DEVELOPER_VIEW_ALLIANCE_SESSION_KEY) or 0)
+    except (TypeError, ValueError):
+        return None
+    return alliance_id if alliance_id > 0 else None
+
+
+def _require_global_developer(request: Request) -> None:
+    if not bool(getattr(request.state, "is_global_developer", False)):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="디벨로퍼 계정에서만 사용할 수 있습니다.",
+        )
 
 
 async def _enabled_guild_access(
@@ -166,11 +221,15 @@ class AuthContextMiddleware(BaseHTTPMiddleware):
                 next_url = urlencode({"next": _safe_next(str(request.url.path))})
                 return RedirectResponse(f"/login?{next_url}", status_code=303)
 
+        is_global_developer = discord_user_id == GLOBAL_DEVELOPER_DISCORD_ID
         guilds, roles, scopes = await _enabled_guild_access(discord_user_id, oauth_guild_ids)
         if not guilds:
             if local_bypass:
                 request.state.discord_user = session_user
                 request.state.discord_user_id = discord_user_id
+                request.state.is_global_developer = True
+                request.state.developer_view_mode = "developer"
+                request.state.developer_view_alliance_id = None
                 request.state.access_role = "developer"
                 request.state.access_scopes = (1, 2, 3)
                 request.state.allowed_guild_ids = ()
@@ -196,11 +255,25 @@ class AuthContextMiddleware(BaseHTTPMiddleware):
 
         request.state.discord_user = session_user
         request.state.discord_user_id = discord_user_id
+        request.state.is_global_developer = is_global_developer
         request.state.allowed_guild_ids = allowed_ids
         request.state.selected_guild_id = selected_guild_id
         request.state.server_roles = roles
-        request.state.access_role = roles.get(selected_guild_id, "user")
-        request.state.access_scopes = scopes.get(selected_guild_id, ())
+        effective_role = roles.get(selected_guild_id, "user")
+        effective_scopes = scopes.get(selected_guild_id, ())
+        view_mode = "developer" if is_global_developer else ""
+        view_alliance_id = None
+        if is_global_developer:
+            view_mode = _developer_view_mode(request.session)
+            view_config = DEVELOPER_VIEW_MODES[view_mode]
+            effective_role = str(view_config["role"])
+            effective_scopes = tuple(view_config["scopes"])
+            if bool(view_config["requires_alliance"]):
+                view_alliance_id = _developer_view_alliance_id(request.session)
+        request.state.developer_view_mode = view_mode
+        request.state.developer_view_alliance_id = view_alliance_id
+        request.state.access_role = effective_role
+        request.state.access_scopes = effective_scopes
         return await call_next(request)
 
 
@@ -370,3 +443,117 @@ async def discord_callback(
 async def logout(request: Request):
     request.session.clear()
     return RedirectResponse("/login", status_code=303)
+
+
+@router.get("/auth/developer-view/options")
+async def developer_view_options(request: Request):
+    _require_global_developer(request)
+    guild_id = getattr(request.state, "selected_guild_id", None)
+    alliances: list[dict[str, Any]] = []
+    if guild_id is not None:
+        async with SessionLocal() as session:
+            rows = (
+                await session.execute(
+                    text("""
+                        SELECT DISTINCT a.alliance_id,
+                                        COALESCE(a.display_name, a.alliance_name) AS alliance_name,
+                                        COALESCE(a.sort_order, 2147483647) AS resolved_sort_order
+                        FROM alliances a
+                        JOIN guild_alliance_role_mappings m
+                          ON m.alliance_id = a.alliance_id
+                         AND m.guild_id = :guild_id
+                        WHERE a.is_active IS TRUE
+                        ORDER BY resolved_sort_order, alliance_name
+                    """),
+                    {"guild_id": int(guild_id)},
+                )
+            ).mappings().all()
+            alliances = [
+                {
+                    "alliance_id": int(row["alliance_id"]),
+                    "alliance_name": str(row["alliance_name"]),
+                }
+                for row in rows
+            ]
+    return JSONResponse(
+        {
+            "ok": True,
+            "active_mode": str(getattr(request.state, "developer_view_mode", "developer")),
+            "active_alliance_id": getattr(
+                request.state,
+                "developer_view_alliance_id",
+                None,
+            ),
+            "modes": [
+                {
+                    "value": value,
+                    "label": str(config["label"]),
+                    "requires_alliance": bool(config["requires_alliance"]),
+                }
+                for value, config in DEVELOPER_VIEW_MODES.items()
+            ],
+            "alliances": alliances,
+        }
+    )
+
+
+@router.post("/auth/developer-view")
+async def set_developer_view(request: Request):
+    _require_global_developer(request)
+    try:
+        payload = await request.json()
+    except ValueError:
+        payload = {}
+    mode = str(payload.get("mode") or "").strip()
+    config = DEVELOPER_VIEW_MODES.get(mode)
+    if config is None:
+        return JSONResponse(
+            {"ok": False, "message": "선택한 권한을 확인해 주세요."},
+            status_code=422,
+        )
+
+    alliance_id: int | None = None
+    if bool(config["requires_alliance"]):
+        try:
+            alliance_id = int(payload.get("alliance_id") or 0)
+        except (TypeError, ValueError):
+            alliance_id = 0
+        guild_id = getattr(request.state, "selected_guild_id", None)
+        if guild_id is None or alliance_id <= 0:
+            return JSONResponse(
+                {"ok": False, "message": "확인할 혈맹을 선택해 주세요."},
+                status_code=422,
+            )
+        async with SessionLocal() as session:
+            mapped_alliance_id = await session.scalar(
+                text("""
+                    SELECT m.alliance_id
+                    FROM guild_alliance_role_mappings m
+                    JOIN alliances a ON a.alliance_id = m.alliance_id
+                    WHERE m.guild_id = :guild_id
+                      AND m.alliance_id = :alliance_id
+                      AND a.is_active IS TRUE
+                    LIMIT 1
+                """),
+                {
+                    "guild_id": int(guild_id),
+                    "alliance_id": alliance_id,
+                },
+            )
+        if mapped_alliance_id is None:
+            return JSONResponse(
+                {"ok": False, "message": "현재 서버에 역할 매핑된 혈맹만 선택할 수 있습니다."},
+                status_code=422,
+            )
+
+    request.session[DEVELOPER_VIEW_MODE_SESSION_KEY] = mode
+    if alliance_id is None:
+        request.session.pop(DEVELOPER_VIEW_ALLIANCE_SESSION_KEY, None)
+    else:
+        request.session[DEVELOPER_VIEW_ALLIANCE_SESSION_KEY] = alliance_id
+    return JSONResponse(
+        {
+            "ok": True,
+            "message": f"{config['label']} 시점으로 전환했습니다.",
+        }
+    )

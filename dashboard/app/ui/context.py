@@ -7,6 +7,7 @@ from dashboard.app.security import (
     can_manage_alliance_operations,
     can_manage_clan_treasury,
     current_access_role,
+    is_global_developer,
 )
 from dashboard.app.ui.navigation import get_navigation
 
@@ -40,12 +41,18 @@ def build_template_context(
         "active_nav_group": active_nav_group,
         "current_access_role": access_role,
         "current_access_role_label": {
-            "developer": "Developer",
-            "owner": "Owner",
-            "alliance_manager": "Alliance manager",
-            "clan_manager": "Clan manager",
-            "clan_accountant": "Clan accountant",
-        }.get(access_role, "User"),
+            "developer": "디벨로퍼",
+            "owner": "오너",
+            "alliance_manager": "연합관리자",
+            "clan_manager": "혈맹관리자",
+            "clan_accountant": "혈맹경리",
+        }.get(access_role, "일반유저"),
+        "is_global_developer": is_global_developer(request),
+        "developer_view_mode": getattr(
+            request.state,
+            "developer_view_mode",
+            "",
+        ),
         "current_discord_user": getattr(request.state, "discord_user", None),
         "active_nav": active_nav,
         "page_title": page_title,

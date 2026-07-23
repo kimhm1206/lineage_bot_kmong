@@ -300,6 +300,8 @@ async def select_server_context(
         return _redirect("/settings/server", error="사용 중인 서버만 선택할 수 있습니다.")
 
     request.session["selected_guild_id"] = guild_id
+    request.session["developer_view_mode"] = "developer"
+    request.session.pop("developer_view_alliance_id", None)
     guild_name = str(selected.get("guild_name") or f"서버 {guild_id}")
     return _redirect(
         "/settings/server",

@@ -13,19 +13,91 @@
       <span class="theme-icon theme-icon-sun">{{ icon("sun") }}</span>
       <span data-theme-label>Dark</span>
     </button>
+    {% if is_global_developer %}
+    <button
+      class="profile-chip developer-view-trigger"
+      type="button"
+      data-developer-view-open
+      aria-haspopup="dialog"
+      aria-controls="developer-view-modal"
+      title="테스트 권한 변경"
+    >
+      {% if current_discord_user and current_discord_user.avatar_url %}
+      <img src="{{ current_discord_user.avatar_url }}" alt="">
+      {% else %}
+      <span class="profile-dot"></span>
+      {% endif %}
+      <span class="profile-copy">
+        <strong>{{ current_discord_user.display_name if current_discord_user else current_access_role_label }}</strong>
+        <small>{{ current_access_role_label }}</small>
+      </span>
+      {{ icon("chevron-right") }}
+    </button>
+    {% else %}
     <div class="profile-chip">
       {% if current_discord_user and current_discord_user.avatar_url %}
       <img src="{{ current_discord_user.avatar_url }}" alt="">
       {% else %}
       <span class="profile-dot"></span>
       {% endif %}
-      <span>
+      <span class="profile-copy">
         <strong>{{ current_discord_user.display_name if current_discord_user else current_access_role_label }}</strong>
         <small>{{ current_access_role_label }}</small>
       </span>
     </div>
+    {% endif %}
     <a class="icon-button topbar-logout" href="/logout" aria-label="로그아웃" title="로그아웃">
       {{ icon("log-out") }}
     </a>
   </div>
 </header>
+
+{% if is_global_developer %}
+<div class="ops-modal developer-view-modal" id="developer-view-modal" aria-hidden="true">
+  <button class="ops-modal-backdrop" type="button" data-developer-view-close aria-label="닫기"></button>
+  <section class="ops-modal-dialog developer-view-dialog" role="dialog" aria-modal="true" aria-labelledby="developer-view-title">
+    <header class="ops-modal-header">
+      <div>
+        <span class="developer-view-kicker">Developer preview</span>
+        <h2 id="developer-view-title">권한 시점 변경</h2>
+        <p>실제 디벨로퍼 권한은 유지한 채 선택한 담당자의 화면을 확인합니다.</p>
+      </div>
+      <button class="icon-button" type="button" data-developer-view-close aria-label="닫기">{{ icon("x") }}</button>
+    </header>
+    <div class="ops-modal-body developer-view-body">
+      <div class="developer-view-loading" data-developer-view-loading>
+        <span class="page-loading-spinner" aria-hidden="true"></span>
+        <strong>권한 정보를 불러오는 중</strong>
+      </div>
+      <div class="developer-view-content" data-developer-view-content hidden>
+        <section class="developer-view-step">
+          <div class="developer-view-step-heading">
+            <span>1</span>
+            <div>
+              <strong>확인할 권한</strong>
+              <small>메뉴와 기능이 선택한 권한 기준으로 표시됩니다.</small>
+            </div>
+          </div>
+          <div class="developer-view-role-grid" data-developer-view-roles></div>
+        </section>
+        <section class="developer-view-step" data-developer-view-alliance-step hidden>
+          <div class="developer-view-step-heading">
+            <span>2</span>
+            <div>
+              <strong>확인할 혈맹</strong>
+              <small>현재 서버에서 Discord 역할과 매핑된 혈맹만 표시됩니다.</small>
+            </div>
+          </div>
+          <div class="developer-view-alliance-grid" data-developer-view-alliances></div>
+          <p class="developer-view-empty" data-developer-view-empty hidden>역할과 매핑된 혈맹이 없습니다.</p>
+        </section>
+        <p class="developer-view-error" data-developer-view-error hidden></p>
+      </div>
+    </div>
+    <footer class="developer-view-actions">
+      <button class="secondary-button" type="button" data-developer-view-close>취소</button>
+      <button class="primary-button" type="button" data-developer-view-apply disabled>이 권한으로 보기</button>
+    </footer>
+  </section>
+</div>
+{% endif %}
