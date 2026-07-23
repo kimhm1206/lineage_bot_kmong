@@ -289,6 +289,142 @@
     }
   };
 
+  const clanHistoryState = {
+    page: 1,
+    status: "all",
+    query: "",
+    request: 0,
+    loading: false,
+    hasNext: false,
+  };
+  let clanHistorySearchTimer = 0;
+
+  const renderClanHistoryRow = (record) => {
+    const row = document.createElement("article");
+    row.className = `settlement-history-row status-${record.status_tone || "complete"}`;
+
+    const target = document.createElement("div");
+    target.className = "settlement-history-target";
+    const targetType = document.createElement("small");
+    targetType.textContent = record.target_type || "정산 대상";
+    const targetName = document.createElement("strong");
+    targetName.textContent = record.target_name || "알 수 없는 대상";
+    target.append(targetType, targetName);
+
+    const item = document.createElement("div");
+    item.className = "settlement-history-item";
+    const itemName = document.createElement("strong");
+    itemName.textContent = record.item_name || "이름 없는 아이템";
+    const attendance = document.createElement("small");
+    attendance.textContent = `출석 #${record.attendance_id || "-"} · ${record.occurred_at_label || "-"}`;
+    item.append(itemName, attendance);
+
+    const amount = document.createElement("div");
+    amount.className = "settlement-history-amount";
+    const amountValue = document.createElement("strong");
+    amountValue.textContent = Number(record.amount_adena || 0).toLocaleString("ko-KR");
+    const amountUnit = document.createElement("small");
+    amountUnit.textContent = "아데나";
+    amount.append(amountValue, amountUnit);
+
+    const result = document.createElement("div");
+    result.className = "settlement-history-result";
+    const status = document.createElement("span");
+    status.className = `ops-status ops-status-${record.status_tone || "complete"}`;
+    status.textContent = record.status_label || "완료";
+    const completedAt = document.createElement("small");
+    completedAt.textContent = record.completed_at_label || "-";
+    result.append(status, completedAt);
+
+    row.append(target, item, amount, result);
+    return row;
+  };
+
+  const loadClanHistory = async ({ reset = false } = {}) => {
+    const modal = document.querySelector("[data-clan-history-modal]");
+    if (!modal || (clanHistoryState.loading && !reset)) return;
+    if (reset && clanHistoryState.loading) {
+      clanHistoryState.request += 1;
+      clanHistoryState.loading = false;
+    }
+    if (reset) {
+      clanHistoryState.page = 1;
+      clanHistoryState.hasNext = false;
+    }
+    const requestNumber = ++clanHistoryState.request;
+    const list = modal.querySelector("[data-history-list]");
+    const loading = modal.querySelector("[data-history-loading]");
+    const empty = modal.querySelector("[data-history-empty]");
+    const more = modal.querySelector("[data-history-more]");
+    clanHistoryState.loading = true;
+    loading.hidden = false;
+    loading.textContent = "과거 기록을 불러오는 중입니다.";
+    empty.hidden = true;
+    more.hidden = true;
+    if (reset) {
+      list.hidden = true;
+      list.replaceChildren();
+    }
+
+    const params = new URLSearchParams({
+      guild_id: modal.dataset.guildId,
+      alliance_id: modal.dataset.allianceId,
+      period: modal.dataset.period || "30",
+      history_status: clanHistoryState.status,
+      page: String(clanHistoryState.page),
+    });
+    if (clanHistoryState.query) params.set("q", clanHistoryState.query);
+
+    try {
+      const response = await fetch(`/api/clan-settlement-history?${params.toString()}`, {
+        headers: { Accept: "application/json" },
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.detail || payload.message || "과거 기록을 불러오지 못했습니다.");
+      }
+      if (requestNumber !== clanHistoryState.request) return;
+      modal.querySelector("[data-history-complete-count]").textContent =
+        `${Number(payload.summary?.complete_count || 0).toLocaleString("ko-KR")}건`;
+      modal.querySelector("[data-history-forfeited-count]").textContent =
+        `${Number(payload.summary?.forfeited_count || 0).toLocaleString("ko-KR")}건`;
+      modal.querySelector("[data-history-total-amount]").textContent =
+        Number(String(payload.summary?.total_amount_label || "0").replaceAll(",", "")).toLocaleString("ko-KR");
+
+      const records = Array.isArray(payload.history) ? payload.history : [];
+      const fragment = document.createDocumentFragment();
+      records.forEach((record) => fragment.append(renderClanHistoryRow(record)));
+      list.append(fragment);
+      list.hidden = list.children.length === 0;
+      empty.hidden = list.children.length > 0;
+      clanHistoryState.hasNext = Boolean(payload.pagination?.has_next);
+      more.hidden = !clanHistoryState.hasNext;
+      loading.hidden = true;
+    } catch (error) {
+      if (requestNumber !== clanHistoryState.request) return;
+      loading.hidden = false;
+      loading.textContent = error.message || "과거 기록을 불러오지 못했습니다.";
+    } finally {
+      if (requestNumber === clanHistoryState.request) clanHistoryState.loading = false;
+    }
+  };
+
+  const openClanHistory = (button) => {
+    const modal = document.querySelector("[data-clan-history-modal]");
+    if (!modal) return;
+    modal.dataset.guildId = button.dataset.guildId || modal.dataset.guildId;
+    modal.dataset.allianceId = button.dataset.allianceId || modal.dataset.allianceId;
+    modal.dataset.period = button.dataset.period || modal.dataset.period;
+    clanHistoryState.status = "all";
+    clanHistoryState.query = "";
+    modal.querySelector("[data-history-search]").value = "";
+    modal.querySelectorAll("[data-history-status]").forEach((filter) => {
+      filter.classList.toggle("is-active", filter.dataset.historyStatus === "all");
+    });
+    openModal("clan-settlement-history-modal");
+    loadClanHistory({ reset: true });
+  };
+
   document.addEventListener("submit", (event) => {
     const clientSearchForm = event.target.closest("[data-client-search-form]");
     if (clientSearchForm) {
@@ -333,6 +469,21 @@
     if (bidDelete) deleteBidItem(bidDelete);
     const bidHistoryOpen = event.target.closest("[data-bid-history-open]");
     if (bidHistoryOpen) openBidHistory(bidHistoryOpen);
+    const clanHistoryOpen = event.target.closest("[data-clan-history-open]");
+    if (clanHistoryOpen) openClanHistory(clanHistoryOpen);
+    const clanHistoryStatus = event.target.closest("[data-history-status]");
+    if (clanHistoryStatus) {
+      clanHistoryState.status = clanHistoryStatus.dataset.historyStatus || "all";
+      clanHistoryStatus.parentElement.querySelectorAll("[data-history-status]").forEach((filter) => {
+        filter.classList.toggle("is-active", filter === clanHistoryStatus);
+      });
+      loadClanHistory({ reset: true });
+    }
+    const clanHistoryMore = event.target.closest("[data-history-more]");
+    if (clanHistoryMore && clanHistoryState.hasNext) {
+      clanHistoryState.page += 1;
+      loadClanHistory();
+    }
 
     const statusFilter = event.target.closest("[data-personal-filter] button");
     if (statusFilter) {
@@ -354,6 +505,14 @@
     if (clientSearchInput) applyClientSearch(clientSearchInput);
     const saleInput = event.target.closest("[data-sale-rate]");
     if (saleInput) updateSalePreview(saleInput.form);
+    const historySearch = event.target.closest("[data-history-search]");
+    if (historySearch) {
+      window.clearTimeout(clanHistorySearchTimer);
+      clanHistorySearchTimer = window.setTimeout(() => {
+        clanHistoryState.query = historySearch.value.trim();
+        loadClanHistory({ reset: true });
+      }, 280);
+    }
   });
 
   document.addEventListener("keydown", (event) => {

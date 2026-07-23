@@ -1,6 +1,6 @@
 {% extends "layouts/app_shell.html" %}
 {% from "components/icons.html" import icon %}
-{% from "components/operations.html" import toolbar, summary, empty with context %}
+{% from "components/operations.html" import toolbar, summary, empty, modal with context %}
 
 {% block title %}{{ page_title }} · {{ app_name }}{% endblock %}
 {% block content %}
@@ -13,7 +13,16 @@
       <h2>{{ '혈맹별 정산' if settlement_level == 'alliance' else '인원별 정산' }}</h2>
       <p>{{ '연합 수수료도 혈맹과 동일한 정산 카드로 처리합니다.' if settlement_level == 'alliance' else '내부 수수료도 한 명의 지급 대상처럼 동일하게 처리합니다.' }}</p>
     </div>
-    <div class="settlement-legend"><span><i class="legend-dot is-pending"></i>미완료</span><span><i class="legend-dot is-complete"></i>완료</span>{% if settlement_level == 'clan' %}<span><i class="legend-dot is-forfeited"></i>귀속</span>{% endif %}</div>
+    {% if settlement_level == 'clan' %}
+    <button class="secondary-button settlement-history-open" type="button"
+            data-clan-history-open data-guild-id="{{ guild_id }}"
+            data-alliance-id="{{ alliance_id }}" data-period="{{ period }}">
+      {{ icon("clipboard-list") }}
+      과거 기록
+    </button>
+    {% else %}
+    <div class="settlement-legend"><span><i class="legend-dot is-pending"></i>미완료</span><span><i class="legend-dot is-complete"></i>완료</span></div>
+    {% endif %}
   </section>
 
   {% if entities %}
@@ -42,7 +51,7 @@
         <span class="entity-expand-icon">{{ icon("chevron-right") }}</span>
       </summary>
       <div class="entity-detail-panel">
-        <header><div><h3>아이템별 상세</h3><p>아이템은 정산 근거로만 표시되며 관리 기준은 {{ '혈맹' if settlement_level == 'alliance' else '인원' }}입니다.</p></div><div class="entity-detail-totals"><span>완료 {{ entity.complete_count }}</span>{% if entity.forfeited_count %}<span>귀속 {{ entity.forfeited_count }}</span>{% endif %}<strong>전체 {{ entity.total_count }}</strong></div></header>
+        <header><div><h3>아이템별 상세</h3><p>아이템은 정산 근거로만 표시되며 관리 기준은 {{ '혈맹' if settlement_level == 'alliance' else '인원' }}입니다.</p></div><div class="entity-detail-totals">{% if settlement_level == 'alliance' %}<span>완료 {{ entity.complete_count }}</span>{% if entity.forfeited_count %}<span>귀속 {{ entity.forfeited_count }}</span>{% endif %}{% else %}<span>미완료 {{ entity.pending_count }}</span>{% endif %}<strong>전체 {{ entity.total_count }}</strong></div></header>
         <div class="entity-detail-list">
           {% for detail in entity.details %}
           <article class="entity-detail-row status-{{ detail.status_tone }}" data-payout-id="{{ detail.payout_object_id }}">
@@ -66,7 +75,43 @@
   </section>
   <div class="ops-client-search-empty" data-client-search-empty hidden>검색 결과가 없습니다.</div>
   {% else %}
-  {{ empty('정산 대상이 없습니다.', '판매 완료된 드랍과 이전 단계의 완료 상태를 확인해 주세요.') }}
+    {% if settlement_level == 'clan' %}
+    {{ empty('처리할 미완료 내역이 없습니다.', '완료하거나 귀속한 내역은 과거 기록에서 확인할 수 있습니다.') }}
+    {% else %}
+    {{ empty('정산 대상이 없습니다.', '판매 완료된 드랍과 이전 단계의 완료 상태를 확인해 주세요.') }}
+    {% endif %}
   {% endif %}
 </div>
+
+{% if settlement_level == 'clan' %}
+{% call modal('clan-settlement-history-modal', '혈맹원 분배 과거 기록', '완료 및 혈비 귀속 처리된 내역만 표시합니다.') %}
+<div class="settlement-history-modal" data-clan-history-modal
+     data-guild-id="{{ guild_id }}" data-alliance-id="{{ alliance_id }}" data-period="{{ period }}">
+  <section class="settlement-history-summary">
+    <article><span>완료</span><strong data-history-complete-count>0건</strong></article>
+    <article><span>혈비 귀속</span><strong data-history-forfeited-count>0건</strong></article>
+    <article><span>처리 금액</span><strong data-history-total-amount>0</strong><small>아데나</small></article>
+  </section>
+  <div class="settlement-history-toolbar">
+    <div class="settlement-history-segments" data-history-status-filter>
+      <button class="is-active" type="button" data-history-status="all">전체</button>
+      <button type="button" data-history-status="complete">완료</button>
+      <button type="button" data-history-status="forfeited">귀속</button>
+    </div>
+    <label class="settlement-history-search">
+      {{ icon("search") }}
+      <input type="search" placeholder="유저, 수수료 또는 아이템 검색" data-history-search>
+    </label>
+  </div>
+  <div class="settlement-history-loading" data-history-loading>과거 기록을 불러오는 중입니다.</div>
+  <div class="settlement-history-list" data-history-list hidden></div>
+  <div class="ops-empty-state settlement-history-empty" data-history-empty hidden>
+    <span>{{ icon("clipboard-list") }}</span>
+    <strong>과거 기록이 없습니다.</strong>
+    <p>완료 또는 귀속 처리된 정산이 이곳에 표시됩니다.</p>
+  </div>
+  <button class="secondary-button settlement-history-more" type="button" data-history-more hidden>다음 기록 불러오기</button>
+</div>
+{% endcall %}
+{% endif %}
 {% endblock %}

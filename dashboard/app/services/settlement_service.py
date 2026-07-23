@@ -893,12 +893,14 @@ async def set_payout_status(
                 SELECT po.*, d.guild_id, v.item_name,
                        parent.recipient_alliance_id AS parent_alliance_id,
                        fr.scope_code, fr.alliance_id AS fee_alliance_id,
-                       fv.rule_name
+                       fv.rule_name,
+                       COALESCE(recipient.game_nickname, recipient.discord_nickname) AS recipient_name
                 FROM settlement_payout_objects po
                 JOIN settlement_drops d ON d.drop_id = po.drop_id
                 JOIN catalog_item_versions v ON v.item_version_id = d.item_version_id
                 LEFT JOIN settlement_payout_objects parent
                   ON parent.payout_object_id = po.parent_payout_object_id
+                LEFT JOIN users recipient ON recipient.user_id = po.recipient_user_id
                 LEFT JOIN settlement_fee_rule_versions fv
                   ON fv.fee_rule_version_id = po.fee_rule_version_id
                 LEFT JOIN settlement_fee_rules fr ON fr.fee_rule_id = fv.fee_rule_id
@@ -986,7 +988,7 @@ async def set_payout_status(
             source_id=payout_object_id,
             amount=int(row["amount_adena"]),
             category_name="귀속 혈비",
-            memo=f"미수령 귀속 · {row['item_name']}",
+            memo=f"미수령 귀속 · {row['recipient_name'] or '알 수 없는 유저'} · {row['item_name']}",
         )
     await _audit(
         session,

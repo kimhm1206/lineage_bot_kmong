@@ -426,6 +426,7 @@ async def clan_settlement_entities(
                     WHERE d.guild_id = :guild_id {period_clause}
                       AND parent.recipient_alliance_id = :alliance_id
                       AND po.object_code IN (2, 3)
+                      AND po.status_code = 0
                     ORDER BY d.occurred_at DESC, po.payout_object_id DESC
                 """),
                 {"guild_id": guild_id, "alliance_id": alliance_id, "period_days": period_days},
@@ -474,15 +475,137 @@ async def clan_settlement_entities(
             if lowered in entity["name"].casefold()
             or any(lowered in detail["item_name"].casefold() for detail in entity["details"])
         ]
-    entity_rows.sort(key=lambda item: (item["entity_type"] == "fee", item["state"] == "complete", item["name"]))
+    entity_rows.sort(key=lambda item: (item["entity_type"] == "fee", item["name"]))
+    pending_count = sum(entity["pending_count"] for entity in entity_rows)
     return {
         "entities": entity_rows,
         "summary_cards": [
-            {"label": "분배 대상", "value": f"{len(entity_rows):,}", "meta": "혈맹원과 수수료"},
+            {"label": "분배 대기 대상", "value": f"{len(entity_rows):,}", "meta": "혈맹원과 수수료"},
             {"label": "미분배 아데나", "value": _money(sum(e["pending_amount"] for e in entity_rows)), "meta": "현재 지급할 금액"},
-            {"label": "귀속 아데나", "value": _money(sum(e["forfeited_amount"] for e in entity_rows)), "meta": "혈비 전환"},
-            {"label": "처리 완료", "value": f"{sum(e['complete_count'] + e['forfeited_count'] for e in entity_rows):,}건", "meta": "완료 및 귀속"},
+            {"label": "미완료", "value": f"{pending_count:,}건", "meta": "처리가 필요한 내역"},
         ],
+    }
+
+
+async def clan_settlement_history_page(
+    session: AsyncSession,
+    *,
+    guild_id: int,
+    alliance_id: int,
+    period_days: int,
+    query: str,
+    status_filter: str,
+    page: int,
+) -> dict[str, Any]:
+    period_clause = (
+        ""
+        if period_days == 0
+        else "AND d.occurred_at >= EXTRACT(EPOCH FROM NOW() - (:period_days * INTERVAL '1 day'))::BIGINT"
+    )
+    status_clause = {
+        "complete": "AND po.status_code = 1",
+        "forfeited": "AND po.status_code = 2",
+    }.get(status_filter, "AND po.status_code IN (1, 2)")
+    search_clause = """
+        AND (
+            COALESCE(u.game_nickname, u.discord_nickname, fv.rule_name, '') ILIKE :query
+            OR v.item_name ILIKE :query
+            OR CAST(d.attendance_id AS TEXT) ILIKE :query
+        )
+    """ if query else ""
+    params = {
+        "guild_id": guild_id,
+        "alliance_id": alliance_id,
+        "period_days": period_days,
+        "query": f"%{query}%",
+    }
+    from_sql = f"""
+        FROM settlement_payout_objects po
+        JOIN settlement_drops d ON d.drop_id = po.drop_id
+        JOIN settlement_drop_sales s ON s.drop_id = d.drop_id AND s.status_code = 1
+        JOIN catalog_item_versions v ON v.item_version_id = d.item_version_id
+        JOIN settlement_payout_objects parent ON parent.payout_object_id = po.parent_payout_object_id
+        LEFT JOIN users u ON u.user_id = po.recipient_user_id
+        LEFT JOIN settlement_fee_rule_versions fv ON fv.fee_rule_version_id = po.fee_rule_version_id
+        WHERE d.guild_id = :guild_id
+          AND parent.recipient_alliance_id = :alliance_id
+          AND po.object_code IN (2, 3)
+          {period_clause}
+          {status_clause}
+          {search_clause}
+    """
+    total = int(
+        await session.scalar(
+            text(f"SELECT COUNT(*) {from_sql}"),
+            params,
+        )
+        or 0
+    )
+    pagination = _pagination(total, page, 40)
+    rows = [
+        dict(row)
+        for row in (
+            await session.execute(
+                text(f"""
+                    SELECT po.payout_object_id, po.object_code, po.amount_adena,
+                           po.status_code, d.attendance_id, v.item_name,
+                           COALESCE(
+                               u.game_nickname,
+                               u.discord_nickname,
+                               fv.rule_name,
+                               '알 수 없는 대상'
+                           ) AS target_name,
+                           TO_CHAR(TO_TIMESTAMP(d.occurred_at), 'MM/DD HH24:MI') AS occurred_at_label,
+                           TO_CHAR(TO_TIMESTAMP(po.completed_at), 'YYYY-MM-DD HH24:MI') AS completed_at_label
+                    {from_sql}
+                    ORDER BY po.completed_at DESC, po.payout_object_id DESC
+                    LIMIT :limit OFFSET :offset
+                """),
+                {
+                    **params,
+                    "limit": pagination["page_size"],
+                    "offset": pagination["offset"],
+                },
+            )
+        ).mappings().all()
+    ]
+    for row in rows:
+        status_code = int(row["status_code"])
+        row["payout_object_id"] = int(row["payout_object_id"])
+        row["attendance_id"] = int(row["attendance_id"])
+        row["amount_adena"] = int(row["amount_adena"])
+        row["amount_label"] = _money(row["amount_adena"])
+        row["status_label"] = STATUS_LABELS[status_code]
+        row["status_tone"] = STATUS_TONES[status_code]
+        row["target_type"] = "혈맹원" if int(row["object_code"]) == 2 else "내부 수수료"
+    summary = (
+        await session.execute(
+            text(f"""
+                SELECT
+                    COUNT(*) FILTER (WHERE po.status_code = 1) AS complete_count,
+                    COUNT(*) FILTER (WHERE po.status_code = 2) AS forfeited_count,
+                    COALESCE(SUM(po.amount_adena) FILTER (WHERE po.status_code IN (1, 2)), 0) AS total_amount
+                FROM settlement_payout_objects po
+                JOIN settlement_drops d ON d.drop_id = po.drop_id
+                JOIN settlement_drop_sales s ON s.drop_id = d.drop_id AND s.status_code = 1
+                JOIN settlement_payout_objects parent ON parent.payout_object_id = po.parent_payout_object_id
+                WHERE d.guild_id = :guild_id
+                  AND parent.recipient_alliance_id = :alliance_id
+                  AND po.object_code IN (2, 3)
+                  AND po.status_code IN (1, 2)
+                  {period_clause}
+            """),
+            params,
+        )
+    ).mappings().one()
+    return {
+        "history": rows,
+        "pagination": pagination,
+        "summary": {
+            "complete_count": int(summary["complete_count"] or 0),
+            "forfeited_count": int(summary["forfeited_count"] or 0),
+            "total_amount_label": _money(summary["total_amount"]),
+        },
     }
 
 

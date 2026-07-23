@@ -5097,6 +5097,14 @@ body.modal-open {
   align-items: center;
 }
 
+.settlement-history-open {
+  flex: 0 0 auto;
+}
+
+.settlement-history-open .icon {
+  width: 16px;
+}
+
 .settlement-legend {
   display: flex;
   gap: 14px;
@@ -5291,6 +5299,196 @@ body.modal-open {
 
 .entity-detail-row.status-complete { border-left-color: var(--success); }
 .entity-detail-row.status-forfeited { border-left-color: var(--muted-strong); }
+
+.settlement-history-modal {
+  display: grid;
+  gap: 14px;
+  min-height: 430px;
+}
+
+.settlement-history-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.settlement-history-summary article {
+  display: grid;
+  min-width: 0;
+  min-height: 76px;
+  align-content: center;
+  gap: 3px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel-subtle);
+}
+
+.settlement-history-summary span,
+.settlement-history-summary small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.settlement-history-summary strong {
+  overflow: hidden;
+  color: var(--text-strong);
+  font-size: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settlement-history-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.settlement-history-segments {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel-subtle);
+}
+
+.settlement-history-segments button {
+  min-width: 58px;
+  min-height: 32px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted-strong);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.settlement-history-segments button:hover,
+.settlement-history-segments button.is-active {
+  background: var(--panel);
+  color: var(--accent-strong);
+  box-shadow: 0 0 0 1px var(--line);
+}
+
+.settlement-history-search {
+  display: flex;
+  width: min(320px, 100%);
+  min-height: 40px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 11px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel);
+}
+
+.settlement-history-search:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.settlement-history-search .icon {
+  width: 16px;
+  color: var(--muted);
+}
+
+.settlement-history-search input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text-strong);
+  font: inherit;
+  font-size: 13px;
+}
+
+.settlement-history-loading {
+  display: grid;
+  min-height: 250px;
+  place-items: center;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.settlement-history-loading[hidden],
+.settlement-history-list[hidden],
+.settlement-history-more[hidden] {
+  display: none;
+}
+
+.settlement-history-list {
+  display: grid;
+  max-height: min(54vh, 560px);
+  gap: 7px;
+  padding-right: 4px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.settlement-history-row {
+  display: grid;
+  grid-template-columns: minmax(150px, .85fr) minmax(220px, 1.3fr) minmax(105px, .55fr) minmax(120px, .65fr);
+  align-items: center;
+  gap: 12px;
+  min-height: 66px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--success);
+  border-radius: 7px;
+  background: var(--panel);
+}
+
+.settlement-history-row.status-forfeited {
+  border-left-color: var(--warning);
+}
+
+.settlement-history-target,
+.settlement-history-item,
+.settlement-history-amount,
+.settlement-history-result {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.settlement-history-row strong {
+  overflow: hidden;
+  color: var(--text-strong);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settlement-history-row span,
+.settlement-history-row small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settlement-history-result strong {
+  color: var(--success);
+}
+
+.settlement-history-row.status-forfeited .settlement-history-result strong {
+  color: var(--warning);
+}
+
+.settlement-history-more {
+  justify-self: center;
+}
 
 .detail-item,
 .detail-amount {
@@ -5908,6 +6106,8 @@ body.modal-open {
   .entity-expand-icon { grid-column: 5; grid-row: 1; }
   .entity-detail-row { grid-template-columns: minmax(180px, 1fr) 120px 74px; }
   .detail-actions { grid-column: 1 / -1; padding-top: 7px; border-top: 1px solid var(--line); }
+  .settlement-history-row { grid-template-columns: minmax(160px, .8fr) minmax(200px, 1.2fr) minmax(100px, .5fr); }
+  .settlement-history-result { grid-column: 1 / -1; grid-template-columns: auto 1fr; align-items: center; }
   .item-quick-create { grid-template-columns: minmax(200px, 1fr) minmax(170px, .7fr) auto; }
   .item-create-copy { grid-column: 1 / -1; }
   .item-row-editor { padding-left: 14px; }
@@ -5931,6 +6131,8 @@ body.modal-open {
   .drop-actions { justify-content: flex-start; overflow-x: auto; }
   .drop-alliance-grid { grid-template-columns: 1fr; }
   .settlement-legend { display: none; }
+  .settlement-heading { align-items: stretch; }
+  .settlement-history-open { width: 100%; }
   .settlement-entity-card > summary { grid-template-columns: 38px minmax(0, 1fr) 22px; gap: 11px; }
   .entity-primary-value,
   .entity-state-box { grid-column: 2; }
@@ -5943,6 +6145,14 @@ body.modal-open {
   .entity-detail-row { grid-template-columns: minmax(0, 1fr) 100px; gap: 9px; }
   .entity-detail-row > .ops-status { grid-column: 1; justify-self: start; }
   .detail-actions { grid-column: 1 / -1; }
+  .settlement-history-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .settlement-history-summary article:last-child { grid-column: 1 / -1; }
+  .settlement-history-toolbar { align-items: stretch; flex-direction: column; }
+  .settlement-history-search { width: 100%; }
+  .settlement-history-row { grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+  .settlement-history-item,
+  .settlement-history-result { grid-column: 1 / -1; }
+  .settlement-history-result { grid-template-columns: auto minmax(0, 1fr); }
   .fee-rule-grid,
   .personal-distribution-grid { grid-template-columns: 1fr; }
   .fee-rule-card { grid-template-columns: 38px minmax(0, 1fr) 38px; }

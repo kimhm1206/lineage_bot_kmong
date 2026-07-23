@@ -691,3 +691,35 @@ async def bid_purchase_history(
             alliance_id=alliance_id,
         ),
     }
+
+
+@router.get("/api/clan-settlement-history")
+async def clan_settlement_history(
+    request: Request,
+    guild_id: int,
+    alliance_id: int,
+    period: int | None = None,
+    q: str = "",
+    history_status: str = "all",
+    page: int = 1,
+    session: AsyncSession = Depends(get_session),
+):
+    await require_alliance_access(
+        request,
+        session,
+        guild_id=guild_id,
+        alliance_id=alliance_id,
+    )
+    selected_status = history_status if history_status in {"all", "complete", "forfeited"} else "all"
+    return {
+        "ok": True,
+        **await operations_store.clan_settlement_history_page(
+            session,
+            guild_id=guild_id,
+            alliance_id=alliance_id,
+            period_days=workspace_store.normalize_period(period),
+            query=_query(q),
+            status_filter=selected_status,
+            page=max(page, 1),
+        ),
+    }
