@@ -101,20 +101,34 @@
 {% if settlement_level == 'alliance' %}
 {% call modal('alliance-settlement-history-modal', '혈맹 분배 완료 기록', '선택한 혈맹의 완료 기록만 불러옵니다.') %}
 <div class="alliance-history-modal" data-alliance-history-modal>
-  <section class="alliance-history-heading">
-    <div><span>혈맹</span><strong data-alliance-history-name>-</strong></div>
-    <div><span>완료 분배</span><strong data-alliance-history-count>0건</strong></div>
-    <div><span>완료 금액</span><strong data-alliance-history-amount>0</strong><small>아데나</small></div>
+  <section class="alliance-history-overview">
+    <header>
+      <div><span>정보</span><strong>완료 현황</strong></div>
+      <p>선택한 혈맹의 누적 완료 결과입니다.</p>
+    </header>
+    <div class="alliance-history-heading">
+      <div><span>혈맹</span><strong data-alliance-history-name>-</strong></div>
+      <div><span>완료 분배</span><strong data-alliance-history-count>0건</strong></div>
+      <div><span>완료 금액</span><strong data-alliance-history-amount>0</strong><small>아데나</small></div>
+    </div>
   </section>
-  <div class="settlement-history-loading" data-alliance-history-loading>완료 기록을 불러오는 중입니다.</div>
-  <div class="alliance-history-list" data-alliance-history-list hidden></div>
-  <div class="ops-empty-state alliance-history-empty" data-alliance-history-empty hidden>
-    <span>{{ icon("clipboard-list") }}</span>
-    <strong>완료 기록이 없습니다.</strong>
-    <p>이 혈맹에 완료 처리된 분배가 아직 없습니다.</p>
-  </div>
-  <button class="secondary-button settlement-history-more" type="button"
-          data-alliance-history-more hidden>다음 기록 불러오기</button>
+  <section class="alliance-history-records">
+    <header>
+      <div><span>완료 항목</span><strong>아이템별 분배 기록</strong></div>
+      <p>최근 완료 항목부터 표시됩니다.</p>
+    </header>
+    <div class="alliance-history-records-body">
+      <div class="settlement-history-loading" data-alliance-history-loading>완료 기록을 불러오는 중입니다.</div>
+      <div class="alliance-history-list" data-alliance-history-list hidden></div>
+      <div class="ops-empty-state alliance-history-empty" data-alliance-history-empty hidden>
+        <span>{{ icon("clipboard-list") }}</span>
+        <strong>완료 기록이 없습니다.</strong>
+        <p>이 혈맹에 완료 처리된 분배가 아직 없습니다.</p>
+      </div>
+    </div>
+    <button class="secondary-button settlement-history-more" type="button"
+            data-alliance-history-more hidden>다음 기록 불러오기</button>
+  </section>
 </div>
 {% endcall %}
 {% elif settlement_level == 'clan' %}

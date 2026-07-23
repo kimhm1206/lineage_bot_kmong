@@ -542,7 +542,6 @@ async def alliance_settlement_history_page(
                                TO_TIMESTAMP(po.completed_at),
                                'YYYY-MM-DD HH24:MI'
                            ) AS completed_at_label,
-                           COUNT(child.payout_object_id) AS child_count,
                            COUNT(child.payout_object_id) FILTER (
                                WHERE child.status_code <> 0
                            ) AS started_child_count
@@ -577,13 +576,12 @@ async def alliance_settlement_history_page(
         row["attendance_id"] = int(row["attendance_id"])
         row["amount_adena"] = int(row["amount_adena"])
         row["amount_label"] = _money(row["amount_adena"])
-        row["child_count"] = int(row["child_count"] or 0)
         row["started_child_count"] = int(row["started_child_count"] or 0)
         row["can_cancel"] = row["started_child_count"] == 0
         row["progress_label"] = (
-            "혈맹 분배 시작 전"
+            "완료 취소 가능"
             if row["can_cancel"]
-            else f"하위 정산 {row['started_child_count']:,}건 처리"
+            else "혈맹 분배 진행됨"
         )
     return {
         "alliance_name": str(alliance_name),

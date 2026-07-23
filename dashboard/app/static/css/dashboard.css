@@ -5324,26 +5324,80 @@ body.modal-open {
 
 .settlement-history-modal {
   display: grid;
+  height: 100%;
+  min-height: 0;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
   gap: 14px;
-  min-height: 430px;
 }
 
 .alliance-history-modal {
   display: grid;
-  min-height: 430px;
+  height: 100%;
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 14px;
+}
+
+.alliance-history-overview,
+.alliance-history-records {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-subtle);
+}
+
+.alliance-history-overview {
+  padding: 14px;
+}
+
+.alliance-history-overview > header,
+.alliance-history-records > header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.alliance-history-overview > header {
+  margin-bottom: 10px;
+}
+
+.alliance-history-overview > header div,
+.alliance-history-records > header div {
+  display: grid;
+  gap: 3px;
+}
+
+.alliance-history-overview > header span,
+.alliance-history-records > header span {
+  color: var(--accent-strong);
+  font-size: 10px;
+  font-weight: 850;
+}
+
+.alliance-history-overview > header strong,
+.alliance-history-records > header strong {
+  color: var(--text-strong);
+  font-size: 15px;
+}
+
+.alliance-history-overview > header p,
+.alliance-history-records > header p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
 }
 
 .alliance-history-heading {
   display: grid;
-  grid-template-columns: minmax(160px, 1fr) repeat(2, minmax(130px, .75fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
 }
 
 .alliance-history-heading > div {
   display: grid;
+  height: 82px;
   min-width: 0;
-  min-height: 76px;
   align-content: center;
   gap: 4px;
   padding: 12px 14px;
@@ -5365,6 +5419,29 @@ body.modal-open {
   font-size: 18px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.alliance-history-records {
+  display: grid;
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+}
+
+.alliance-history-records > header {
+  padding: 14px 16px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.alliance-history-records-body {
+  min-height: 0;
+  padding: 10px;
+  overflow: hidden;
+}
+
+.alliance-history-records > .settlement-history-more {
+  margin: 0 auto 10px;
 }
 
 .settlement-history-summary {
@@ -5490,7 +5567,9 @@ body.modal-open {
 
 .alliance-history-list {
   display: grid;
-  max-height: min(54vh, 560px);
+  height: 100%;
+  max-height: none;
+  grid-auto-rows: 82px;
   gap: 7px;
   padding-right: 4px;
   overflow-y: auto;
@@ -5501,9 +5580,9 @@ body.modal-open {
 .alliance-history-row {
   display: grid;
   grid-template-columns: minmax(210px, 1.25fr) minmax(120px, .55fr) minmax(150px, .7fr) auto;
+  height: 82px;
   align-items: center;
   gap: 12px;
-  min-height: 72px;
   padding: 10px 12px;
   border: 1px solid var(--line);
   border-left: 3px solid var(--success);
@@ -5545,17 +5624,24 @@ body.modal-open {
 }
 
 .alliance-history-empty {
-  min-height: 250px;
+  height: 100%;
+  min-height: 0;
 }
 
 .settlement-history-list {
   display: grid;
-  max-height: min(54vh, 560px);
+  height: 100%;
+  max-height: none;
   gap: 7px;
   padding-right: 4px;
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
+}
+
+.alliance-history-records-body > .settlement-history-loading {
+  height: 100%;
+  min-height: 0;
 }
 
 .settlement-history-row {
@@ -6090,6 +6176,16 @@ body.modal-open {
 .ops-modal-header h2 { margin: 0; color: var(--text-strong); font-size: 20px; }
 .ops-modal-header p { margin: 6px 0 0; color: var(--muted); font-size: 12px; }
 .ops-modal-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 22px; background: var(--panel); }
+#alliance-settlement-history-modal .ops-modal-dialog,
+#clan-settlement-history-modal .ops-modal-dialog {
+  width: min(1080px, calc(100vw - 40px));
+  height: min(820px, calc(100dvh - 48px));
+  max-height: none;
+}
+#alliance-settlement-history-modal .ops-modal-body,
+#clan-settlement-history-modal .ops-modal-body {
+  overflow: hidden;
+}
 .ops-form { display: grid; gap: 18px; }
 .ops-form-grid { display: grid; gap: 13px; }
 .ops-form-grid-two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -6157,6 +6253,11 @@ body.modal-open {
 }
 
 @media (max-width: 680px) {
+  #alliance-settlement-history-modal .ops-modal-dialog,
+  #clan-settlement-history-modal .ops-modal-dialog {
+    width: calc(100vw - 20px);
+    height: calc(100dvh - 20px);
+  }
   .ops-control,
   .ops-control-compact,
   .ops-control-server,
@@ -6195,8 +6296,14 @@ body.modal-open {
   .settlement-history-item,
   .settlement-history-result { grid-column: 1 / -1; }
   .settlement-history-result { grid-template-columns: auto minmax(0, 1fr); }
-  .alliance-history-heading { grid-template-columns: 1fr; }
-  .alliance-history-row { grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+  .alliance-history-overview { padding: 10px; }
+  .alliance-history-overview > header,
+  .alliance-history-records > header { align-items: flex-start; flex-direction: column; gap: 5px; }
+  .alliance-history-heading { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .alliance-history-heading > div { height: 74px; padding: 9px; }
+  .alliance-history-heading strong { font-size: 15px; }
+  .alliance-history-list { grid-auto-rows: 104px; }
+  .alliance-history-row { height: 104px; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
   .alliance-history-record { grid-column: 1 / -1; }
   .alliance-history-progress { grid-column: 1; }
   .alliance-history-row > form { grid-column: 2; grid-row: 2 / span 2; align-self: center; }

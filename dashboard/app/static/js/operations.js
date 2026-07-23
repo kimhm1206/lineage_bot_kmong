@@ -439,9 +439,7 @@
     progress.className = `alliance-history-progress${record.can_cancel ? " is-cancellable" : ""}`;
     const progressLabel = document.createElement("strong");
     progressLabel.textContent = record.progress_label || "혈맹 분배 상태 확인";
-    const childCount = document.createElement("small");
-    childCount.textContent = `하위 정산 ${Number(record.child_count || 0).toLocaleString("ko-KR")}건`;
-    progress.append(progressLabel, childCount);
+    progress.append(progressLabel);
 
     row.append(recordCopy, amount, progress);
     if (record.can_cancel) {
