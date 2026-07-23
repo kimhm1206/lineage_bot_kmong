@@ -137,16 +137,6 @@
     openModal("drop-sale-modal");
   };
 
-  const populateItemEdit = (button) => {
-    const item = JSON.parse(button.dataset.item);
-    const form = document.querySelector("[data-item-edit-form]");
-    form.action = `/api/items/${item.item_id}`;
-    form.elements.item_name.value = item.item_name;
-    form.elements.default_price.value = Number(item.default_price || 0);
-    form.elements.is_active.checked = Boolean(item.is_active);
-    openModal("item-edit-modal");
-  };
-
   const populateFeeEdit = (button) => {
     const fee = JSON.parse(button.dataset.fee);
     const form = document.querySelector("[data-fee-edit-form]");
@@ -203,8 +193,6 @@
     if (dropEdit) populateDropEdit(dropEdit);
     const saleOpen = event.target.closest("[data-sale-open]");
     if (saleOpen) populateSale(saleOpen);
-    const itemEdit = event.target.closest("[data-item-edit]");
-    if (itemEdit) populateItemEdit(itemEdit);
     const feeEdit = event.target.closest("[data-fee-edit]");
     if (feeEdit) populateFeeEdit(feeEdit);
     const bidEdit = event.target.closest("[data-bid-edit]");

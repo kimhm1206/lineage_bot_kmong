@@ -10,7 +10,7 @@
     {'value': 'pending', 'label': '판매 대기'},
     {'value': 'sold', 'label': '판매 완료'}
   ] %}
-  {{ toolbar(guilds, guild_id, query, period_options, status_options=status_options, selected_status=selected_status, primary_label='드랍 등록', primary_modal='drop-create-modal') }}
+  {{ toolbar(guilds, guild_id, query, period_options, status_options=status_options, selected_status=selected_status, primary_label='드랍 등록', primary_modal='drop-create-modal', search_label='드랍 검색', search_placeholder='아이템 또는 출석 회차 검색') }}
   {{ summary(summary_cards) }}
 
   <section class="ops-section-heading">
@@ -115,4 +115,4 @@
 {% endcall %}
 {% endblock %}
 
-{% block scripts %}<script src="{{ url_for('static', path='/js/operations.js') }}?v=20260723.2" defer></script>{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', path='/js/operations.js') }}?v=20260723.3" defer></script>{% endblock %}

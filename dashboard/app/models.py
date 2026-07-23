@@ -53,7 +53,6 @@ class Item(Base):
     )
     item_name: Mapped[str] = mapped_column(Text, nullable=False)
     default_price: Mapped[int | None] = mapped_column(BigInteger)
-    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
 
 class AttendanceSession(Base):

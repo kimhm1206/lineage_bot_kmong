@@ -505,17 +505,7 @@ async def update_item(item_id: int, request: Request, session: AsyncSession = De
             item_id=item_id,
             item_name=str(form.get("item_name") or ""),
             default_price=form.get("default_price") or 0,
-            is_active=_bool(form.get("is_active")),
         ),
-    )
-
-
-@router.post("/api/items/{item_id}/delete")
-async def deactivate_item(item_id: int, request: Request, session: AsyncSession = Depends(get_session)):
-    form = await request.form()
-    return await _result(
-        session,
-        settlement_service.deactivate_item(session, guild_id=int(_int(form.get("guild_id"))), item_id=item_id),
     )
 
 

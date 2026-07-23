@@ -5,7 +5,7 @@
 {% block title %}{{ page_title }} · {{ app_name }}{% endblock %}
 {% block content %}
 <div data-live-page>
-  {{ toolbar(guilds, guild_id, query, alliances=alliances if scope_code == 2 else [], alliance_id=alliance_id, primary_label='수수료 추가', primary_modal='fee-create-modal') }}
+  {{ toolbar(guilds, guild_id, query, alliances=alliances if scope_code == 2 else [], alliance_id=alliance_id, primary_label='수수료 추가', primary_modal='fee-create-modal', search_label='수수료 검색', search_placeholder='수수료 이름 검색') }}
   <section class="fee-overview-strip">
     <div><span>활성 수수료 합계</span><strong>{{ total_rate_label }}</strong><small>100%를 초과할 수 없습니다.</small></div>
     <div><span>현재 미정산 수수료</span><strong>{{ pending_total_label }}</strong><small>아데나</small></div>
@@ -46,4 +46,4 @@
 </form>
 {% endcall %}
 {% endblock %}
-{% block scripts %}<script src="{{ url_for('static', path='/js/operations.js') }}?v=20260723.2" defer></script>{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', path='/js/operations.js') }}?v=20260723.3" defer></script>{% endblock %}

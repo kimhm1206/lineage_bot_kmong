@@ -140,7 +140,6 @@ async def _catalog_version(session: AsyncSession, item_id: int, guild_id: int) -
                 FROM items
                 WHERE item_id = :item_id
                   AND guild_id = :guild_id
-                  AND is_active IS TRUE
             """),
             {"item_id": item_id, "guild_id": guild_id},
         )
@@ -181,7 +180,6 @@ async def _drop_item_snapshot(session: AsyncSession, item_id: int, guild_id: int
             FROM items
             WHERE item_id = :item_id
               AND guild_id = :guild_id
-              AND is_active IS TRUE
         """),
         {"item_id": item_id, "guild_id": guild_id},
     )
@@ -1092,8 +1090,8 @@ async def create_item(
     item_id = int(
         await session.scalar(
             text("""
-                INSERT INTO items (guild_id, item_name, default_price, is_active, updated_at)
-                VALUES (:guild_id, :name, :price, TRUE, NOW())
+                INSERT INTO items (guild_id, item_name, default_price, updated_at)
+                VALUES (:guild_id, :name, :price, NOW())
                 RETURNING item_id
             """),
             {"guild_id": guild_id, "name": name, "price": price},
@@ -1111,7 +1109,6 @@ async def update_item(
     item_id: int,
     item_name: str,
     default_price: Any,
-    is_active: bool,
 ) -> OperationResult:
     name = _clean_name(item_name, label="아이템 이름")
     price = _positive_int(default_price, label="기본 원화 시세", allow_zero=True)
@@ -1128,30 +1125,16 @@ async def update_item(
     updated = await session.execute(
         text("""
             UPDATE items
-            SET item_name = :name, default_price = :price,
-                is_active = :is_active, updated_at = NOW()
+            SET item_name = :name, default_price = :price, updated_at = NOW()
             WHERE item_id = :item_id AND guild_id = :guild_id
         """),
-        {"guild_id": guild_id, "item_id": item_id, "name": name, "price": price, "is_active": is_active},
+        {"guild_id": guild_id, "item_id": item_id, "name": name, "price": price},
     )
     if updated.rowcount == 0:
         raise SettlementError("아이템을 찾을 수 없습니다.")
-    if is_active:
-        await _catalog_version(session, item_id, guild_id)
+    await _catalog_version(session, item_id, guild_id)
     await _audit(session, guild_id=guild_id, action_code="item_update", target_id=item_id, item_id=item_id, amount_value=price)
     return OperationResult("아이템 정보를 수정했습니다.", (item_id,))
-
-
-async def deactivate_item(session: AsyncSession, *, guild_id: int, item_id: int) -> OperationResult:
-    updated = await session.execute(
-        text("UPDATE items SET is_active = FALSE, updated_at = NOW() WHERE item_id = :item_id AND guild_id = :guild_id"),
-        {"item_id": item_id, "guild_id": guild_id},
-    )
-    if updated.rowcount == 0:
-        raise SettlementError("아이템을 찾을 수 없습니다.")
-    await _audit(session, guild_id=guild_id, action_code="item_delete", target_id=item_id, item_id=item_id)
-    return OperationResult("아이템을 드랍 선택 목록에서 제외했습니다.", (item_id,))
-
 
 async def create_fee_rule(
     session: AsyncSession,

@@ -5,7 +5,7 @@
 {% block title %}{{ page_title }} · {{ app_name }}{% endblock %}
 {% block content %}
 <div data-live-page>
-  {{ toolbar(guilds, guild_id, query, primary_label='입찰 아이템 추가', primary_modal='bid-create-modal') }}
+  {{ toolbar(guilds, guild_id, query, primary_label='입찰 아이템 추가', primary_modal='bid-create-modal', search_label='아이템 검색', search_placeholder='입찰 아이템 이름 검색') }}
   {{ summary(summary_cards) }}
   <section class="ops-section-heading"><div><h2>입찰 진행표</h2><p>아이템을 펼쳐 현재 회차의 혈맹별 완료 상태를 바로 변경합니다.</p></div><span>{{ alliances|length }}개 혈맹</span></section>
   {% if bid_items %}
@@ -58,4 +58,4 @@
 </form>
 {% endcall %}
 {% endblock %}
-{% block scripts %}<script src="{{ url_for('static', path='/js/operations.js') }}?v=20260723.2" defer></script>{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', path='/js/operations.js') }}?v=20260723.3" defer></script>{% endblock %}

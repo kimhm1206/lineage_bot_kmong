@@ -2,15 +2,7 @@
 
 {% macro filters(action, guilds, guild_id, period_options, query, alliances=[], alliance_id=None, alliance_mode="none", settings_href="", export_href="") %}
 <form class="attendance-filter-bar" method="get" action="{{ action }}">
-  <label class="attendance-filter-field">
-    <span>서버</span>
-    <select name="guild_id" onchange="this.form.submit()" {% if not guilds %}disabled{% endif %}>
-      {% if not guilds %}<option>등록된 서버 없음</option>{% endif %}
-      {% for guild in guilds %}
-      <option value="{{ guild.guild_id }}" {% if guild.guild_id == guild_id %}selected{% endif %}>{{ guild.name }}</option>
-      {% endfor %}
-    </select>
-  </label>
+  {% if guild_id %}<input type="hidden" name="guild_id" value="{{ guild_id }}">{% endif %}
 
   {% if alliance_mode != "none" %}
   <label class="attendance-filter-field">

@@ -759,10 +759,10 @@ async def items_page(
         session,
         count_sql=f"SELECT COUNT(*) FROM items i {scope} {search}",
         rows_sql=f"""
-            SELECT i.item_id, i.item_name, i.default_price, i.is_active,
+            SELECT i.item_id, i.item_name, i.default_price,
                    TO_CHAR(i.updated_at, 'YYYY-MM-DD HH24:MI') AS updated_at_label
             FROM items i {scope} {search}
-            ORDER BY i.is_active DESC, i.item_name
+            ORDER BY i.item_name
             LIMIT :limit OFFSET :offset
         """,
         params=params,
@@ -770,19 +770,12 @@ async def items_page(
     )
     for row in rows:
         row["price_label"] = f"{_money(row['default_price'])}원" if row["default_price"] is not None else "미설정"
-        row["state"] = "사용" if row["is_active"] else "중지"
-        row["state_tone"] = "success" if row["is_active"] else "muted"
     return {
-        "summary_cards": [
-            {"label": "아이템", "value": f"{pagination['total']:,}개", "meta": "현재 서버 전용"},
-            {"label": "가격 설정", "value": f"{sum(1 for r in rows if r['default_price'] is not None):,}개", "meta": "현재 페이지"},
-            {"label": "사용 중", "value": f"{sum(1 for r in rows if r['is_active']):,}개", "meta": "현재 페이지"},
-        ],
+        "summary_cards": [],
         "columns": [
             {"key": "item_name", "label": "아이템", "emphasis": True},
             {"key": "price_label", "label": "기본 원화 시세", "numeric": True},
             {"key": "updated_at_label", "label": "수정 시각"},
-            {"key": "state", "label": "상태", "status_key": "state_tone"},
         ],
         "rows": rows,
         "pagination": pagination,

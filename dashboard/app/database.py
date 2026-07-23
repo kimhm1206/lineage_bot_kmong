@@ -575,6 +575,26 @@ async def apply_local_schema_cleanup() -> bool:
                 """)
             )
             changed = True
+
+        item_active_state_cleanup_applied = await connection.scalar(
+            text("SELECT 1 FROM schema_migrations WHERE version = 11")
+        )
+        if not item_active_state_cleanup_applied:
+            await connection.execute(text("DROP INDEX IF EXISTS idx_items_guild_active_name"))
+            await connection.execute(text("ALTER TABLE items DROP COLUMN IF EXISTS is_active"))
+            await connection.execute(
+                text("""
+                    CREATE INDEX IF NOT EXISTS idx_items_guild_name
+                    ON items (guild_id, item_name)
+                """)
+            )
+            await connection.execute(
+                text("""
+                    INSERT INTO schema_migrations(version, applied_at)
+                    VALUES (11, EXTRACT(EPOCH FROM NOW())::BIGINT)
+                """)
+            )
+            changed = True
     return changed
 
 

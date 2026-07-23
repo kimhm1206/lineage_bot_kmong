@@ -1,15 +1,9 @@
 {% from "components/icons.html" import icon %}
 
-{% macro toolbar(guilds, guild_id, query='', period_options=[], alliances=[], alliance_id=None, status_options=[], selected_status='', action='', primary_label='', primary_modal='') %}
+{% macro toolbar(guilds, guild_id, query='', period_options=[], alliances=[], alliance_id=None, status_options=[], selected_status='', action='', primary_label='', primary_modal='', search_label='검색', search_placeholder='이름 또는 회차 검색') %}
 <section class="ops-toolbar">
   <form class="ops-filter-form" method="get" action="{{ action or request.url.path }}">
-    <label class="ops-control ops-control-server">
-      <span>서버</span>
-      <select name="guild_id" onchange="this.form.submit()" {% if not guilds %}disabled{% endif %}>
-        {% if not guilds %}<option>등록 서버 없음</option>{% endif %}
-        {% for guild in guilds %}<option value="{{ guild.guild_id }}" {% if guild.guild_id == guild_id %}selected{% endif %}>{{ guild.name }}</option>{% endfor %}
-      </select>
-    </label>
+    {% if guild_id %}<input type="hidden" name="guild_id" value="{{ guild_id }}">{% endif %}
     {% if alliances %}
     <label class="ops-control">
       <span>혈맹</span>
@@ -35,8 +29,8 @@
     </label>
     {% endif %}
     <label class="ops-control ops-search-control">
-      <span>검색</span>
-      <span class="ops-search-input">{{ icon("search") }}<input type="search" name="q" value="{{ query }}" placeholder="이름 또는 회차 검색"></span>
+      <span>{{ search_label }}</span>
+      <span class="ops-search-input">{{ icon("search") }}<input type="search" name="q" value="{{ query }}" placeholder="{{ search_placeholder }}"></span>
     </label>
     <button class="secondary-button ops-search-submit" type="submit">조회</button>
   </form>

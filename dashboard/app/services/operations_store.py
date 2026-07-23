@@ -211,7 +211,7 @@ async def drop_management_page(
                 text("""
                     SELECT item_id, item_name, default_price
                     FROM items
-                    WHERE guild_id = :guild_id AND is_active IS TRUE
+                    WHERE guild_id = :guild_id
                     ORDER BY item_name
                 """),
                 {"guild_id": guild_id},
@@ -492,11 +492,11 @@ async def item_management_page(session: AsyncSession, *, guild_id: int, query: s
         for row in (
             await session.execute(
                 text(f"""
-                    SELECT item_id, guild_id, item_name, default_price, is_active,
+                    SELECT item_id, guild_id, item_name, default_price,
                            TO_CHAR(updated_at, 'YYYY-MM-DD HH24:MI') AS updated_at_label
                     FROM items
                     WHERE guild_id = :guild_id {search}
-                    ORDER BY is_active DESC, item_name
+                    ORDER BY item_name
                 """),
                 {"guild_id": guild_id, "query": f"%{query}%"},
             )
@@ -509,11 +509,6 @@ async def item_management_page(session: AsyncSession, *, guild_id: int, query: s
         row["price_label"] = f"{_money(row['default_price'])}원" if row["default_price"] is not None else "미설정"
     return {
         "items": rows,
-        "summary_cards": [
-            {"label": "전체 아이템", "value": f"{len(rows):,}", "meta": "검색 결과"},
-            {"label": "등록 가능", "value": f"{sum(1 for row in rows if row['is_active']):,}", "meta": "드랍 선택 목록에 표시"},
-            {"label": "가격 설정", "value": f"{sum(1 for row in rows if row['default_price'] is not None):,}", "meta": "기본 원화 시세"},
-        ],
     }
 
 

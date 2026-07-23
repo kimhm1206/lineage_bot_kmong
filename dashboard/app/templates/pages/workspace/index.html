@@ -8,15 +8,7 @@
 {% if error %}<div class="notice-banner notice-error">{{ icon("alert") }}<span>{{ error }}</span></div>{% endif %}
 
 <form class="workspace-filter-bar" method="get" action="{{ request.url.path }}">
-  <label class="workspace-filter-field">
-    <span>서버</span>
-    <select name="guild_id" onchange="this.form.submit()" {% if not guilds %}disabled{% endif %}>
-      {% if not guilds %}<option>등록된 서버 없음</option>{% endif %}
-      {% for guild in guilds %}
-      <option value="{{ guild.guild_id }}" {% if guild.guild_id == guild_id %}selected{% endif %}>{{ guild.name }}</option>
-      {% endfor %}
-    </select>
-  </label>
+  {% if guild_id %}<input type="hidden" name="guild_id" value="{{ guild_id }}">{% endif %}
 
   {% if needs_alliance %}
   <label class="workspace-filter-field">
