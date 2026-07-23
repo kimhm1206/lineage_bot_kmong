@@ -46,7 +46,7 @@ def build_template_context(
             "alliance_manager": "연합관리자",
             "clan_manager": "혈맹관리자",
             "clan_accountant": "혈맹경리",
-        }.get(access_role, "일반유저"),
+        }.get(access_role, "유저"),
         "is_global_developer": is_global_developer(request),
         "developer_view_mode": getattr(
             request.state,

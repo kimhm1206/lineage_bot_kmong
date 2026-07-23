@@ -71,6 +71,12 @@ DEVELOPER_VIEW_MODES = {
         "scopes": (3,),
         "requires_alliance": True,
     },
+    "user": {
+        "label": "유저",
+        "role": "user",
+        "scopes": (),
+        "requires_alliance": False,
+    },
 }
 
 

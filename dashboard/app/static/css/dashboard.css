@@ -7234,7 +7234,7 @@ body.modal-open {
 
 .developer-view-role-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -7253,7 +7253,7 @@ body.modal-open {
 .developer-view-role {
   display: grid;
   min-width: 0;
-  min-height: 105px;
+  min-height: 88px;
   align-content: start;
   gap: 6px;
   padding: 14px 12px;

@@ -18,6 +18,7 @@
     alliance_manager: "드랍·판매·각혈 분배",
     clan_manager: "선택 혈맹 운영과 설정",
     clan_accountant: "선택 혈맹 정산과 가계부",
+    user: "개인 조회와 공개 정보",
   };
   let selectedMode = "";
   let selectedAllianceId = null;
