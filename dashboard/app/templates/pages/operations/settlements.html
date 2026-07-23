@@ -5,7 +5,7 @@
 {% block title %}{{ page_title }} · {{ app_name }}{% endblock %}
 {% block content %}
 <div data-live-page>
-  {{ toolbar(guilds, guild_id, query, period_options, alliances if settlement_level == 'clan' else [], alliance_id, search_label='정산 대상 검색', search_placeholder='혈맹, 유저 또는 아이템 검색', client_search=True) }}
+  {{ toolbar(guilds, guild_id, query, period_options, alliances if settlement_level == 'clan' and can_select_alliance else [], alliance_id, search_label='정산 대상 검색', search_placeholder='혈맹, 유저 또는 아이템 검색', client_search=True) }}
   {{ summary(summary_cards) }}
 
   <section class="ops-section-heading settlement-heading">

@@ -7,7 +7,8 @@
 <div class="attendance-page attendance-clan-page">
   {{ filters(
     request.url.path, guilds, guild_id, period_options, query,
-    alliances=alliances, alliance_id=alliance_id, alliance_mode='required'
+    alliances=alliances if can_select_alliance else [], alliance_id=alliance_id,
+    alliance_mode='required' if can_select_alliance else 'none'
   ) }}
   {{ summary(summary_cards) }}
 

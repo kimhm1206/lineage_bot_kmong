@@ -219,6 +219,76 @@
     }
   };
 
+  let bidHistoryRequest = 0;
+
+  const openBidHistory = async (button) => {
+    const modal = document.getElementById("bid-history-modal");
+    if (!modal) return;
+    const requestNumber = ++bidHistoryRequest;
+    const allianceName = button.dataset.allianceName || "혈맹";
+    const allianceId = button.dataset.allianceId;
+    const guildId = button.dataset.guildId;
+    const allianceOutput = modal.querySelector("[data-bid-history-alliance]");
+    const totalOutput = modal.querySelector("[data-bid-history-total]");
+    const loading = modal.querySelector("[data-bid-history-loading]");
+    const list = modal.querySelector("[data-bid-history-list]");
+    const empty = modal.querySelector("[data-bid-history-empty]");
+
+    allianceOutput.textContent = allianceName;
+    totalOutput.textContent = "-";
+    loading.hidden = false;
+    loading.textContent = "구매 기록을 불러오는 중입니다.";
+    list.hidden = true;
+    list.replaceChildren();
+    empty.hidden = true;
+    openModal("bid-history-modal");
+
+    try {
+      const response = await fetch(
+        `/api/bid-purchases/alliances/${encodeURIComponent(allianceId)}?guild_id=${encodeURIComponent(guildId)}`,
+        { headers: { Accept: "application/json" } },
+      );
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.detail || payload.message || "구매 기록을 불러오지 못했습니다.");
+      }
+      if (requestNumber !== bidHistoryRequest) return;
+      totalOutput.textContent = `${Number(payload.total || 0).toLocaleString("ko-KR")}회`;
+      loading.hidden = true;
+      const history = Array.isArray(payload.history) ? payload.history : [];
+      if (!history.length) {
+        empty.hidden = false;
+        return;
+      }
+      const fragment = document.createDocumentFragment();
+      history.forEach((record, index) => {
+        const row = document.createElement("article");
+        row.className = `bid-history-row${record.is_free ? " is-free" : ""}`;
+        const number = document.createElement("span");
+        number.className = "bid-history-number";
+        number.textContent = String(history.length - index);
+        const copy = document.createElement("div");
+        const item = document.createElement("strong");
+        item.textContent = record.item_name || "이름 없는 아이템";
+        const date = document.createElement("small");
+        date.textContent = record.purchased_at_short || record.purchased_at || "-";
+        copy.append(item, date);
+        const type = document.createElement("span");
+        type.className = "bid-history-type";
+        type.textContent = record.is_free ? "무료 나눔" : "입찰 구매";
+        row.append(number, copy, type);
+        fragment.append(row);
+      });
+      list.append(fragment);
+      list.hidden = false;
+    } catch (error) {
+      if (requestNumber !== bidHistoryRequest) return;
+      loading.hidden = false;
+      loading.textContent = error.message || "구매 기록을 불러오지 못했습니다.";
+      totalOutput.textContent = "-";
+    }
+  };
+
   document.addEventListener("submit", (event) => {
     const clientSearchForm = event.target.closest("[data-client-search-form]");
     if (clientSearchForm) {
@@ -261,6 +331,8 @@
     if (bidEdit) populateBidEdit(bidEdit);
     const bidDelete = event.target.closest("[data-bid-delete]");
     if (bidDelete) deleteBidItem(bidDelete);
+    const bidHistoryOpen = event.target.closest("[data-bid-history-open]");
+    if (bidHistoryOpen) openBidHistory(bidHistoryOpen);
 
     const statusFilter = event.target.closest("[data-personal-filter] button");
     if (statusFilter) {

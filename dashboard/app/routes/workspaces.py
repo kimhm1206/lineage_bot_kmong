@@ -14,7 +14,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from dashboard.app.config import BASE_DIR
 from dashboard.app.database import get_session
-from dashboard.app.security import can_manage_alliance_treasury, can_manage_clan_treasury
+from dashboard.app.security import (
+    can_manage_alliance_treasury,
+    can_manage_clan_treasury,
+    can_select_alliances,
+    require_alliance_access,
+    restrict_workspace_alliance,
+)
 from dashboard.app.services import workspace_store
 from dashboard.app.ui.context import build_template_context
 
@@ -83,6 +89,9 @@ async def _render_workspace(
     can_edit_treasury: bool = False,
 ):
     workspace = await workspace_store.resolve_workspace(session, guild_id, alliance_id)
+    can_select_alliance = await can_select_alliances(request, session, workspace["guild_id"])
+    if needs_alliance:
+        can_select_alliance = await restrict_workspace_alliance(request, session, workspace)
     selected_period = workspace_store.normalize_period(period)
     selected_guild_id = workspace["guild_id"]
     selected_alliance_id = workspace["alliance_id"]
@@ -124,6 +133,7 @@ async def _render_workspace(
             "period_options": workspace_store.filter_options(workspace_store.PERIOD_OPTIONS, selected_period),
             "supports_period": supports_period,
             "needs_alliance": needs_alliance,
+            "can_select_alliance": can_select_alliance,
             "settings_href": settings_href,
             "settings_label": settings_label,
             "result_label": f"총 {page_data['pagination']['total']:,}건",
@@ -159,8 +169,12 @@ async def _attendance_context(
     alliance_id: int | None,
     period: int | None,
     query: str,
+    clan_scoped: bool = False,
 ) -> tuple[dict[str, Any], dict[str, Any], int, str]:
     workspace = await workspace_store.resolve_workspace(session, guild_id, alliance_id)
+    can_select_alliance = await can_select_alliances(request, session, workspace["guild_id"])
+    if clan_scoped:
+        can_select_alliance = await restrict_workspace_alliance(request, session, workspace)
     selected_period = workspace_store.normalize_period(period)
     clean_query = query.strip()[:100]
     context = build_template_context(
@@ -172,6 +186,7 @@ async def _attendance_context(
         page_badge="USER",
     )
     context.update(workspace)
+    context["can_select_alliance"] = can_select_alliance
     context.update(
         {
             "query": clean_query,
@@ -238,6 +253,12 @@ async def _save_treasury_entry(
         guild_id = _required_positive_int(form.get("guild_id"))
         if account_scope_code == 2:
             alliance_id = _required_positive_int(form.get("alliance_id"))
+            await require_alliance_access(
+                request,
+                session,
+                guild_id=guild_id,
+                alliance_id=alliance_id,
+            )
         direction = int(str(form.get("direction") or ""))
         category_id = _required_positive_int(form.get("treasury_category_id"))
         amount_adena = _required_positive_int(form.get("amount_adena"))
@@ -277,6 +298,12 @@ async def _save_treasury_distribution(
         guild_id = _required_positive_int(form.get("guild_id"))
         if account_scope_code == 2:
             alliance_id = _required_positive_int(form.get("alliance_id"))
+            await require_alliance_access(
+                request,
+                session,
+                guild_id=guild_id,
+                alliance_id=alliance_id,
+            )
         requested_amount = _required_positive_int(form.get("requested_amount"))
         excluded_discord_ids = [
             _required_positive_int(value)
@@ -321,6 +348,13 @@ async def _update_treasury_distribution_status(
     )
     if not can_edit:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="공금 분배 권한이 없습니다.")
+    if account_scope_code == 2:
+        await require_alliance_access(
+            request,
+            session,
+            guild_id=int(scope["guild_id"]),
+            alliance_id=int(scope["alliance_id"]),
+        )
 
     form = await request.form()
     path = "/alliance/treasury" if account_scope_code == 1 else "/clan/treasury"
@@ -769,6 +803,7 @@ async def clan_attendance(
         alliance_id=alliance_id,
         period=period,
         query=q,
+        clan_scoped=True,
     )
     if workspace["guild_id"] is None or workspace["alliance_id"] is None:
         page_data = {

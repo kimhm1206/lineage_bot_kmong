@@ -5,7 +5,7 @@
 {% block title %}{{ page_title }} · {{ app_name }}{% endblock %}
 {% block content %}
 <div data-live-page>
-  {{ toolbar(guilds, guild_id, query, alliances=alliances if scope_code == 2 else [], alliance_id=alliance_id, primary_label='수수료 추가', primary_modal='fee-create-modal', search_label='수수료 검색', search_placeholder='수수료 이름 검색', client_search=True) }}
+  {{ toolbar(guilds, guild_id, query, alliances=alliances if scope_code == 2 and can_select_alliance else [], alliance_id=alliance_id, primary_label='수수료 추가', primary_modal='fee-create-modal', search_label='수수료 검색', search_placeholder='수수료 이름 검색', client_search=True) }}
 
   <section class="ops-section-heading"><div><h2>{{ '연합 수수료' if scope_code == 1 else '혈맹 내부 수수료' }}</h2><p>적용할 수수료 이름과 비율, 사용 상태를 관리합니다.</p></div><span data-client-search-count data-count-suffix="개 규칙">{{ fee_rules|length }}개 규칙</span></section>
   {% if fee_rules %}

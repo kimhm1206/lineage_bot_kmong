@@ -36,7 +36,7 @@ ACTION_LABELS = {
     "sale_reopen": "판매 대기로 변경",
     "bid_item": "입찰 아이템 등록",
     "bid_item_delete": "입찰 아이템 삭제",
-    "bid_status": "입찰 상태 변경",
+    "bid_status": "입찰 구매 기록 추가",
     "payout_status": "분배 상태 변경",
     "treasury_deposit": "가계부 입금",
     "treasury_withdrawal": "가계부 출금",

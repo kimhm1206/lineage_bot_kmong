@@ -11,7 +11,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from dashboard.app.config import BASE_DIR
 from dashboard.app.database import get_session
-from dashboard.app.security import require_developer
+from dashboard.app.security import (
+    can_select_alliances,
+    current_user_alliance_id,
+    require_alliance_access,
+    require_developer,
+)
 from dashboard.app.services import settings_store
 from dashboard.app.services.discord_api import DiscordApiError, discord_api
 from dashboard.app.ui.context import build_template_context
@@ -441,6 +446,13 @@ async def remove_assignment(assignment_id: int, request: Request, session: Async
         return_path = "/settings/managers"
     if guild_id is None:
         return _redirect(return_path, error="서버를 선택해 주세요.")
+    if return_path == "/settings/clan" and alliance_id is not None:
+        await require_alliance_access(
+            request,
+            session,
+            guild_id=guild_id,
+            alliance_id=alliance_id,
+        )
     await settings_store.delete_assignment(session, guild_id=guild_id, assignment_id=assignment_id)
     return _redirect(return_path, guild_id=guild_id, alliance_id=alliance_id, notice="담당자 지정을 해제했습니다.")
 
@@ -454,6 +466,11 @@ async def clan_settings(
 ):
     guild_data = await _guild_context(session, guild_id)
     alliances = await settings_store.list_guild_alliances(session, guild_data["guild_id"]) if guild_data["guild_id"] else []
+    can_select_alliance = await can_select_alliances(request, session, guild_data["guild_id"])
+    if not can_select_alliance:
+        own_alliance_id = await current_user_alliance_id(request, session, guild_data["guild_id"])
+        alliances = [row for row in alliances if row["alliance_id"] == own_alliance_id]
+        alliance_id = own_alliance_id
     valid_alliance_ids = {row["alliance_id"] for row in alliances}
     if alliance_id not in valid_alliance_ids:
         alliance_id = alliances[0]["alliance_id"] if alliances else None
@@ -483,6 +500,11 @@ async def clan_settings(
             "members": members,
             "alliances": alliances,
             "alliance_id": alliance_id,
+            "can_select_alliance": can_select_alliance,
+            "selected_alliance": next(
+                (row for row in alliances if row["alliance_id"] == alliance_id),
+                None,
+            ),
             "accountants": accountants,
             "accountant_ids": [row["discord_user_id"] for row in accountants],
             "policy": policy,
@@ -502,6 +524,12 @@ async def save_accountant(request: Request, session: AsyncSession = Depends(get_
         guild_id = _int_value(form.get("guild_id"), minimum=1)
         alliance_id = _int_value(form.get("alliance_id"), minimum=1)
         discord_user_id = _int_value(form.get("discord_user_id"), minimum=1)
+        await require_alliance_access(
+            request,
+            session,
+            guild_id=guild_id,
+            alliance_id=alliance_id,
+        )
         if discord_api.configured:
             members = await discord_api.members(guild_id)
             if not any(int(row.get("user", {}).get("id", 0)) == discord_user_id for row in members):
@@ -531,6 +559,12 @@ async def save_clan_policy(request: Request, session: AsyncSession = Depends(get
     try:
         guild_id = _int_value(form.get("guild_id"), minimum=1)
         alliance_id = _int_value(form.get("alliance_id"), minimum=1)
+        await require_alliance_access(
+            request,
+            session,
+            guild_id=guild_id,
+            alliance_id=alliance_id,
+        )
         distribution = _int_value(form.get("distribution_visibility_code"), minimum=1, maximum=3)
         treasury = _int_value(form.get("treasury_visibility_code"), minimum=1, maximum=3)
         access = _int_value(form.get("user_access_code"), minimum=1, maximum=3)

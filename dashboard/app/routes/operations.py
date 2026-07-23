@@ -3,13 +3,20 @@ from __future__ import annotations
 from collections.abc import Awaitable
 from typing import Any
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dashboard.app.config import BASE_DIR
 from dashboard.app.database import get_session
+from dashboard.app.security import (
+    can_manage_alliance_operations,
+    can_select_alliances,
+    current_user_alliance_id,
+    require_alliance_access,
+    restrict_workspace_alliance,
+)
 from dashboard.app.services import operations_store, settlement_service, workspace_store
 from dashboard.app.ui.context import build_template_context
 
@@ -74,8 +81,12 @@ async def _context(
     page_title: str,
     page_description: str,
     page_badge: str,
+    clan_scoped: bool = False,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     workspace = await workspace_store.resolve_workspace(session, guild_id, alliance_id)
+    can_select = await can_select_alliances(request, session, workspace["guild_id"])
+    if clan_scoped:
+        can_select = await restrict_workspace_alliance(request, session, workspace)
     context = build_template_context(
         request,
         active_nav=active_nav,
@@ -85,11 +96,26 @@ async def _context(
         page_badge=page_badge,
     )
     context.update(workspace)
+    context["can_select_alliance"] = can_select
     return context, workspace
 
 
 def _query(value: str) -> str:
     return value.strip()[:100]
+
+
+async def _require_bid_management(
+    request: Request,
+    session: AsyncSession,
+    guild_id: int,
+) -> None:
+    if await can_select_alliances(request, session, guild_id):
+        return
+    if not can_manage_alliance_operations(request):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="입찰 기록을 관리할 권한이 없습니다.",
+        )
 
 
 @router.get("/alliance/drops")
@@ -199,6 +225,7 @@ async def clan_settlements_page(
         page_title="혈맹원 분배",
         page_description="혈맹원과 내부 수수료를 동일한 카드에서 정산합니다.",
         page_badge="CLAN MANAGER",
+        clan_scoped=True,
     )
     selected_period = workspace_store.normalize_period(period)
     page_data = (
@@ -297,6 +324,7 @@ async def clan_fee_page(
         page_title="혈맹 분배 설정",
         page_description="혈맹 분배금에서 차감할 혈비와 내부 수수료를 관리합니다.",
         page_badge="CLAN MANAGER",
+        clan_scoped=True,
     )
     page_data = (
         await operations_store.fee_management_page(
@@ -328,16 +356,32 @@ async def bidding_page(
         alliance_id=None,
         active_nav="alliance.bidding",
         page_title="아이템 입찰",
-        page_description="아이템별 현재 회차와 혈맹별 입찰 완료 상태를 관리합니다.",
+        page_description="혈맹별 아이템 구매 횟수와 날짜별 구매 기록을 관리합니다.",
         page_badge="ALLIANCE MANAGER",
     )
+    can_select = bool(context["can_select_alliance"])
+    visible_alliance_id = (
+        None
+        if can_select
+        else await current_user_alliance_id(request, session, workspace["guild_id"])
+    )
     page_data = (
-        await operations_store.bid_management_page(session, guild_id=int(workspace["guild_id"]), query="")
+        await operations_store.bid_management_page(
+            session,
+            guild_id=int(workspace["guild_id"]),
+            query="",
+            visible_alliance_id=visible_alliance_id,
+        )
         if workspace["guild_id"] is not None
-        else {"bid_items": [], "alliances": [], "summary_cards": []}
+        else {"bid_items": [], "alliances": [], "alliance_rows": [], "summary_cards": []}
     )
     context.update(page_data)
-    context["query"] = _query(q)
+    context.update(
+        {
+            "query": _query(q),
+            "can_manage_bidding": can_select or can_manage_alliance_operations(request),
+        }
+    )
     return templates.TemplateResponse(request, "pages/operations/bidding.html", context)
 
 
@@ -557,11 +601,13 @@ async def update_fee_rule(fee_rule_id: int, request: Request, session: AsyncSess
 @router.post("/api/bid-items")
 async def create_bid_item(request: Request, session: AsyncSession = Depends(get_session)):
     form = await request.form()
+    guild_id = int(_int(form.get("guild_id")))
+    await _require_bid_management(request, session, guild_id)
     return await _result(
         session,
         settlement_service.create_bid_item(
             session,
-            guild_id=int(_int(form.get("guild_id"))),
+            guild_id=guild_id,
             item_name=str(form.get("item_name") or ""),
             is_free=_bool(form.get("is_free")),
         ),
@@ -571,11 +617,13 @@ async def create_bid_item(request: Request, session: AsyncSession = Depends(get_
 @router.post("/api/bid-items/{bid_item_id}")
 async def update_bid_item(bid_item_id: int, request: Request, session: AsyncSession = Depends(get_session)):
     form = await request.form()
+    guild_id = int(_int(form.get("guild_id")))
+    await _require_bid_management(request, session, guild_id)
     return await _result(
         session,
         settlement_service.update_bid_item(
             session,
-            guild_id=int(_int(form.get("guild_id"))),
+            guild_id=guild_id,
             bid_item_id=bid_item_id,
             item_name=str(form.get("item_name") or ""),
             is_free=_bool(form.get("is_free")),
@@ -587,26 +635,59 @@ async def update_bid_item(bid_item_id: int, request: Request, session: AsyncSess
 @router.post("/api/bid-items/{bid_item_id}/delete")
 async def delete_bid_item(bid_item_id: int, request: Request, session: AsyncSession = Depends(get_session)):
     form = await request.form()
+    guild_id = int(_int(form.get("guild_id")))
+    await _require_bid_management(request, session, guild_id)
     return await _result(
         session,
-        settlement_service.delete_bid_item(session, guild_id=int(_int(form.get("guild_id"))), bid_item_id=bid_item_id),
+        settlement_service.delete_bid_item(session, guild_id=guild_id, bid_item_id=bid_item_id),
     )
 
 
-@router.post("/api/bid-items/{bid_item_id}/alliances/{alliance_id}/toggle")
-async def toggle_bid_result(
+@router.post("/api/bid-items/{bid_item_id}/alliances/{alliance_id}/purchase")
+async def record_bid_purchase(
     bid_item_id: int,
     alliance_id: int,
     request: Request,
     session: AsyncSession = Depends(get_session),
 ):
     form = await request.form()
+    guild_id = int(_int(form.get("guild_id")))
+    await _require_bid_management(request, session, guild_id)
+    await require_alliance_access(
+        request,
+        session,
+        guild_id=guild_id,
+        alliance_id=alliance_id,
+    )
     return await _result(
         session,
-        settlement_service.toggle_bid_result(
+        settlement_service.record_bid_purchase(
             session,
-            guild_id=int(_int(form.get("guild_id"))),
+            guild_id=guild_id,
             bid_item_id=bid_item_id,
             alliance_id=alliance_id,
         ),
     )
+
+
+@router.get("/api/bid-purchases/alliances/{alliance_id}")
+async def bid_purchase_history(
+    alliance_id: int,
+    request: Request,
+    guild_id: int,
+    session: AsyncSession = Depends(get_session),
+):
+    await require_alliance_access(
+        request,
+        session,
+        guild_id=guild_id,
+        alliance_id=alliance_id,
+    )
+    return {
+        "ok": True,
+        **await operations_store.bid_purchase_history(
+            session,
+            guild_id=guild_id,
+            alliance_id=alliance_id,
+        ),
+    }

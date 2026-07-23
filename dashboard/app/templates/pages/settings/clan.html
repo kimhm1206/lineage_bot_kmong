@@ -6,11 +6,18 @@
 {% block content %}
 {% include "partials/settings_toolbar.html" %}
 
+{% if can_select_alliance %}
 <form class="clan-context-bar" method="get" action="/settings/clan">
   <input type="hidden" name="guild_id" value="{{ guild_id or '' }}">
   <label for="clan-alliance">관리 혈맹</label>
   <select id="clan-alliance" name="alliance_id" onchange="this.form.submit()"><option value="">혈맹 선택</option>{% for alliance in alliances %}<option value="{{ alliance.alliance_id }}" {% if alliance.alliance_id == alliance_id %}selected{% endif %}>{{ alliance.alliance_name }}</option>{% endfor %}</select>
 </form>
+{% elif selected_alliance %}
+<div class="clan-context-bar">
+  <span>내 혈맹</span>
+  <strong>{{ selected_alliance.display_name or selected_alliance.alliance_name }}</strong>
+</div>
+{% endif %}
 
 <div class="settings-grid settings-grid-even">
   <section class="panel settings-form-panel" id="staff">

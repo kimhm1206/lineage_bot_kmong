@@ -558,22 +558,35 @@ async def fee_management_page(
     return {"fee_rules": rows}
 
 
-async def bid_management_page(session: AsyncSession, *, guild_id: int, query: str) -> dict[str, Any]:
+async def bid_management_page(
+    session: AsyncSession,
+    *,
+    guild_id: int,
+    query: str,
+    visible_alliance_id: int | None = None,
+) -> dict[str, Any]:
     search = "AND b.item_name ILIKE :query" if query else ""
+    alliance_filter = "AND a.alliance_id = :visible_alliance_id" if visible_alliance_id is not None else ""
+    params = {
+        "guild_id": guild_id,
+        "query": f"%{query}%",
+        "visible_alliance_id": visible_alliance_id,
+    }
     alliances = [
         dict(row)
         for row in (
             await session.execute(
-                text("""
+                text(f"""
                     SELECT DISTINCT a.alliance_id,
                            COALESCE(a.display_name, a.alliance_name) AS alliance_name,
                            COALESCE(a.sort_order, 2147483647) AS sort_order
                     FROM guild_alliance_role_mappings m
                     JOIN alliances a ON a.alliance_id = m.alliance_id
                     WHERE m.guild_id = :guild_id AND a.is_active IS TRUE
+                      {alliance_filter}
                     ORDER BY sort_order, alliance_name
                 """),
-                {"guild_id": guild_id},
+                params,
             )
         ).mappings().all()
     ]
@@ -582,64 +595,122 @@ async def bid_management_page(session: AsyncSession, *, guild_id: int, query: st
         for row in (
             await session.execute(
                 text(f"""
-                    SELECT b.bid_item_id, b.item_name, b.is_free, b.is_active,
-                           COALESCE(MAX(r.cycle_no), 1) AS latest_cycle
+                    SELECT b.bid_item_id, b.item_name, b.is_free, b.is_active
                     FROM bid_items b
-                    LEFT JOIN bid_item_results r ON r.bid_item_id = b.bid_item_id
                     WHERE b.guild_id = :guild_id {search}
-                    GROUP BY b.bid_item_id
                     ORDER BY b.is_free, b.item_name
                 """),
-                {"guild_id": guild_id, "query": f"%{query}%"},
+                params,
             )
         ).mappings().all()
     ]
-    result_rows = (
+    count_filter = "AND r.alliance_id = :visible_alliance_id" if visible_alliance_id is not None else ""
+    count_rows = (
         await session.execute(
-            text("""
-                SELECT r.result_id, r.bid_item_id, r.alliance_id, r.cycle_no,
-                       r.selected_at,
-                       COALESCE(a.display_name, a.alliance_name) AS alliance_name
+            text(f"""
+                SELECT r.bid_item_id, r.alliance_id, COUNT(*) AS purchase_count
                 FROM bid_item_results r
-                JOIN alliances a ON a.alliance_id = r.alliance_id
                 WHERE r.guild_id = :guild_id
-                ORDER BY r.cycle_no DESC, r.result_id DESC
+                  {count_filter}
+                GROUP BY r.bid_item_id, r.alliance_id
             """),
-            {"guild_id": guild_id},
+            params,
         )
     ).mappings().all()
-    results_by_item: dict[int, list[dict[str, Any]]] = {}
-    for result in result_rows:
-        results_by_item.setdefault(int(result["bid_item_id"]), []).append(dict(result))
-    alliance_count = len(alliances)
+    counts = {
+        (int(row["alliance_id"]), int(row["bid_item_id"])): int(row["purchase_count"])
+        for row in count_rows
+    }
+    total_purchases = sum(counts.values())
+    alliance_rows = []
+    for alliance in alliances:
+        alliance_id = int(alliance["alliance_id"])
+        alliance_rows.append(
+            {
+                **alliance,
+                "item_counts": [
+                    {
+                        "bid_item_id": int(item["bid_item_id"]),
+                        "item_name": item["item_name"],
+                        "is_active": bool(item["is_active"]),
+                        "purchase_count": counts.get((alliance_id, int(item["bid_item_id"])), 0),
+                    }
+                    for item in items
+                ],
+                "total_purchases": sum(
+                    counts.get((alliance_id, int(item["bid_item_id"])), 0)
+                    for item in items
+                ),
+            }
+        )
     for item in items:
-        history = results_by_item.get(int(item["bid_item_id"]), [])
-        latest_cycle = int(item["latest_cycle"] or 1)
-        latest_results = [row for row in history if int(row["cycle_no"]) == latest_cycle]
-        if alliance_count and len(latest_results) >= alliance_count:
-            current_cycle = latest_cycle + 1
-            current_results: list[dict[str, Any]] = []
-        else:
-            current_cycle = latest_cycle
-            current_results = latest_results
-        completed_ids = {int(row["alliance_id"]) for row in current_results}
-        item["cycle_no"] = current_cycle
-        item["completed_count"] = len(completed_ids)
-        item["total_count"] = alliance_count
-        item["progress"] = round(len(completed_ids) / alliance_count * 100) if alliance_count else 0
-        item["alliance_states"] = [
-            {**alliance, "is_complete": int(alliance["alliance_id"]) in completed_ids}
-            for alliance in alliances
-        ]
-        item["history"] = history[:20]
+        item["bid_item_id"] = int(item["bid_item_id"])
+        item["is_free"] = bool(item["is_free"])
+        item["is_active"] = bool(item["is_active"])
     return {
         "bid_items": items,
         "alliances": alliances,
+        "alliance_rows": alliance_rows,
         "summary_cards": [
-            {"label": "입찰 아이템", "value": f"{len(items):,}", "meta": "검색 결과"},
-            {"label": "사용 중", "value": f"{sum(1 for row in items if row['is_active']):,}", "meta": "현재 진행"},
-            {"label": "무료 나눔", "value": f"{sum(1 for row in items if row['is_free']):,}", "meta": "유료 뒤 정렬"},
+            {"label": "입찰 아이템", "value": f"{len(items):,}", "meta": "테이블 열"},
+            {"label": "대상 혈맹", "value": f"{len(alliances):,}", "meta": "표시 범위"},
+            {"label": "누적 구매", "value": f"{total_purchases:,}", "meta": "전체 구매 기록"},
         ],
+    }
+
+
+async def bid_purchase_history(
+    session: AsyncSession,
+    *,
+    guild_id: int,
+    alliance_id: int,
+) -> dict[str, Any]:
+    alliance = (
+        await session.execute(
+            text("""
+                SELECT COALESCE(a.display_name, a.alliance_name) AS alliance_name
+                FROM guild_alliance_role_mappings m
+                JOIN alliances a ON a.alliance_id = m.alliance_id
+                WHERE m.guild_id = :guild_id AND m.alliance_id = :alliance_id
+                LIMIT 1
+            """),
+            {"guild_id": guild_id, "alliance_id": alliance_id},
+        )
+    ).mappings().one_or_none()
+    if alliance is None:
+        return {"alliance_name": "", "total": 0, "history": []}
+    rows = [
+        dict(row)
+        for row in (
+            await session.execute(
+                text("""
+                    SELECT r.result_id, r.bid_item_id, b.item_name, b.is_free,
+                           TO_CHAR(
+                               TO_TIMESTAMP(r.selected_at, 'YYYY-MM-DD HH24:MI:SS'),
+                               'YYYY-MM-DD HH24:MI'
+                           ) AS purchased_at,
+                           TO_CHAR(
+                               TO_TIMESTAMP(r.selected_at, 'YYYY-MM-DD HH24:MI:SS'),
+                               'MM월 DD일 HH24:MI'
+                           ) AS purchased_at_short
+                    FROM bid_item_results r
+                    JOIN bid_items b ON b.bid_item_id = r.bid_item_id
+                    WHERE r.guild_id = :guild_id
+                      AND r.alliance_id = :alliance_id
+                    ORDER BY r.selected_at DESC, r.result_id DESC
+                """),
+                {"guild_id": guild_id, "alliance_id": alliance_id},
+            )
+        ).mappings().all()
+    ]
+    for row in rows:
+        row["result_id"] = int(row["result_id"])
+        row["bid_item_id"] = int(row["bid_item_id"])
+        row["is_free"] = bool(row["is_free"])
+    return {
+        "alliance_name": alliance["alliance_name"],
+        "total": len(rows),
+        "history": rows,
     }
 
 

@@ -1450,7 +1450,7 @@ async def delete_bid_item(session: AsyncSession, *, guild_id: int, bid_item_id: 
     return OperationResult("입찰 아이템을 삭제했습니다.", (bid_item_id,))
 
 
-async def toggle_bid_result(
+async def record_bid_purchase(
     session: AsyncSession,
     *,
     guild_id: int,
@@ -1459,94 +1459,72 @@ async def toggle_bid_result(
 ) -> OperationResult:
     item = (
         await session.execute(
-        text("""
-            SELECT bid_item_id
-            FROM bid_items
-            WHERE bid_item_id = :id AND guild_id = :guild_id AND is_active IS TRUE
-            FOR UPDATE
-        """),
-            {"id": bid_item_id, "guild_id": guild_id},
+            text("""
+                SELECT bid_item_id
+                FROM bid_items
+                WHERE bid_item_id = :bid_item_id
+                  AND guild_id = :guild_id
+                  AND is_active IS TRUE
+                FOR UPDATE
+            """),
+            {"bid_item_id": bid_item_id, "guild_id": guild_id},
         )
     ).mappings().one_or_none()
     if item is None:
         raise SettlementError("사용 중인 입찰 아이템을 찾을 수 없습니다.")
-    alliance_count = int(
-        await session.scalar(
-            text("SELECT COUNT(DISTINCT alliance_id) FROM guild_alliance_role_mappings WHERE guild_id = :guild_id"),
-            {"guild_id": guild_id},
-        )
-        or 0
+    mapped = await session.scalar(
+        text("""
+            SELECT 1
+            FROM guild_alliance_role_mappings
+            WHERE guild_id = :guild_id AND alliance_id = :alliance_id
+        """),
+        {"guild_id": guild_id, "alliance_id": alliance_id},
     )
-    if alliance_count == 0:
-        raise SettlementError("먼저 혈맹 역할 매핑을 등록해 주세요.")
-    latest_cycle = int(
+    if mapped is None:
+        raise SettlementError("역할 매핑된 혈맹만 구매 기록을 추가할 수 있습니다.")
+    purchase_no = int(
         await session.scalar(
-            text("SELECT COALESCE(MAX(cycle_no), 1) FROM bid_item_results WHERE guild_id = :guild_id AND bid_item_id = :item_id"),
-            {"guild_id": guild_id, "item_id": bid_item_id},
+            text("""
+                SELECT COALESCE(MAX(cycle_no), 0) + 1
+                FROM bid_item_results
+                WHERE guild_id = :guild_id
+                  AND bid_item_id = :bid_item_id
+                  AND alliance_id = :alliance_id
+            """),
+            {
+                "guild_id": guild_id,
+                "bid_item_id": bid_item_id,
+                "alliance_id": alliance_id,
+            },
         )
         or 1
     )
-    completed_in_latest = int(
+    result_id = int(
         await session.scalar(
-            text("SELECT COUNT(*) FROM bid_item_results WHERE guild_id = :guild_id AND bid_item_id = :item_id AND cycle_no = :cycle"),
-            {"guild_id": guild_id, "item_id": bid_item_id, "cycle": latest_cycle},
-        )
-        or 0
-    )
-    current_cycle = latest_cycle + 1 if completed_in_latest >= alliance_count else latest_cycle
-    existing_result_id = await session.scalar(
-        text("""
-            SELECT result_id FROM bid_item_results
-            WHERE guild_id = :guild_id AND bid_item_id = :item_id
-              AND alliance_id = :alliance_id AND cycle_no = :cycle
-        """),
-        {
-            "guild_id": guild_id,
-            "item_id": bid_item_id,
-            "alliance_id": alliance_id,
-            "cycle": current_cycle,
-        },
-    )
-    if existing_result_id is not None:
-        await session.execute(
-            text("DELETE FROM bid_item_results WHERE result_id = :result_id"),
-            {"result_id": existing_result_id},
-        )
-        state = 0
-        message = "입찰 완료를 취소했습니다."
-    else:
-        mapped = await session.scalar(
-            text("SELECT 1 FROM guild_alliance_role_mappings WHERE guild_id = :guild_id AND alliance_id = :alliance_id"),
-            {"guild_id": guild_id, "alliance_id": alliance_id},
-        )
-        if mapped is None:
-            raise SettlementError("역할 매핑된 혈맹만 입찰 상태를 변경할 수 있습니다.")
-        result_id = await session.scalar(
             text("""
                 INSERT INTO bid_item_results (
                     guild_id, bid_item_id, alliance_id, cycle_no,
                     selected_by_discord_id, selected_at, memo, updated_at
                 ) VALUES (
-                    :guild_id, :item_id, :alliance_id, :cycle,
+                    :guild_id, :bid_item_id, :alliance_id, :purchase_no,
                     NULL, TO_CHAR(NOW(), 'YYYY-MM-DD HH24:MI:SS'), NULL, NOW()
-                ) RETURNING result_id
+                )
+                RETURNING result_id
             """),
             {
                 "guild_id": guild_id,
-                "item_id": bid_item_id,
+                "bid_item_id": bid_item_id,
                 "alliance_id": alliance_id,
-                "cycle": current_cycle,
+                "purchase_no": purchase_no,
             },
         )
-        existing_result_id = int(result_id)
-        state = 1
-        message = "입찰 완료로 표시했습니다."
+    )
     await _audit(
         session,
         guild_id=guild_id,
         action_code="bid_status",
-        target_id=int(existing_result_id),
+        target_id=result_id,
         alliance_id=alliance_id,
-        state_code=state,
+        state_code=1,
     )
-    return OperationResult(message, (bid_item_id,))
+    return OperationResult("구매 횟수를 1회 추가했습니다.", (bid_item_id, alliance_id))
