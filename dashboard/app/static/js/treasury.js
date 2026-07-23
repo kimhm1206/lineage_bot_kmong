@@ -1,25 +1,64 @@
 (() => {
+  const POPOVER_MARGIN = 12;
+  const POPOVER_GAP = 8;
+
+  function positionTreasuryPopover(popover) {
+    const trigger = document.querySelector(
+      `[popovertarget="${CSS.escape(popover.id)}"]`,
+    );
+    if (!trigger) return;
+
+    const viewportWidth = window.visualViewport?.width || window.innerWidth;
+    const viewportHeight = window.visualViewport?.height || window.innerHeight;
+    const triggerRect = trigger.getBoundingClientRect();
+    const width = Math.min(330, viewportWidth - POPOVER_MARGIN * 2);
+    const left = Math.min(
+      Math.max(triggerRect.left, POPOVER_MARGIN),
+      viewportWidth - width - POPOVER_MARGIN,
+    );
+    const spaceBelow =
+      viewportHeight - triggerRect.bottom - POPOVER_GAP - POPOVER_MARGIN;
+    const spaceAbove = triggerRect.top - POPOVER_GAP - POPOVER_MARGIN;
+    const viewportHeightLimit = Math.max(
+      96,
+      viewportHeight - POPOVER_MARGIN * 2,
+    );
+    const naturalHeight = Math.min(
+      popover.scrollHeight,
+      viewportHeightLimit,
+    );
+    const opensAbove = spaceBelow < naturalHeight && spaceAbove > spaceBelow;
+    const preferredSpace = Math.max(
+      0,
+      opensAbove ? spaceAbove : spaceBelow,
+    );
+    const availableHeight = Math.min(
+      viewportHeightLimit,
+      Math.max(Math.min(160, viewportHeightLimit), preferredSpace),
+    );
+
+    popover.style.width = `${width}px`;
+    popover.style.maxHeight = `${availableHeight}px`;
+    popover.style.left = `${left}px`;
+
+    const renderedHeight = Math.min(popover.scrollHeight, availableHeight);
+    const top = opensAbove
+      ? triggerRect.top - POPOVER_GAP - renderedHeight
+      : triggerRect.bottom + POPOVER_GAP;
+    popover.style.top = `${Math.max(
+      POPOVER_MARGIN,
+      Math.min(top, viewportHeight - renderedHeight - POPOVER_MARGIN),
+    )}px`;
+    popover.classList.toggle("opens-above", opensAbove);
+  }
+
   function initializeTreasuryPage() {
     document.querySelectorAll(".treasury-column-popover").forEach((popover) => {
       if (popover.dataset.positionBound) return;
       popover.dataset.positionBound = "true";
-      popover.addEventListener("beforetoggle", (event) => {
+      popover.addEventListener("toggle", (event) => {
         if (event.newState !== "open") return;
-        const trigger = document.querySelector(
-          `[popovertarget="${CSS.escape(popover.id)}"]`,
-        );
-        if (!trigger) return;
-        const triggerRect = trigger.getBoundingClientRect();
-        const width = Math.min(330, window.innerWidth - 24);
-        const left = Math.min(
-          Math.max(triggerRect.left, 12),
-          window.innerWidth - width - 12,
-        );
-        popover.style.left = `${left}px`;
-        popover.style.top = `${Math.max(
-          12,
-          Math.min(triggerRect.bottom + 8, window.innerHeight - 220),
-        )}px`;
+        positionTreasuryPopover(popover);
       });
     });
 

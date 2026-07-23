@@ -3422,11 +3422,13 @@ body.modal-open {
 }
 
 .treasury-column-popover {
+  position: fixed;
+  inset: auto;
   width: min(330px, calc(100vw - 24px));
   max-height: min(480px, calc(100dvh - 24px));
   margin: 0;
   padding: 0;
-  overflow: auto;
+  overflow: hidden;
   border: 1px solid var(--line-strong);
   border-radius: 8px;
   background: var(--panel);
@@ -3441,7 +3443,15 @@ body.modal-open {
 .treasury-column-popover > form {
   display: grid;
   gap: 14px;
+  max-height: inherit;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 16px;
+}
+
+.treasury-category-popover > form {
+  grid-template-rows: auto auto minmax(80px, 1fr) auto;
+  overflow: hidden;
 }
 
 .treasury-column-popover header,
@@ -3516,10 +3526,12 @@ body.modal-open {
 
 .treasury-category-checks {
   display: grid;
-  max-height: 260px;
+  min-height: 0;
+  max-height: min(320px, calc(100dvh - 210px));
   gap: 4px;
   overflow-y: auto;
   overscroll-behavior: contain;
+  padding-right: 4px;
 }
 
 .treasury-category-checks label {
