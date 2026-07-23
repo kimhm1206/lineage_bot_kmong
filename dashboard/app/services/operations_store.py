@@ -1110,7 +1110,13 @@ async def clan_settlement_entities(
             if lowered in entity["name"].casefold()
             or any(lowered in detail["item_name"].casefold() for detail in entity["details"])
         ]
-    entity_rows.sort(key=lambda item: (item["entity_type"] != "fee", item["name"]))
+    entity_rows.sort(
+        key=lambda item: (
+            item["entity_type"] != "fee",
+            -int(item["pending_amount"]),
+            item["name"],
+        )
+    )
     return {
         "entities": entity_rows,
         "summary_cards": [
