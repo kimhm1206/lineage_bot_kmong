@@ -20,20 +20,33 @@
       {{ icon("clipboard-list") }}
       과거 기록
     </button>
-    {% else %}
-    <div class="settlement-legend"><span><i class="legend-dot is-pending"></i>미완료</span><span><i class="legend-dot is-complete"></i>완료</span></div>
     {% endif %}
   </section>
 
   {% if entities %}
   <section class="settlement-entity-grid">
     {% for entity in entities %}
-    <details class="settlement-entity-card entity-{{ entity.entity_type }} state-{{ entity.state }}" data-detail-key="{{ entity.key }}" data-client-search-item>
+    <details class="settlement-entity-card entity-{{ entity.entity_type }} state-{{ entity.state }}{% if entity.pending_count == 0 %} has-no-pending{% endif %}" data-detail-key="{{ entity.key }}" data-client-search-item>
       <summary>
         <span class="entity-accent">{{ icon("users-round" if entity.entity_type in ['alliance', 'member'] else "receipt") }}</span>
-        <span class="entity-identity"><small>{{ entity.eyebrow }}</small><strong>{{ entity.name }}</strong><em>{{ entity.total_count }}건 연결</em></span>
+        <span class="entity-identity"><small>{{ entity.eyebrow }}</small><strong>{{ entity.name }}</strong><em>{{ entity.pending_count }}건 미분배</em></span>
         <span class="entity-primary-value"><small>분배해야 할 금액</small><strong>{{ entity.pending_label }}</strong><em>아데나</em></span>
+        {% if settlement_level == 'alliance' and entity.entity_type == 'alliance' %}
+        <span class="entity-history-slot">
+          <button class="secondary-button" type="button"
+                  data-alliance-history-open
+                  data-guild-id="{{ guild_id }}"
+                  data-alliance-id="{{ entity.target_id }}"
+                  data-alliance-name="{{ entity.name }}">
+            {{ icon("clipboard-list") }}
+            기록 확인
+          </button>
+        </span>
+        {% elif settlement_level == 'clan' %}
         <span class="entity-state-box entity-state-{{ entity.state }}"><strong>{{ '완료' if entity.pending_count == 0 else '미완료 ' ~ entity.pending_count ~ '건' }}</strong><small>총 {{ entity.total_label }}</small></span>
+        {% else %}
+        <span class="entity-history-slot"></span>
+        {% endif %}
         <span class="entity-summary-actions">
           {% if entity.pending_count > 0 %}
           <form data-async-form method="post" action="/api/payout-groups/{{ entity.entity_type }}/{{ entity.target_id }}/status">
@@ -48,10 +61,11 @@
           {% endif %}
           {% endif %}
         </span>
-        <span class="entity-expand-icon">{{ icon("chevron-right") }}</span>
+        <span class="entity-expand-icon">{% if entity.pending_count > 0 %}{{ icon("chevron-right") }}{% endif %}</span>
       </summary>
+      {% if entity.pending_count > 0 %}
       <div class="entity-detail-panel">
-        <header><div><h3>아이템별 상세</h3><p>아이템은 정산 근거로만 표시되며 관리 기준은 {{ '혈맹' if settlement_level == 'alliance' else '인원' }}입니다.</p></div><div class="entity-detail-totals">{% if settlement_level == 'alliance' %}<span>완료 {{ entity.complete_count }}</span>{% if entity.forfeited_count %}<span>귀속 {{ entity.forfeited_count }}</span>{% endif %}{% else %}<span>미완료 {{ entity.pending_count }}</span>{% endif %}<strong>전체 {{ entity.total_count }}</strong></div></header>
+        <header><div><h3>아이템별 상세</h3><p>아이템은 정산 근거로만 표시되며 관리 기준은 {{ '혈맹' if settlement_level == 'alliance' else '인원' }}입니다.</p></div><div class="entity-detail-totals"><strong>미분배 {{ entity.pending_count }}건</strong></div></header>
         <div class="entity-detail-list">
           {% for detail in entity.details %}
           <article class="entity-detail-row status-{{ detail.status_tone }}" data-payout-id="{{ detail.payout_object_id }}">
@@ -70,6 +84,7 @@
           {% endfor %}
         </div>
       </div>
+      {% endif %}
     </details>
     {% endfor %}
   </section>
@@ -78,12 +93,31 @@
     {% if settlement_level == 'clan' %}
     {{ empty('처리할 미완료 내역이 없습니다.', '완료하거나 귀속한 내역은 과거 기록에서 확인할 수 있습니다.') }}
     {% else %}
-    {{ empty('정산 대상이 없습니다.', '판매 완료된 드랍과 이전 단계의 완료 상태를 확인해 주세요.') }}
+    {{ empty('정산 대상이 없습니다.', '역할 매핑된 혈맹과 판매 완료된 드랍을 확인해 주세요.') }}
     {% endif %}
   {% endif %}
 </div>
 
-{% if settlement_level == 'clan' %}
+{% if settlement_level == 'alliance' %}
+{% call modal('alliance-settlement-history-modal', '혈맹 분배 완료 기록', '선택한 혈맹의 완료 기록만 불러옵니다.') %}
+<div class="alliance-history-modal" data-alliance-history-modal>
+  <section class="alliance-history-heading">
+    <div><span>혈맹</span><strong data-alliance-history-name>-</strong></div>
+    <div><span>완료 분배</span><strong data-alliance-history-count>0건</strong></div>
+    <div><span>완료 금액</span><strong data-alliance-history-amount>0</strong><small>아데나</small></div>
+  </section>
+  <div class="settlement-history-loading" data-alliance-history-loading>완료 기록을 불러오는 중입니다.</div>
+  <div class="alliance-history-list" data-alliance-history-list hidden></div>
+  <div class="ops-empty-state alliance-history-empty" data-alliance-history-empty hidden>
+    <span>{{ icon("clipboard-list") }}</span>
+    <strong>완료 기록이 없습니다.</strong>
+    <p>이 혈맹에 완료 처리된 분배가 아직 없습니다.</p>
+  </div>
+  <button class="secondary-button settlement-history-more" type="button"
+          data-alliance-history-more hidden>다음 기록 불러오기</button>
+</div>
+{% endcall %}
+{% elif settlement_level == 'clan' %}
 {% call modal('clan-settlement-history-modal', '혈맹원 분배 과거 기록', '완료 및 혈비 귀속 처리된 내역만 표시합니다.') %}
 <div class="settlement-history-modal" data-clan-history-modal
      data-guild-id="{{ guild_id }}" data-alliance-id="{{ alliance_id }}" data-period="{{ period }}">

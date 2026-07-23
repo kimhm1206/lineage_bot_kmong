@@ -94,6 +94,8 @@
   const asyncSubmit = async (form) => {
     const confirmation = form.dataset.confirm;
     if (confirmation && !window.confirm(confirmation)) return;
+    const keepModalOpen = form.hasAttribute("data-keep-modal");
+    const refreshAllianceHistory = form.hasAttribute("data-alliance-history-cancel");
     const submitter = form.querySelector("button[type=submit]");
     const originalHtml = submitter?.innerHTML;
     if (submitter) {
@@ -108,9 +110,10 @@
       });
       const payload = await response.json().catch(() => ({ ok: false, message: "서버 응답을 확인하지 못했습니다." }));
       if (!response.ok || !payload.ok) throw new Error(payload.message || "작업을 완료하지 못했습니다.");
-      closeModal(form);
+      if (!keepModalOpen) closeModal(form);
       showToast(payload.message || "처리했습니다.");
       await refreshLivePage();
+      if (refreshAllianceHistory) await loadAllianceHistory({ reset: true });
     } catch (error) {
       showToast(error.message || "작업 중 오류가 발생했습니다.", "error");
     } finally {
@@ -400,6 +403,146 @@
     loadClanHistory({ reset: true });
   };
 
+  const allianceHistoryState = {
+    guildId: "",
+    allianceId: "",
+    allianceName: "",
+    page: 1,
+    request: 0,
+    loading: false,
+    hasNext: false,
+  };
+
+  const renderAllianceHistoryRow = (record) => {
+    const row = document.createElement("article");
+    row.className = "alliance-history-row";
+
+    const recordCopy = document.createElement("div");
+    recordCopy.className = "alliance-history-record";
+    const itemName = document.createElement("strong");
+    itemName.textContent = record.item_name || "이름 없는 아이템";
+    const attendance = document.createElement("span");
+    attendance.textContent = `출석 #${record.attendance_id || "-"} · ${record.occurred_at_label || "-"}`;
+    const completedAt = document.createElement("small");
+    completedAt.textContent = `완료 ${record.completed_at_label || "-"}`;
+    recordCopy.append(itemName, attendance, completedAt);
+
+    const amount = document.createElement("div");
+    amount.className = "alliance-history-amount";
+    const amountValue = document.createElement("strong");
+    amountValue.textContent = Number(record.amount_adena || 0).toLocaleString("ko-KR");
+    const amountUnit = document.createElement("small");
+    amountUnit.textContent = "분배 아데나";
+    amount.append(amountValue, amountUnit);
+
+    const progress = document.createElement("div");
+    progress.className = `alliance-history-progress${record.can_cancel ? " is-cancellable" : ""}`;
+    const progressLabel = document.createElement("strong");
+    progressLabel.textContent = record.progress_label || "혈맹 분배 상태 확인";
+    const childCount = document.createElement("small");
+    childCount.textContent = `하위 정산 ${Number(record.child_count || 0).toLocaleString("ko-KR")}건`;
+    progress.append(progressLabel, childCount);
+
+    row.append(recordCopy, amount, progress);
+    if (record.can_cancel) {
+      const form = document.createElement("form");
+      form.method = "post";
+      form.action = `/api/payouts/${record.payout_object_id}/status`;
+      form.dataset.asyncForm = "";
+      form.dataset.keepModal = "";
+      form.dataset.allianceHistoryCancel = "";
+      form.dataset.confirm = "이 혈맹 분배 완료를 취소하시겠습니까?";
+      const status = document.createElement("input");
+      status.type = "hidden";
+      status.name = "status_code";
+      status.value = "0";
+      const button = document.createElement("button");
+      button.className = "secondary-button";
+      button.type = "submit";
+      button.textContent = "완료 취소";
+      form.append(status, button);
+      row.append(form);
+    }
+    return row;
+  };
+
+  const loadAllianceHistory = async ({ reset = false } = {}) => {
+    const modal = document.querySelector("[data-alliance-history-modal]");
+    if (!modal || (allianceHistoryState.loading && !reset)) return;
+    if (reset && allianceHistoryState.loading) {
+      allianceHistoryState.request += 1;
+      allianceHistoryState.loading = false;
+    }
+    if (reset) {
+      allianceHistoryState.page = 1;
+      allianceHistoryState.hasNext = false;
+    }
+    const requestNumber = ++allianceHistoryState.request;
+    const list = modal.querySelector("[data-alliance-history-list]");
+    const loading = modal.querySelector("[data-alliance-history-loading]");
+    const empty = modal.querySelector("[data-alliance-history-empty]");
+    const more = modal.querySelector("[data-alliance-history-more]");
+    allianceHistoryState.loading = true;
+    loading.hidden = false;
+    loading.textContent = "완료 기록을 불러오는 중입니다.";
+    empty.hidden = true;
+    more.hidden = true;
+    if (reset) {
+      list.hidden = true;
+      list.replaceChildren();
+    }
+
+    const params = new URLSearchParams({
+      guild_id: allianceHistoryState.guildId,
+      alliance_id: allianceHistoryState.allianceId,
+      page: String(allianceHistoryState.page),
+    });
+    try {
+      const response = await fetch(`/api/alliance-settlement-history?${params.toString()}`, {
+        headers: { Accept: "application/json" },
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.detail || payload.message || "완료 기록을 불러오지 못했습니다.");
+      }
+      if (requestNumber !== allianceHistoryState.request) return;
+      modal.querySelector("[data-alliance-history-name]").textContent =
+        payload.alliance_name || allianceHistoryState.allianceName || "-";
+      modal.querySelector("[data-alliance-history-count]").textContent =
+        `${Number(payload.summary?.complete_count || 0).toLocaleString("ko-KR")}건`;
+      modal.querySelector("[data-alliance-history-amount]").textContent =
+        Number(String(payload.summary?.total_amount_label || "0").replaceAll(",", "")).toLocaleString("ko-KR");
+
+      const records = Array.isArray(payload.history) ? payload.history : [];
+      const fragment = document.createDocumentFragment();
+      records.forEach((record) => fragment.append(renderAllianceHistoryRow(record)));
+      list.append(fragment);
+      list.hidden = list.children.length === 0;
+      empty.hidden = list.children.length > 0;
+      allianceHistoryState.hasNext = Boolean(payload.pagination?.has_next);
+      more.hidden = !allianceHistoryState.hasNext;
+      loading.hidden = true;
+    } catch (error) {
+      if (requestNumber !== allianceHistoryState.request) return;
+      loading.hidden = false;
+      loading.textContent = error.message || "완료 기록을 불러오지 못했습니다.";
+    } finally {
+      if (requestNumber === allianceHistoryState.request) allianceHistoryState.loading = false;
+    }
+  };
+
+  const openAllianceHistory = (button) => {
+    const modal = document.querySelector("[data-alliance-history-modal]");
+    if (!modal) return;
+    allianceHistoryState.guildId = button.dataset.guildId || "";
+    allianceHistoryState.allianceId = button.dataset.allianceId || "";
+    allianceHistoryState.allianceName = button.dataset.allianceName || "";
+    modal.querySelector("[data-alliance-history-name]").textContent =
+      allianceHistoryState.allianceName || "-";
+    openModal("alliance-settlement-history-modal");
+    loadAllianceHistory({ reset: true });
+  };
+
   document.addEventListener("submit", (event) => {
     const clientSearchForm = event.target.closest("[data-client-search-form]");
     if (clientSearchForm) {
@@ -442,6 +585,11 @@
     if (bidHistoryOpen) openBidHistory(bidHistoryOpen);
     const clanHistoryOpen = event.target.closest("[data-clan-history-open]");
     if (clanHistoryOpen) openClanHistory(clanHistoryOpen);
+    const allianceHistoryOpen = event.target.closest("[data-alliance-history-open]");
+    if (allianceHistoryOpen) {
+      event.preventDefault();
+      openAllianceHistory(allianceHistoryOpen);
+    }
     const clanHistoryStatus = event.target.closest("[data-history-status]");
     if (clanHistoryStatus) {
       clanHistoryState.status = clanHistoryStatus.dataset.historyStatus || "all";
@@ -454,6 +602,11 @@
     if (clanHistoryMore && clanHistoryState.hasNext) {
       clanHistoryState.page += 1;
       loadClanHistory();
+    }
+    const allianceHistoryMore = event.target.closest("[data-alliance-history-more]");
+    if (allianceHistoryMore && allianceHistoryState.hasNext) {
+      allianceHistoryState.page += 1;
+      loadAllianceHistory();
     }
 
     const statusFilter = event.target.closest("[data-personal-filter] button");

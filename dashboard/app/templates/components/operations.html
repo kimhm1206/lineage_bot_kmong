@@ -43,7 +43,7 @@
 {% endmacro %}
 
 {% macro summary(cards) %}
-<section class="ops-summary-grid">
+<section class="ops-summary-grid{% if cards|length == 1 %} is-single{% endif %}">
   {% for card in cards %}
   <article class="ops-summary-card">
     <span>{{ card.label }}</span>

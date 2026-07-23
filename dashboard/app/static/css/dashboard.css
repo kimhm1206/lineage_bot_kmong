@@ -4752,6 +4752,10 @@ body.modal-open {
   margin-bottom: 24px;
 }
 
+.ops-summary-grid.is-single {
+  grid-template-columns: minmax(260px, 360px);
+}
+
 .ops-summary-card {
   display: grid;
   min-width: 0;
@@ -4826,6 +4830,10 @@ body.modal-open {
 .drop-record-complete,
 .settlement-entity-card.state-complete {
   border-left-color: var(--success);
+}
+
+.settlement-entity-card.state-idle {
+  border-left-color: var(--line-strong);
 }
 
 .drop-record-main {
@@ -5223,6 +5231,25 @@ body.modal-open {
   color: var(--success);
 }
 
+.entity-history-slot {
+  display: flex;
+  min-width: 0;
+  justify-content: flex-start;
+}
+
+.entity-history-slot .secondary-button {
+  gap: 7px;
+  min-width: 116px;
+}
+
+.entity-history-slot .icon {
+  width: 15px;
+}
+
+.settlement-entity-card.has-no-pending > summary {
+  cursor: default;
+}
+
 .entity-expand-icon {
   display: grid;
   color: var(--muted);
@@ -5299,6 +5326,45 @@ body.modal-open {
   display: grid;
   gap: 14px;
   min-height: 430px;
+}
+
+.alliance-history-modal {
+  display: grid;
+  min-height: 430px;
+  gap: 14px;
+}
+
+.alliance-history-heading {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) repeat(2, minmax(130px, .75fr));
+  gap: 8px;
+}
+
+.alliance-history-heading > div {
+  display: grid;
+  min-width: 0;
+  min-height: 76px;
+  align-content: center;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel-subtle);
+}
+
+.alliance-history-heading span,
+.alliance-history-heading small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.alliance-history-heading strong {
+  overflow: hidden;
+  color: var(--text-strong);
+  font-size: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .settlement-history-summary {
@@ -5416,8 +5482,70 @@ body.modal-open {
 
 .settlement-history-loading[hidden],
 .settlement-history-list[hidden],
+.alliance-history-list[hidden],
+.alliance-history-empty[hidden],
 .settlement-history-more[hidden] {
   display: none;
+}
+
+.alliance-history-list {
+  display: grid;
+  max-height: min(54vh, 560px);
+  gap: 7px;
+  padding-right: 4px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.alliance-history-row {
+  display: grid;
+  grid-template-columns: minmax(210px, 1.25fr) minmax(120px, .55fr) minmax(150px, .7fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 72px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--success);
+  border-radius: 7px;
+  background: var(--panel);
+}
+
+.alliance-history-record,
+.alliance-history-amount,
+.alliance-history-progress {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.alliance-history-row strong {
+  overflow: hidden;
+  color: var(--text-strong);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.alliance-history-row span,
+.alliance-history-row small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.alliance-history-progress.is-cancellable strong {
+  color: var(--success);
+}
+
+.alliance-history-progress:not(.is-cancellable) strong {
+  color: var(--muted-strong);
+}
+
+.alliance-history-empty {
+  min-height: 250px;
 }
 
 .settlement-history-list {
@@ -6021,6 +6149,8 @@ body.modal-open {
   .detail-actions { grid-column: 1 / -1; padding-top: 7px; border-top: 1px solid var(--line); }
   .settlement-history-row { grid-template-columns: minmax(160px, .8fr) minmax(200px, 1.2fr) minmax(100px, .5fr); }
   .settlement-history-result { grid-column: 1 / -1; grid-template-columns: auto 1fr; align-items: center; }
+  .alliance-history-row { grid-template-columns: minmax(190px, 1fr) minmax(120px, .55fr) minmax(145px, .7fr); }
+  .alliance-history-row > form { grid-column: 1 / -1; justify-self: end; }
   .item-quick-create { grid-template-columns: minmax(200px, 1fr) minmax(170px, .7fr) auto; }
   .item-create-copy { grid-column: 1 / -1; }
   .item-row-editor { padding-left: 14px; }
@@ -6046,7 +6176,8 @@ body.modal-open {
   .settlement-history-open { width: 100%; }
   .settlement-entity-card > summary { grid-template-columns: 38px minmax(0, 1fr) 22px; gap: 11px; }
   .entity-primary-value,
-  .entity-state-box { grid-column: 2; }
+  .entity-state-box,
+  .entity-history-slot { grid-column: 2; }
   .entity-expand-icon { grid-column: 3; grid-row: 1; }
   .entity-summary-actions { grid-column: 1 / -1; justify-content: stretch; }
   .entity-summary-actions form,
@@ -6064,6 +6195,11 @@ body.modal-open {
   .settlement-history-item,
   .settlement-history-result { grid-column: 1 / -1; }
   .settlement-history-result { grid-template-columns: auto minmax(0, 1fr); }
+  .alliance-history-heading { grid-template-columns: 1fr; }
+  .alliance-history-row { grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+  .alliance-history-record { grid-column: 1 / -1; }
+  .alliance-history-progress { grid-column: 1; }
+  .alliance-history-row > form { grid-column: 2; grid-row: 2 / span 2; align-self: center; }
   .fee-rule-grid,
   .personal-distribution-grid { grid-template-columns: 1fr; }
   .fee-rule-card { grid-template-columns: 38px minmax(0, 1fr) 38px; }

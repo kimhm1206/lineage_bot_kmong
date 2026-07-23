@@ -314,6 +314,20 @@ async def alliance_settlement_entities(
     query: str,
 ) -> dict[str, Any]:
     period_clause = "" if period_days == 0 else "AND d.occurred_at >= EXTRACT(EPOCH FROM NOW() - (:period_days * INTERVAL '1 day'))::BIGINT"
+    mapped_alliances = (
+        await session.execute(
+            text("""
+                SELECT DISTINCT a.alliance_id,
+                       COALESCE(a.display_name, a.alliance_name) AS alliance_name
+                FROM guild_alliance_role_mappings mapping
+                JOIN alliances a ON a.alliance_id = mapping.alliance_id
+                WHERE mapping.guild_id = :guild_id
+                  AND a.is_active IS TRUE
+                ORDER BY alliance_name
+            """),
+            {"guild_id": guild_id},
+        )
+    ).mappings().all()
     rows = [
         dict(row)
         for row in (
@@ -334,13 +348,24 @@ async def alliance_settlement_entities(
                     LEFT JOIN settlement_fee_rules fr ON fr.fee_rule_id = fv.fee_rule_id
                     WHERE d.guild_id = :guild_id {period_clause}
                       AND (po.object_code = 1 OR (po.object_code = 3 AND po.parent_payout_object_id IS NULL))
+                      AND po.status_code = 0
                     ORDER BY d.occurred_at DESC, po.payout_object_id DESC
                 """),
                 {"guild_id": guild_id, "period_days": period_days},
             )
         ).mappings().all()
     ]
-    entities: dict[str, dict[str, Any]] = {}
+    entities: dict[str, dict[str, Any]] = {
+        f"alliance:{int(alliance['alliance_id'])}": {
+            "key": f"alliance:{int(alliance['alliance_id'])}",
+            "entity_type": "alliance",
+            "target_id": int(alliance["alliance_id"]),
+            "name": alliance["alliance_name"] or "미분류",
+            "eyebrow": "혈맹 분배",
+            "details": [],
+        }
+        for alliance in mapped_alliances
+    }
     for row in rows:
         if int(row["object_code"]) == 1:
             key = f"alliance:{int(row['recipient_alliance_id'])}"
@@ -374,6 +399,7 @@ async def alliance_settlement_entities(
     entity_rows = list(entities.values())
     for entity in entity_rows:
         _finish_entity(entity)
+        entity["state"] = "pending" if entity["pending_count"] else "idle"
     if query:
         lowered = query.casefold()
         entity_rows = [
@@ -382,16 +408,132 @@ async def alliance_settlement_entities(
             if lowered in entity["name"].casefold()
             or any(lowered in detail["item_name"].casefold() for detail in entity["details"])
         ]
-    entity_rows.sort(key=lambda item: (item["entity_type"] == "fee", item["state"] == "complete", item["name"]))
+    entity_rows.sort(key=lambda item: (item["entity_type"] == "fee", item["state"] == "idle", item["name"]))
     pending_total = sum(entity["pending_amount"] for entity in entity_rows)
     return {
         "entities": entity_rows,
         "summary_cards": [
-            {"label": "정산 대상", "value": f"{len(entity_rows):,}", "meta": "혈맹과 수수료"},
             {"label": "미분배 아데나", "value": _money(pending_total), "meta": "완료 전 금액"},
-            {"label": "미완료", "value": f"{sum(e['pending_count'] for e in entity_rows):,}건", "meta": "아이템별 상세"},
-            {"label": "완료", "value": f"{sum(e['complete_count'] for e in entity_rows):,}건", "meta": "처리된 분배"},
         ],
+    }
+
+
+async def alliance_settlement_history_page(
+    session: AsyncSession,
+    *,
+    guild_id: int,
+    alliance_id: int,
+    page: int,
+) -> dict[str, Any]:
+    params = {
+        "guild_id": guild_id,
+        "alliance_id": alliance_id,
+    }
+    alliance_name = await session.scalar(
+        text("""
+            SELECT COALESCE(a.display_name, a.alliance_name)
+            FROM alliances a
+            JOIN guild_alliance_role_mappings mapping
+              ON mapping.alliance_id = a.alliance_id
+             AND mapping.guild_id = :guild_id
+            WHERE a.alliance_id = :alliance_id
+            LIMIT 1
+        """),
+        params,
+    )
+    if alliance_name is None:
+        return {
+            "alliance_name": "",
+            "history": [],
+            "pagination": _pagination(0, 1, 30),
+            "summary": {"complete_count": 0, "total_amount_label": "0"},
+        }
+    total_row = (
+        await session.execute(
+            text("""
+                SELECT COUNT(*) AS complete_count,
+                       COALESCE(SUM(po.amount_adena), 0) AS total_amount
+                FROM settlement_payout_objects po
+                JOIN settlement_drops d ON d.drop_id = po.drop_id
+                JOIN settlement_drop_sales sale
+                  ON sale.drop_id = d.drop_id
+                 AND sale.status_code = 1
+                WHERE d.guild_id = :guild_id
+                  AND po.object_code = 1
+                  AND po.recipient_alliance_id = :alliance_id
+                  AND po.status_code = 1
+            """),
+            params,
+        )
+    ).mappings().one()
+    total = int(total_row["complete_count"] or 0)
+    pagination = _pagination(total, page, 30)
+    rows = [
+        dict(row)
+        for row in (
+            await session.execute(
+                text("""
+                    SELECT po.payout_object_id, po.amount_adena,
+                           d.attendance_id, item.item_name,
+                           TO_CHAR(
+                               TO_TIMESTAMP(d.occurred_at),
+                               'YYYY-MM-DD HH24:MI'
+                           ) AS occurred_at_label,
+                           TO_CHAR(
+                               TO_TIMESTAMP(po.completed_at),
+                               'YYYY-MM-DD HH24:MI'
+                           ) AS completed_at_label,
+                           COUNT(child.payout_object_id) AS child_count,
+                           COUNT(child.payout_object_id) FILTER (
+                               WHERE child.status_code <> 0
+                           ) AS started_child_count
+                    FROM settlement_payout_objects po
+                    JOIN settlement_drops d ON d.drop_id = po.drop_id
+                    JOIN settlement_drop_sales sale
+                      ON sale.drop_id = d.drop_id
+                     AND sale.status_code = 1
+                    JOIN catalog_item_versions item
+                      ON item.item_version_id = d.item_version_id
+                    LEFT JOIN settlement_payout_objects child
+                      ON child.parent_payout_object_id = po.payout_object_id
+                    WHERE d.guild_id = :guild_id
+                      AND po.object_code = 1
+                      AND po.recipient_alliance_id = :alliance_id
+                      AND po.status_code = 1
+                    GROUP BY po.payout_object_id, d.attendance_id,
+                             d.occurred_at, item.item_name
+                    ORDER BY po.completed_at DESC, po.payout_object_id DESC
+                    LIMIT :limit OFFSET :offset
+                """),
+                {
+                    **params,
+                    "limit": pagination["page_size"],
+                    "offset": pagination["offset"],
+                },
+            )
+        ).mappings().all()
+    ]
+    for row in rows:
+        row["payout_object_id"] = int(row["payout_object_id"])
+        row["attendance_id"] = int(row["attendance_id"])
+        row["amount_adena"] = int(row["amount_adena"])
+        row["amount_label"] = _money(row["amount_adena"])
+        row["child_count"] = int(row["child_count"] or 0)
+        row["started_child_count"] = int(row["started_child_count"] or 0)
+        row["can_cancel"] = row["started_child_count"] == 0
+        row["progress_label"] = (
+            "혈맹 분배 시작 전"
+            if row["can_cancel"]
+            else f"하위 정산 {row['started_child_count']:,}건 처리"
+        )
+    return {
+        "alliance_name": str(alliance_name),
+        "history": rows,
+        "pagination": pagination,
+        "summary": {
+            "complete_count": total,
+            "total_amount_label": _money(total_row["total_amount"]),
+        },
     }
 
 

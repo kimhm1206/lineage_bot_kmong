@@ -684,3 +684,29 @@ async def clan_settlement_history(
             page=max(page, 1),
         ),
     }
+
+
+@router.get("/api/alliance-settlement-history")
+async def alliance_settlement_history(
+    request: Request,
+    guild_id: int,
+    alliance_id: int,
+    page: int = 1,
+    session: AsyncSession = Depends(get_session),
+):
+    if not can_manage_alliance_operations(request):
+        await require_alliance_access(
+            request,
+            session,
+            guild_id=guild_id,
+            alliance_id=alliance_id,
+        )
+    return {
+        "ok": True,
+        **await operations_store.alliance_settlement_history_page(
+            session,
+            guild_id=guild_id,
+            alliance_id=alliance_id,
+            page=max(page, 1),
+        ),
+    }
