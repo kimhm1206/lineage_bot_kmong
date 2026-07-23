@@ -618,13 +618,10 @@ async def clan_settlement_entities(
             or any(lowered in detail["item_name"].casefold() for detail in entity["details"])
         ]
     entity_rows.sort(key=lambda item: (item["entity_type"] == "fee", item["name"]))
-    pending_count = sum(entity["pending_count"] for entity in entity_rows)
     return {
         "entities": entity_rows,
         "summary_cards": [
-            {"label": "분배 대기 대상", "value": f"{len(entity_rows):,}", "meta": "혈맹원과 수수료"},
             {"label": "미분배 아데나", "value": _money(sum(e["pending_amount"] for e in entity_rows)), "meta": "현재 지급할 금액"},
-            {"label": "미완료", "value": f"{pending_count:,}건", "meta": "처리가 필요한 내역"},
         ],
     }
 

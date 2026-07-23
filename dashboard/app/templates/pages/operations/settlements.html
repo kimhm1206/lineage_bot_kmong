@@ -18,7 +18,7 @@
             data-clan-history-open data-guild-id="{{ guild_id }}"
             data-alliance-id="{{ alliance_id }}" data-period="{{ period }}">
       {{ icon("clipboard-list") }}
-      과거 기록
+      기록 확인
     </button>
     {% endif %}
   </section>
@@ -91,7 +91,7 @@
   <div class="ops-client-search-empty" data-client-search-empty hidden>검색 결과가 없습니다.</div>
   {% else %}
     {% if settlement_level == 'clan' %}
-    {{ empty('처리할 미완료 내역이 없습니다.', '완료하거나 귀속한 내역은 과거 기록에서 확인할 수 있습니다.') }}
+    {{ empty('처리할 미완료 내역이 없습니다.', '완료·귀속 내역은 기록 확인에서 조회할 수 있습니다.') }}
     {% else %}
     {{ empty('정산 대상이 없습니다.', '역할 매핑된 혈맹과 판매 완료된 드랍을 확인해 주세요.') }}
     {% endif %}
