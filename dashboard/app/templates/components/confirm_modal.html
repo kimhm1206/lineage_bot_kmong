@@ -1,0 +1,28 @@
+{% from "components/icons.html" import icon %}
+<div class="ops-modal ops-confirm-modal" id="ops-confirm-modal"
+     aria-hidden="true" role="dialog" aria-modal="true"
+     aria-labelledby="ops-confirm-title"
+     aria-describedby="ops-confirm-message">
+  <button class="ops-modal-backdrop" type="button"
+          data-confirm-cancel aria-label="닫기"></button>
+  <section class="ops-modal-dialog">
+    <div class="ops-confirm-content">
+      <span class="ops-confirm-icon">{{ icon("triangle-alert") }}</span>
+      <div>
+        <h2 id="ops-confirm-title" data-confirm-title>작업 확인</h2>
+        <p id="ops-confirm-message" data-confirm-message>
+          이 작업을 계속하시겠습니까?
+        </p>
+      </div>
+    </div>
+    <footer class="ops-confirm-actions">
+      <button class="secondary-button" type="button" data-confirm-cancel>
+        취소
+      </button>
+      <button class="primary-button ops-confirm-accept" type="button"
+              data-confirm-accept>
+        확인
+      </button>
+    </footer>
+  </section>
+</div>

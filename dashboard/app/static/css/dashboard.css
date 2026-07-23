@@ -7652,6 +7652,63 @@ body.modal-open {
 .ops-modal-header h2 { margin: 0; color: var(--text-strong); font-size: 20px; }
 .ops-modal-header p { margin: 6px 0 0; color: var(--muted); font-size: 12px; }
 .ops-modal-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 22px; background: var(--panel); }
+#ops-confirm-modal .ops-modal-dialog {
+  width: min(480px, calc(100vw - 32px));
+}
+.ops-confirm-content {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 24px;
+}
+.ops-confirm-icon {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--warning) 38%, var(--line));
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--warning) 12%, var(--panel));
+  color: var(--warning);
+}
+.ops-confirm-icon .icon {
+  width: 21px;
+  height: 21px;
+}
+.ops-confirm-content > div {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+  padding-top: 2px;
+}
+.ops-confirm-content h2 {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: 19px;
+}
+.ops-confirm-content p {
+  margin: 0;
+  color: var(--muted-strong);
+  font-size: 13px;
+  line-height: 1.65;
+}
+.ops-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 14px 24px;
+  border-top: 1px solid var(--line);
+  background: var(--panel-subtle);
+}
+.ops-confirm-actions button {
+  min-width: 92px;
+}
+.ops-confirm-accept {
+  border-color: var(--danger);
+  background: var(--danger);
+  color: #fff;
+}
 #alliance-settlement-history-modal .ops-modal-dialog,
 #clan-settlement-history-modal .ops-modal-dialog,
 #fee-history-modal .ops-modal-dialog,

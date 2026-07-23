@@ -36,6 +36,30 @@
     if (!document.querySelector(".ops-modal.is-open")) body.classList.remove("has-open-modal");
   };
 
+  let pendingConfirmationForm = null;
+
+  const closeConfirmation = () => {
+    pendingConfirmationForm = null;
+    closeModal(document.getElementById("ops-confirm-modal"));
+  };
+
+  const requestConfirmation = (form) => {
+    const modal = document.getElementById("ops-confirm-modal");
+    if (!modal) {
+      showToast("확인 화면을 불러오지 못했습니다.", "error");
+      return;
+    }
+    pendingConfirmationForm = form;
+    modal.querySelector("[data-confirm-title]").textContent =
+      form.dataset.confirmTitle || "작업 확인";
+    modal.querySelector("[data-confirm-message]").textContent =
+      form.dataset.confirm || "이 작업을 계속하시겠습니까?";
+    modal.querySelector("[data-confirm-accept]").textContent =
+      form.dataset.confirmAction || "확인";
+    openModal("ops-confirm-modal");
+    window.setTimeout(() => modal.querySelector("[data-confirm-accept]")?.focus(), 30);
+  };
+
   const preservedDetails = () =>
     [...document.querySelectorAll("details[open][data-detail-key]")].map((detail) => detail.dataset.detailKey);
 
@@ -91,9 +115,12 @@
     }
   };
 
-  const asyncSubmit = async (form) => {
+  const asyncSubmit = async (form, { confirmed = false } = {}) => {
     const confirmation = form.dataset.confirm;
-    if (confirmation && !window.confirm(confirmation)) return;
+    if (confirmation && !confirmed) {
+      requestConfirmation(form);
+      return;
+    }
     const keepModalOpen = form.hasAttribute("data-keep-modal");
     const refreshAllianceHistory = form.hasAttribute("data-alliance-history-cancel");
     const submitter = form.querySelector("button[type=submit]");
@@ -1023,6 +1050,21 @@
   });
 
   document.addEventListener("click", (event) => {
+    const confirmCancel = event.target.closest("[data-confirm-cancel]");
+    if (confirmCancel) {
+      event.preventDefault();
+      closeConfirmation();
+      return;
+    }
+    const confirmAccept = event.target.closest("[data-confirm-accept]");
+    if (confirmAccept) {
+      event.preventDefault();
+      const form = pendingConfirmationForm;
+      pendingConfirmationForm = null;
+      closeModal(document.getElementById("ops-confirm-modal"));
+      if (form) asyncSubmit(form, { confirmed: true });
+      return;
+    }
     if (event.target.closest("summary form, summary button")) event.stopPropagation();
     const modalOpen = event.target.closest("[data-modal-open]");
     if (modalOpen) openModal(modalOpen.dataset.modalOpen);
@@ -1155,7 +1197,12 @@
   });
 
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") closeModal(document.querySelector(".ops-modal.is-open"));
+    if (event.key !== "Escape") return;
+    if (document.getElementById("ops-confirm-modal")?.classList.contains("is-open")) {
+      closeConfirmation();
+      return;
+    }
+    closeModal(document.querySelector(".ops-modal.is-open"));
   });
 
   const initializeOperationsPage = () => {

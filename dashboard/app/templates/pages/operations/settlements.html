@@ -123,7 +123,11 @@
             <button class="primary-button" type="submit">전체 완료</button>
           </form>
           {% if settlement_level == 'clan' and entity.entity_type == 'member' %}
-          <form data-async-form data-confirm="이 유저의 미수령 분배금을 모두 혈비로 귀속하시겠습니까?" method="post" action="/api/payout-groups/member/{{ entity.target_id }}/status">
+          <form data-async-form
+                data-confirm="이 유저의 미수령 분배금을 모두 혈비로 귀속하시겠습니까?"
+                data-confirm-title="전체 귀속 확인"
+                data-confirm-action="전체 귀속"
+                method="post" action="/api/payout-groups/member/{{ entity.target_id }}/status">
             <input type="hidden" name="guild_id" value="{{ guild_id }}"><input type="hidden" name="alliance_id" value="{{ alliance_id }}"><input type="hidden" name="status_code" value="2">
             <button class="secondary-button warning-button" type="submit">전체 귀속</button>
           </form>
@@ -146,7 +150,7 @@
             <div class="detail-actions">
               {% if can_manage_settlement and detail.status_code == 0 %}
               <form data-async-form method="post" action="{{ detail.status_action }}"><input type="hidden" name="status_code" value="1"><button class="secondary-button" type="submit">완료</button></form>
-              {% if settlement_level == 'clan' and entity.entity_type == 'member' and detail.allows_forfeit %}<form data-async-form data-confirm="이 분배금을 혈비로 귀속하시겠습니까?" method="post" action="{{ detail.status_action }}"><input type="hidden" name="status_code" value="2"><button class="secondary-button warning-button" type="submit">귀속</button></form>{% endif %}
+              {% if settlement_level == 'clan' and entity.entity_type == 'member' and detail.allows_forfeit %}<form data-async-form data-confirm="이 분배금을 혈비로 귀속하시겠습니까?" data-confirm-title="귀속 확인" data-confirm-action="귀속 처리" method="post" action="{{ detail.status_action }}"><input type="hidden" name="status_code" value="2"><button class="secondary-button warning-button" type="submit">귀속</button></form>{% endif %}
               {% elif can_manage_settlement and detail.status_code == 1 and entity.entity_type != 'fee' %}
               {% if detail.source_type == 'drop' %}<form data-async-form method="post" action="{{ detail.status_action }}"><input type="hidden" name="status_code" value="0"><button class="text-button" type="submit">완료 취소</button></form>{% endif %}
               {% endif %}
