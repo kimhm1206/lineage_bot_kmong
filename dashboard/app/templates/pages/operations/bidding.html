@@ -1,0 +1,61 @@
+{% extends "layouts/app_shell.html" %}
+{% from "components/icons.html" import icon %}
+{% from "components/operations.html" import toolbar, summary, empty, modal with context %}
+
+{% block title %}{{ page_title }} · {{ app_name }}{% endblock %}
+{% block content %}
+<div data-live-page>
+  {{ toolbar(guilds, guild_id, query, primary_label='입찰 아이템 추가', primary_modal='bid-create-modal') }}
+  {{ summary(summary_cards) }}
+  <section class="ops-section-heading"><div><h2>입찰 진행표</h2><p>아이템을 펼쳐 현재 회차의 혈맹별 완료 상태를 바로 변경합니다.</p></div><span>{{ alliances|length }}개 혈맹</span></section>
+  {% if bid_items %}
+  <section class="bid-item-list">
+    {% for item in bid_items %}
+    <details class="bid-item-card{% if item.is_free %} is-free{% endif %}{% if not item.is_active %} is-inactive{% endif %}" data-detail-key="bid:{{ item.bid_item_id }}">
+      <summary>
+        <div class="bid-item-name"><small>{{ '무료 나눔' if item.is_free else '입찰 아이템' }}</small><strong>{{ item.item_name }}</strong></div>
+        <div class="bid-cycle"><span>현재 회차</span><strong>{{ item.cycle_no }}회차</strong></div>
+        <div class="bid-progress-copy"><span>{{ item.completed_count }} / {{ item.total_count }}</span><div class="bid-progress-track"><i style="width: {{ item.progress }}%"></i></div></div>
+        <span class="ops-status ops-status-{{ 'complete' if item.is_active else 'muted' }}">{{ '진행 중' if item.is_active else '중지' }}</span>
+        <button class="icon-button" type="button" title="아이템 수정" data-bid-edit data-bid='{{ item | tojson | forceescape }}'>{{ icon("settings") }}</button>
+        <span class="entity-expand-icon">{{ icon("chevron-right") }}</span>
+      </summary>
+      <div class="bid-detail-panel">
+        <header><div><h3>{{ item.cycle_no }}회차 혈맹 상태</h3><p>마지막 혈맹까지 완료하면 다음 회차가 자동으로 시작됩니다.</p></div></header>
+        <div class="bid-alliance-grid">
+          {% for alliance in item.alliance_states %}
+          <form data-async-form method="post" action="/api/bid-items/{{ item.bid_item_id }}/alliances/{{ alliance.alliance_id }}/toggle">
+            <input type="hidden" name="guild_id" value="{{ guild_id }}">
+            <button class="bid-alliance-button{% if alliance.is_complete %} is-complete{% endif %}" type="submit" {% if not item.is_active %}disabled{% endif %}>
+              <span>{{ alliance.alliance_name }}</span>{% if alliance.is_complete %}{{ icon("check") }}{% endif %}
+            </button>
+          </form>
+          {% endfor %}
+        </div>
+        {% if item.history %}<div class="bid-history"><strong>최근 완료 기록</strong><div>{% for history in item.history[:8] %}<span>{{ history.cycle_no }}회 · {{ history.alliance_name }} · {{ history.selected_at }}</span>{% endfor %}</div></div>{% endif %}
+      </div>
+    </details>
+    {% endfor %}
+  </section>
+  {% else %}{{ empty('입찰 아이템이 없습니다.', '입찰 또는 무료 나눔 아이템을 추가해 주세요.') }}{% endif %}
+</div>
+
+{% call modal('bid-create-modal', '입찰 아이템 추가', '드랍 아이템과 별개로 관리되는 입찰 전용 목록입니다.') %}
+<form class="ops-form" data-async-form method="post" action="/api/bid-items">
+  <input type="hidden" name="guild_id" value="{{ guild_id }}">
+  <label class="ops-field"><span>아이템 이름</span><input type="text" name="item_name" maxlength="100" required placeholder="입찰 아이템 이름"></label>
+  <label class="ops-toggle-row"><input type="checkbox" name="is_free" value="1"><span><strong>무료 나눔</strong><small>무료 아이템은 유료 아이템 뒤에 정렬됩니다.</small></span></label>
+  <footer class="ops-form-actions"><button class="secondary-button" type="button" data-modal-close>취소</button><button class="primary-button" type="submit">아이템 추가</button></footer>
+</form>
+{% endcall %}
+
+{% call modal('bid-edit-modal', '입찰 아이템 수정', '이름, 무료 구분, 사용 상태를 변경합니다.') %}
+<form class="ops-form" data-async-form method="post" action="" data-bid-edit-form>
+  <input type="hidden" name="guild_id" value="{{ guild_id }}">
+  <label class="ops-field"><span>아이템 이름</span><input type="text" name="item_name" maxlength="100" required></label>
+  <div class="ops-toggle-grid"><label class="ops-toggle-row"><input type="checkbox" name="is_free" value="1"><span><strong>무료 나눔</strong><small>무료 아이템으로 분류</small></span></label><label class="ops-toggle-row"><input type="checkbox" name="is_active" value="1"><span><strong>사용 상태</strong><small>현재 입찰 진행 여부</small></span></label></div>
+  <footer class="ops-form-actions ops-form-actions-split"><button class="danger-text-button" type="button" data-bid-delete>삭제</button><span></span><button class="secondary-button" type="button" data-modal-close>취소</button><button class="primary-button" type="submit">수정 저장</button></footer>
+</form>
+{% endcall %}
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', path='/js/operations.js') }}?v=20260723.1" defer></script>{% endblock %}

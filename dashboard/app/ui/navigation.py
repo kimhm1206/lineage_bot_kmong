@@ -30,6 +30,7 @@ NAV_GROUPS: tuple[NavGroup, ...] = (
         icon="layout-dashboard",
         items=(
             NavItem("home.personal", "내 현황", "/", "user", "분배금과 최근 활동"),
+            NavItem("home.distributions", "내 분배금", "/my/distributions", "wallet", "수령과 귀속 상태"),
         ),
         description="나의 분배금과 최근 활동",
     ),

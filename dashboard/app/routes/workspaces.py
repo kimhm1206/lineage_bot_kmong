@@ -254,7 +254,7 @@ async def _save_treasury_entry(
     return _treasury_redirect(path, guild_id=guild_id, alliance_id=alliance_id, notice="가계부 내역을 기록했습니다.")
 
 
-@router.get("/alliance/drops")
+@router.get("/_legacy/alliance/drops", include_in_schema=False)
 async def alliance_drops(
     request: Request, guild_id: int | None = None, period: int | None = None,
     q: str = "", page: int = 1, session: AsyncSession = Depends(get_session),
@@ -272,7 +272,7 @@ async def alliance_drops(
     )
 
 
-@router.get("/alliance/settlements")
+@router.get("/_legacy/alliance/settlements", include_in_schema=False)
 async def alliance_settlements(
     request: Request, guild_id: int | None = None, period: int | None = None,
     q: str = "", page: int = 1, session: AsyncSession = Depends(get_session),
@@ -323,7 +323,7 @@ async def create_alliance_treasury_entry(
     )
 
 
-@router.get("/alliance/bidding")
+@router.get("/_legacy/alliance/bidding", include_in_schema=False)
 async def alliance_bidding(
     request: Request, guild_id: int | None = None, q: str = "", page: int = 1,
     session: AsyncSession = Depends(get_session),
@@ -341,7 +341,7 @@ async def alliance_bidding(
     )
 
 
-@router.get("/alliance/items")
+@router.get("/_legacy/alliance/items", include_in_schema=False)
 async def alliance_items(
     request: Request, guild_id: int | None = None, q: str = "", page: int = 1,
     session: AsyncSession = Depends(get_session),
@@ -359,7 +359,7 @@ async def alliance_items(
     )
 
 
-@router.get("/alliance/settings")
+@router.get("/_legacy/alliance/settings", include_in_schema=False)
 async def alliance_settings(
     request: Request, guild_id: int | None = None, q: str = "", page: int = 1,
     session: AsyncSession = Depends(get_session),
@@ -378,7 +378,7 @@ async def alliance_settings(
     )
 
 
-@router.get("/clan/settlements")
+@router.get("/_legacy/clan/settlements", include_in_schema=False)
 async def clan_settlements(
     request: Request, guild_id: int | None = None, alliance_id: int | None = None,
     period: int | None = None, q: str = "", page: int = 1,
@@ -452,7 +452,7 @@ async def clan_forfeits(
     )
 
 
-@router.get("/clan/settings")
+@router.get("/_legacy/clan/settings", include_in_schema=False)
 async def clan_settings(
     request: Request, guild_id: int | None = None, alliance_id: int | None = None,
     q: str = "", page: int = 1, session: AsyncSession = Depends(get_session),

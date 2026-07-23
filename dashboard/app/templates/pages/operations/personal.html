@@ -1,0 +1,39 @@
+{% extends "layouts/app_shell.html" %}
+{% from "components/icons.html" import icon %}
+{% from "components/operations.html" import summary, empty with context %}
+
+{% block title %}{{ page_title }} · {{ app_name }}{% endblock %}
+{% block content %}
+<div data-live-page>
+  <section class="personal-context-bar">
+    <form method="get" action="/my/distributions">
+      <label class="ops-control"><span>서버</span><select name="guild_id" onchange="this.form.submit()">{% for guild in guilds %}<option value="{{ guild.guild_id }}" {% if guild.guild_id == guild_id %}selected{% endif %}>{{ guild.name }}</option>{% endfor %}</select></label>
+      <label class="ops-control personal-user-control"><span>유저 <small>로그인 연결 전 테스트 선택</small></span><select name="user_id" onchange="this.form.submit()">{% for user in users %}<option value="{{ user.user_id }}" {% if user.user_id == user_id %}selected{% endif %}>{{ user.user_name }} · {{ user.alliance_name }}</option>{% endfor %}</select></label>
+      <label class="ops-control ops-control-compact"><span>기간</span><select name="period" onchange="this.form.submit()">{% for option in period_options %}<option value="{{ option.value }}" {% if option.selected %}selected{% endif %}>{{ option.label }}</option>{% endfor %}</select></label>
+    </form>
+    {% if selected_user %}<div class="personal-identity"><span>{{ icon("user") }}</span><div><strong>{{ selected_user.user_name }}</strong><small>{{ selected_user.alliance_name }}</small></div></div>{% endif %}
+  </section>
+  {{ summary(summary_cards) }}
+
+  {% if selected_user %}
+  <section class="personal-ledger-panel">
+    <header class="ops-section-heading">
+      <div><h2>분배 내역</h2><p>판매와 혈맹 분배가 완료되어 본인에게 생성된 금액만 표시됩니다.</p></div>
+      <div class="personal-status-filter" data-personal-filter><button class="is-active" type="button" data-status="all">전체</button><button type="button" data-status="pending">미수령</button><button type="button" data-status="complete">수령</button><button type="button" data-status="forfeited">귀속</button></div>
+    </header>
+    {% if details %}
+    <div class="personal-distribution-grid">
+      {% for detail in details %}
+      <article class="personal-distribution-card status-{{ detail.status_tone }}" data-personal-status="{{ detail.status_tone }}">
+        <div><small>#{{ detail.attendance_id }} · {{ detail.occurred_at_label }}</small><h3>{{ detail.item_name }}</h3></div>
+        <strong>{{ detail.amount_label }} <small>아데나</small></strong>
+        <span class="ops-status ops-status-{{ detail.status_tone }}">{{ detail.status_label }}</span>
+      </article>
+      {% endfor %}
+    </div>
+    {% else %}{{ empty('분배 내역이 없습니다.', '선택 기간에 본인에게 생성된 분배금이 없습니다.') }}{% endif %}
+  </section>
+  {% else %}{{ empty('선택할 유저가 없습니다.', '출석 기록과 연결된 활성 유저를 찾을 수 없습니다.') }}{% endif %}
+</div>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', path='/js/operations.js') }}?v=20260723.1" defer></script>{% endblock %}

@@ -1,0 +1,92 @@
+{% from "components/icons.html" import icon %}
+
+{% macro toolbar(guilds, guild_id, query='', period_options=[], alliances=[], alliance_id=None, status_options=[], selected_status='', action='', primary_label='', primary_modal='') %}
+<section class="ops-toolbar">
+  <form class="ops-filter-form" method="get" action="{{ action or request.url.path }}">
+    <label class="ops-control ops-control-server">
+      <span>서버</span>
+      <select name="guild_id" onchange="this.form.submit()" {% if not guilds %}disabled{% endif %}>
+        {% if not guilds %}<option>등록 서버 없음</option>{% endif %}
+        {% for guild in guilds %}<option value="{{ guild.guild_id }}" {% if guild.guild_id == guild_id %}selected{% endif %}>{{ guild.name }}</option>{% endfor %}
+      </select>
+    </label>
+    {% if alliances %}
+    <label class="ops-control">
+      <span>혈맹</span>
+      <select name="alliance_id" onchange="this.form.submit()">
+        {% for alliance in alliances %}<option value="{{ alliance.alliance_id }}" {% if alliance.alliance_id == alliance_id %}selected{% endif %}>{{ alliance.display_name or alliance.alliance_name }}</option>{% endfor %}
+      </select>
+    </label>
+    {% endif %}
+    {% if period_options %}
+    <label class="ops-control ops-control-compact">
+      <span>기간</span>
+      <select name="period" onchange="this.form.submit()">
+        {% for option in period_options %}<option value="{{ option.value }}" {% if option.selected %}selected{% endif %}>{{ option.label }}</option>{% endfor %}
+      </select>
+    </label>
+    {% endif %}
+    {% if status_options %}
+    <label class="ops-control ops-control-compact">
+      <span>상태</span>
+      <select name="status" onchange="this.form.submit()">
+        {% for option in status_options %}<option value="{{ option.value }}" {% if option.value == selected_status %}selected{% endif %}>{{ option.label }}</option>{% endfor %}
+      </select>
+    </label>
+    {% endif %}
+    <label class="ops-control ops-search-control">
+      <span>검색</span>
+      <span class="ops-search-input">{{ icon("search") }}<input type="search" name="q" value="{{ query }}" placeholder="이름 또는 회차 검색"></span>
+    </label>
+    <button class="secondary-button ops-search-submit" type="submit">조회</button>
+  </form>
+  {% if primary_label %}
+  <button class="primary-button ops-primary-action" type="button" data-modal-open="{{ primary_modal }}">{{ icon("plus-square") }} {{ primary_label }}</button>
+  {% endif %}
+</section>
+{% endmacro %}
+
+{% macro summary(cards) %}
+<section class="ops-summary-grid">
+  {% for card in cards %}
+  <article class="ops-summary-card">
+    <span>{{ card.label }}</span>
+    <strong>{{ card.value }}</strong>
+    <small>{{ card.meta }}</small>
+  </article>
+  {% endfor %}
+</section>
+{% endmacro %}
+
+{% macro pagination_controls(page_data) %}
+{% if page_data and page_data.total_pages > 1 %}
+<nav class="workspace-pagination ops-pagination" aria-label="페이지 이동">
+  <a class="page-control{% if not page_data.has_previous %} is-disabled{% endif %}" href="{{ request.url.include_query_params(page=1) }}">&lt;&lt;</a>
+  <a class="page-control{% if not page_data.has_previous %} is-disabled{% endif %}" href="{{ request.url.include_query_params(page=page_data.page - 1) }}">&lt;</a>
+  {% for number in page_data.pages %}<a class="page-control{% if number == page_data.page %} is-active{% endif %}" href="{{ request.url.include_query_params(page=number) }}">{{ number }}</a>{% endfor %}
+  <a class="page-control{% if not page_data.has_next %} is-disabled{% endif %}" href="{{ request.url.include_query_params(page=page_data.page + 1) }}">&gt;</a>
+  <a class="page-control{% if not page_data.has_next %} is-disabled{% endif %}" href="{{ request.url.include_query_params(page=page_data.total_pages) }}">&gt;&gt;</a>
+</nav>
+{% endif %}
+{% endmacro %}
+
+{% macro empty(title, description) %}
+<div class="ops-empty-state">
+  <span>{{ icon("database") }}</span>
+  <strong>{{ title }}</strong>
+  <p>{{ description }}</p>
+</div>
+{% endmacro %}
+
+{% macro modal(id, title, description='') %}
+<div class="ops-modal" id="{{ id }}" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="{{ id }}-title">
+  <button class="ops-modal-backdrop" type="button" data-modal-close aria-label="닫기"></button>
+  <section class="ops-modal-dialog">
+    <header class="ops-modal-header">
+      <div><h2 id="{{ id }}-title">{{ title }}</h2>{% if description %}<p>{{ description }}</p>{% endif %}</div>
+      <button class="icon-button" type="button" data-modal-close aria-label="닫기">{{ icon("x") }}</button>
+    </header>
+    <div class="ops-modal-body">{{ caller() }}</div>
+  </section>
+</div>
+{% endmacro %}
