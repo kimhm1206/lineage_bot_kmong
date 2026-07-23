@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     discord_client_id: str = ""
     discord_client_secret: str = ""
     discord_redirect_uri: str = "http://127.0.0.1:8000/auth/discord/callback"
+    discord_redirect_uri_local: str = (
+        "http://localhost:8000/auth/discord/callback"
+    )
     session_secret: str = "lineage-dashboard-local-session"
     session_https_only: bool = False
     auth_local_bypass: bool = True

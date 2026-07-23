@@ -3,7 +3,7 @@ from __future__ import annotations
 import ipaddress
 import secrets
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit, urlunsplit
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request, status
@@ -40,6 +40,7 @@ SCOPE_ROLES = {1: "alliance_manager", 2: "clan_manager", 3: "clan_accountant"}
 GLOBAL_DEVELOPER_DISCORD_ID = 238978205078388747
 DEVELOPER_VIEW_MODE_SESSION_KEY = "developer_view_mode"
 DEVELOPER_VIEW_ALLIANCE_SESSION_KEY = "developer_view_alliance_id"
+OAUTH_REDIRECT_URI_SESSION_KEY = "oauth_redirect_uri"
 DEVELOPER_VIEW_MODES = {
     "developer": {
         "label": "디벨로퍼",
@@ -95,6 +96,49 @@ def _is_loopback(request: Request) -> bool:
         return ipaddress.ip_address(host).is_loopback
     except ValueError:
         return False
+
+
+def _is_loopback_host(value: str) -> bool:
+    host = value.strip().lower()
+    if host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def _oauth_redirect_uri(request: Request) -> str:
+    settings = get_settings()
+    request_host = str(request.url.hostname or "")
+    if _is_loopback_host(request_host):
+        return settings.discord_redirect_uri_local
+    return settings.discord_redirect_uri
+
+
+def _canonical_oauth_login_url(
+    request: Request,
+    redirect_uri: str,
+) -> str | None:
+    target = urlsplit(redirect_uri)
+    if not target.scheme or not target.netloc:
+        return None
+    current_origin = (
+        request.url.scheme.lower(),
+        request.url.netloc.lower(),
+    )
+    target_origin = (target.scheme.lower(), target.netloc.lower())
+    if current_origin == target_origin:
+        return None
+    return urlunsplit(
+        (
+            target.scheme,
+            target.netloc,
+            request.url.path,
+            request.url.query,
+            "",
+        )
+    )
 
 
 def _wants_json(request: Request) -> bool:
@@ -283,12 +327,12 @@ class AuthContextMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
-def _authorize_url(state: str) -> str:
+def _authorize_url(state: str, redirect_uri: str) -> str:
     settings = get_settings()
     return "https://discord.com/oauth2/authorize?" + urlencode(
         {
             "client_id": settings.discord_client_id,
-            "redirect_uri": settings.discord_redirect_uri,
+            "redirect_uri": redirect_uri,
             "response_type": "code",
             "scope": "identify guilds",
             "state": state,
@@ -353,6 +397,10 @@ async def discord_login(
     next: str | None = None,
 ):
     settings = get_settings()
+    redirect_uri = _oauth_redirect_uri(request)
+    canonical_login_url = _canonical_oauth_login_url(request, redirect_uri)
+    if canonical_login_url is not None:
+        return RedirectResponse(canonical_login_url, status_code=303)
     if not settings.discord_client_id or not settings.discord_client_secret:
         return templates.TemplateResponse(
             request,
@@ -364,7 +412,11 @@ async def discord_login(
     request.session["oauth_state"] = state
     request.session["remember_me"] = remember_me == "1"
     request.session["login_next"] = _safe_next(next)
-    return RedirectResponse(_authorize_url(state), status_code=303)
+    request.session[OAUTH_REDIRECT_URI_SESSION_KEY] = redirect_uri
+    return RedirectResponse(
+        _authorize_url(state, redirect_uri),
+        status_code=303,
+    )
 
 
 @router.get("/auth/discord/callback", response_class=HTMLResponse)
@@ -376,6 +428,18 @@ async def discord_callback(
 ):
     settings = get_settings()
     expected_state = request.session.pop("oauth_state", None)
+    session_redirect_uri = str(
+        request.session.pop(OAUTH_REDIRECT_URI_SESSION_KEY, "") or ""
+    )
+    allowed_redirect_uris = {
+        settings.discord_redirect_uri,
+        settings.discord_redirect_uri_local,
+    }
+    redirect_uri = (
+        session_redirect_uri
+        if session_redirect_uri in allowed_redirect_uris
+        else _oauth_redirect_uri(request)
+    )
     if error or not code or not state or state != expected_state:
         request.session.clear()
         return templates.TemplateResponse(
@@ -396,7 +460,7 @@ async def discord_callback(
                     "client_secret": settings.discord_client_secret,
                     "grant_type": "authorization_code",
                     "code": code,
-                    "redirect_uri": settings.discord_redirect_uri,
+                    "redirect_uri": redirect_uri,
                 },
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
             )
