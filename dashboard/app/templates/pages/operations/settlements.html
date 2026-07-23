@@ -40,6 +40,24 @@
         <span class="entity-history-slot"></span>
         {% endif %}
         <span class="entity-summary-actions">
+          {% if entity.entity_type == 'fee' %}
+            {% if entity.is_fixed %}
+            <a class="secondary-button fee-history-button"
+               href="{{ '/alliance/treasury' if settlement_level == 'alliance' else '/clan/treasury?alliance_id=' ~ alliance_id }}">
+              {{ icon("clipboard-list") }}
+              기록 확인
+            </a>
+            {% else %}
+            <button class="secondary-button fee-history-button" type="button"
+                    data-fee-history-open
+                    data-fee-rule-id="{{ entity.target_id }}"
+                    data-fee-rule-name="{{ entity.name }}"
+                    data-guild-id="{{ guild_id }}">
+              {{ icon("clipboard-list") }}
+              기록 확인
+            </button>
+            {% endif %}
+          {% endif %}
           {% if settlement_level == 'clan' and entity.entity_type == 'member' %}
           <button class="secondary-button" type="button"
                   data-clan-history-open
@@ -174,4 +192,35 @@
 </div>
 {% endcall %}
 {% endif %}
+
+{% call modal('fee-history-modal', '수수료 정산 기록', '선택한 커스텀 수수료의 아이템별 정산 내역을 확인합니다.') %}
+<section class="fee-history-content" data-fee-history-modal>
+  <header class="fee-history-overview">
+    <div>
+      <span>수수료</span>
+      <strong data-fee-history-name>-</strong>
+      <small data-fee-history-rate>-</small>
+    </div>
+    <div>
+      <span>미정산</span>
+      <strong data-fee-history-pending-amount>0</strong>
+      <small data-fee-history-pending-count>0건</small>
+    </div>
+    <div>
+      <span>정산 완료</span>
+      <strong data-fee-history-complete-amount>0</strong>
+      <small data-fee-history-complete-count>0건</small>
+    </div>
+  </header>
+  <div class="settlement-history-loading" data-fee-history-loading>기록을 불러오는 중입니다.</div>
+  <div class="fee-history-list" data-fee-history-list hidden></div>
+  <div class="ops-empty-state fee-history-empty" data-fee-history-empty hidden>
+    <span>{{ icon("clipboard-list") }}</span>
+    <strong>수수료 기록이 없습니다.</strong>
+    <p>이 수수료로 생성된 정산 내역이 아직 없습니다.</p>
+  </div>
+  <button class="secondary-button settlement-history-more" type="button"
+          data-fee-history-more hidden>다음 기록 불러오기</button>
+</section>
+{% endcall %}
 {% endblock %}

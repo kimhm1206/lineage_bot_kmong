@@ -243,6 +243,138 @@
     openModal("fee-edit-modal");
   };
 
+  const feeHistoryState = {
+    feeRuleId: "",
+    guildId: "",
+    page: 1,
+    request: 0,
+    loading: false,
+    hasNext: false,
+  };
+
+  const renderFeeHistoryRow = (record) => {
+    const row = document.createElement("article");
+    row.className = "fee-history-row";
+
+    const item = document.createElement("div");
+    item.className = "fee-history-item";
+    const itemName = document.createElement("strong");
+    itemName.textContent = record.item_name || "이름 없는 아이템";
+    const context = document.createElement("small");
+    const alliance = record.alliance_name ? ` · ${record.alliance_name}` : "";
+    context.textContent = `출석 #${record.attendance_id || "-"}${alliance}`;
+    item.append(itemName, context);
+
+    const amount = document.createElement("div");
+    amount.className = "fee-history-amount";
+    const amountValue = document.createElement("strong");
+    amountValue.textContent = Number(record.amount_adena || 0).toLocaleString("ko-KR");
+    const amountUnit = document.createElement("small");
+    amountUnit.textContent = "아데나";
+    amount.append(amountValue, amountUnit);
+
+    const occurred = document.createElement("div");
+    occurred.className = "fee-history-date";
+    const occurredLabel = document.createElement("strong");
+    occurredLabel.textContent = record.occurred_at_label || "-";
+    const completedLabel = document.createElement("small");
+    completedLabel.textContent = record.completed_at_label
+      ? `완료 ${record.completed_at_label}`
+      : "정산 대기";
+    occurred.append(occurredLabel, completedLabel);
+
+    const status = document.createElement("span");
+    status.className = `ops-status ops-status-${record.status_tone || "pending"}`;
+    status.textContent = record.status_label || "미완료";
+
+    row.append(item, amount, occurred, status);
+    return row;
+  };
+
+  const loadFeeHistory = async ({ reset = false } = {}) => {
+    const modal = document.querySelector("[data-fee-history-modal]");
+    if (!modal || (feeHistoryState.loading && !reset)) return;
+    if (reset && feeHistoryState.loading) {
+      feeHistoryState.request += 1;
+      feeHistoryState.loading = false;
+    }
+    if (reset) {
+      feeHistoryState.page = 1;
+      feeHistoryState.hasNext = false;
+    }
+    const requestNumber = ++feeHistoryState.request;
+    const list = modal.querySelector("[data-fee-history-list]");
+    const loading = modal.querySelector("[data-fee-history-loading]");
+    const empty = modal.querySelector("[data-fee-history-empty]");
+    const more = modal.querySelector("[data-fee-history-more]");
+    feeHistoryState.loading = true;
+    loading.hidden = false;
+    loading.textContent = "기록을 불러오는 중입니다.";
+    empty.hidden = true;
+    more.hidden = true;
+    if (reset) {
+      list.hidden = true;
+      list.replaceChildren();
+    }
+
+    const params = new URLSearchParams({
+      guild_id: feeHistoryState.guildId,
+      page: String(feeHistoryState.page),
+    });
+    try {
+      const response = await fetch(
+        `/api/fee-rules/${encodeURIComponent(feeHistoryState.feeRuleId)}/history?${params.toString()}`,
+        { headers: { Accept: "application/json" } },
+      );
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.detail || payload.message || "수수료 기록을 불러오지 못했습니다.");
+      }
+      if (requestNumber !== feeHistoryState.request) return;
+      modal.querySelector("[data-fee-history-name]").textContent =
+        payload.fee_rule?.rule_name || "-";
+      modal.querySelector("[data-fee-history-rate]").textContent =
+        `현재 ${payload.fee_rule?.rate_label || "0%"}`;
+      modal.querySelector("[data-fee-history-pending-amount]").textContent =
+        payload.summary?.pending_amount_label || "0";
+      modal.querySelector("[data-fee-history-pending-count]").textContent =
+        `${Number(payload.summary?.pending_count || 0).toLocaleString("ko-KR")}건`;
+      modal.querySelector("[data-fee-history-complete-amount]").textContent =
+        payload.summary?.complete_amount_label || "0";
+      modal.querySelector("[data-fee-history-complete-count]").textContent =
+        `${Number(payload.summary?.complete_count || 0).toLocaleString("ko-KR")}건`;
+
+      const records = Array.isArray(payload.history) ? payload.history : [];
+      const fragment = document.createDocumentFragment();
+      records.forEach((record) => fragment.append(renderFeeHistoryRow(record)));
+      list.append(fragment);
+      list.hidden = list.children.length === 0;
+      empty.hidden = list.children.length > 0;
+      feeHistoryState.hasNext = Boolean(payload.pagination?.has_next);
+      more.hidden = !feeHistoryState.hasNext;
+      loading.hidden = true;
+    } catch (error) {
+      if (requestNumber !== feeHistoryState.request) return;
+      loading.hidden = false;
+      loading.textContent = error.message || "수수료 기록을 불러오지 못했습니다.";
+    } finally {
+      if (requestNumber === feeHistoryState.request) {
+        feeHistoryState.loading = false;
+      }
+    }
+  };
+
+  const openFeeHistory = (button) => {
+    const modal = document.querySelector("[data-fee-history-modal]");
+    if (!modal) return;
+    feeHistoryState.feeRuleId = button.dataset.feeRuleId || "";
+    feeHistoryState.guildId = button.dataset.guildId || "";
+    modal.querySelector("[data-fee-history-name]").textContent =
+      button.dataset.feeRuleName || "-";
+    openModal("fee-history-modal");
+    loadFeeHistory({ reset: true });
+  };
+
   let bidHistoryRequest = 0;
 
   const openBidHistory = async (button) => {
@@ -624,6 +756,13 @@
     if (itemEditCancel) setItemEditor(itemEditCancel.closest("[data-item-row]"), false);
     const feeEdit = event.target.closest("[data-fee-edit]");
     if (feeEdit) populateFeeEdit(feeEdit);
+    const feeHistoryOpen = event.target.closest("[data-fee-history-open]");
+    if (feeHistoryOpen) openFeeHistory(feeHistoryOpen);
+    const feeHistoryMore = event.target.closest("[data-fee-history-more]");
+    if (feeHistoryMore && feeHistoryState.hasNext) {
+      feeHistoryState.page += 1;
+      loadFeeHistory();
+    }
     const bidHistoryOpen = event.target.closest("[data-bid-history-open]");
     if (bidHistoryOpen) openBidHistory(bidHistoryOpen);
     const clanHistoryOpen = event.target.closest("[data-clan-history-open]");

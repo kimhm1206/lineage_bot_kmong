@@ -6898,6 +6898,86 @@ body.modal-open {
 .fee-rule-copy h3 { overflow: hidden; margin: 0; color: var(--text-strong); font-size: 16px; text-overflow: ellipsis; white-space: nowrap; }
 .fee-rule-rate strong { color: var(--text-strong); font-size: 16px; }
 .fee-rule-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.fee-history-button { min-height: 38px; padding: 0 12px; white-space: nowrap; }
+.fee-history-button .icon { width: 15px; height: 15px; }
+
+.fee-history-content {
+  display: grid;
+  height: 100%;
+  min-height: 0;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  gap: 14px;
+}
+
+.fee-history-overview {
+  display: grid;
+  grid-template-columns: 1.2fr repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.fee-history-overview > div {
+  display: grid;
+  min-width: 0;
+  min-height: 90px;
+  align-content: center;
+  gap: 5px;
+  padding: 15px 16px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel-subtle);
+}
+
+.fee-history-overview span,
+.fee-history-overview small,
+.fee-history-row small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.fee-history-overview strong {
+  overflow: hidden;
+  color: var(--text-strong);
+  font-size: 19px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fee-history-list {
+  display: grid;
+  min-height: 0;
+  align-content: start;
+  gap: 8px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.fee-history-row {
+  display: grid;
+  grid-template-columns: minmax(190px, 1.2fr) minmax(120px, .55fr) minmax(170px, .8fr) auto;
+  align-items: center;
+  gap: 14px;
+  min-height: 72px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel-subtle);
+}
+
+.fee-history-item,
+.fee-history-amount,
+.fee-history-date {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.fee-history-row strong {
+  overflow: hidden;
+  color: var(--text-strong);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .bid-matrix-panel {
   overflow: hidden;
@@ -7184,13 +7264,15 @@ body.modal-open {
 .ops-modal-header p { margin: 6px 0 0; color: var(--muted); font-size: 12px; }
 .ops-modal-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 22px; background: var(--panel); }
 #alliance-settlement-history-modal .ops-modal-dialog,
-#clan-settlement-history-modal .ops-modal-dialog {
+#clan-settlement-history-modal .ops-modal-dialog,
+#fee-history-modal .ops-modal-dialog {
   width: min(1080px, calc(100vw - 40px));
   height: min(820px, calc(100dvh - 48px));
   max-height: none;
 }
 #alliance-settlement-history-modal .ops-modal-body,
-#clan-settlement-history-modal .ops-modal-body {
+#clan-settlement-history-modal .ops-modal-body,
+#fee-history-modal .ops-modal-body {
   overflow: hidden;
 }
 .ops-form { display: grid; gap: 18px; }
@@ -7263,7 +7345,8 @@ body.modal-open {
 
 @media (max-width: 680px) {
   #alliance-settlement-history-modal .ops-modal-dialog,
-  #clan-settlement-history-modal .ops-modal-dialog {
+  #clan-settlement-history-modal .ops-modal-dialog,
+  #fee-history-modal .ops-modal-dialog {
     width: calc(100vw - 20px);
     height: calc(100dvh - 20px);
   }
@@ -7292,7 +7375,8 @@ body.modal-open {
   .entity-expand-icon { grid-column: 3; grid-row: 1; }
   .entity-summary-actions { grid-column: 1 / -1; justify-content: stretch; }
   .entity-summary-actions form,
-  .entity-summary-actions button { flex: 1 1 auto; width: 100%; }
+  .entity-summary-actions button,
+  .entity-summary-actions > a { flex: 1 1 auto; width: 100%; }
   .entity-detail-panel,
   .bid-detail-panel { padding: 12px; }
   .entity-detail-row { grid-template-columns: minmax(0, 1fr) 100px; gap: 9px; }
@@ -7323,6 +7407,12 @@ body.modal-open {
   .fee-rule-rate { grid-column: 2; }
   .fee-rule-card > .ops-status { grid-column: 2; justify-self: start; }
   .fee-rule-actions { grid-column: 2 / -1; justify-content: flex-start; }
+  .fee-history-overview { grid-template-columns: 1fr; }
+  .fee-history-overview > div { min-height: 72px; }
+  .fee-history-row { grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+  .fee-history-amount,
+  .fee-history-date { grid-column: 1; }
+  .fee-history-row > .ops-status { grid-column: 2; grid-row: 1 / span 3; }
   .item-quick-create { grid-template-columns: 1fr; }
   .item-quick-create .primary-button { width: 100%; }
   .item-list-header { display: none; }
