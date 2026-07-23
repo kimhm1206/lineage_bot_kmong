@@ -5066,6 +5066,7 @@ body.modal-open {
 .ops-form { display: grid; gap: 18px; }
 .ops-form-grid { display: grid; gap: 13px; }
 .ops-form-grid-two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.ops-field-span-two { grid-column: 1 / -1; }
 .ops-field { display: grid; gap: 7px; color: var(--muted-strong); font-size: 12px; font-weight: 700; }
 .ops-field small { color: var(--muted); font-weight: 500; }
 .ops-choice-fieldset { min-width: 0; margin: 0; padding: 14px; border: 1px solid var(--line); border-radius: 7px; }
@@ -5085,7 +5086,9 @@ body.modal-open {
 .ops-toggle-row strong { color: var(--text-strong); font-size: 12px; }
 .ops-toggle-row small { color: var(--muted); font-size: 10px; }
 .sale-preview-strip { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 13px 15px; border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 7px; background: var(--panel-subtle); }
+.sale-preview-copy { display: grid; gap: 3px; min-width: 0; }
 .sale-preview-strip span { color: var(--muted-strong); font-size: 12px; }
+.sale-preview-strip small { color: var(--text-strong); font-size: 15px; font-weight: 750; }
 .sale-preview-strip strong { color: var(--accent-strong); font-size: 18px; }
 .ops-inline-note { display: flex; gap: 8px; color: var(--muted); font-size: 11px; }
 .ops-inline-note .icon { width: 15px; color: var(--accent); }

@@ -101,7 +101,7 @@
   };
 
   const updateSalePreview = (form) => {
-    const cash = Number(form.querySelector("[data-sale-cash]")?.value || 0);
+    const cash = Number(form.dataset.cashPrice || 0);
     const rate = Number(form.querySelector("[data-sale-rate]")?.value || 0);
     const adena = rate > 0 ? Math.floor((cash * 10000) / rate) : 0;
     const output = form.closest(".ops-modal")?.querySelector("[data-sale-adena]");
@@ -126,10 +126,11 @@
     const modal = document.getElementById("drop-sale-modal");
     const form = modal.querySelector("[data-sale-form]");
     form.action = `/api/drops/${drop.drop_id}/sale`;
+    form.dataset.cashPrice = String(Number(drop.cash_price_krw || 0));
     form.elements.buyer_alliance_id.value = drop.buyer_alliance_id ? String(drop.buyer_alliance_id) : "";
-    form.elements.cash_price_krw.value = Number(drop.cash_price_krw || 0) || "";
     form.elements.adena_market_rate.value = Number(drop.adena_market_rate || 0) > 1 ? drop.adena_market_rate : "";
     modal.querySelector("[data-sale-item]").textContent = `${drop.item_name} · 출석 #${drop.attendance_id}`;
+    modal.querySelector("[data-sale-cash-label]").textContent = `${Number(drop.cash_price_krw || 0).toLocaleString("ko-KR")}원`;
     filterBuyerUsers(form);
     form.elements.buyer_user_id.value = drop.buyer_user_id ? String(drop.buyer_user_id) : "";
     updateSalePreview(form);
@@ -227,7 +228,7 @@
   });
 
   document.addEventListener("input", (event) => {
-    const saleInput = event.target.closest("[data-sale-cash], [data-sale-rate]");
+    const saleInput = event.target.closest("[data-sale-rate]");
     if (saleInput) updateSalePreview(saleInput.form);
   });
 

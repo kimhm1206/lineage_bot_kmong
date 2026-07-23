@@ -173,6 +173,24 @@ async def _catalog_version(session: AsyncSession, item_id: int, guild_id: int) -
     )
 
 
+async def _drop_item_snapshot(session: AsyncSession, item_id: int, guild_id: int) -> tuple[int, int]:
+    item_version_id = await _catalog_version(session, item_id, guild_id)
+    default_price = await session.scalar(
+        text("""
+            SELECT default_price
+            FROM items
+            WHERE item_id = :item_id
+              AND (guild_id = :guild_id OR guild_id IS NULL)
+              AND is_active IS TRUE
+        """),
+        {"item_id": item_id, "guild_id": guild_id},
+    )
+    cash_price_krw = int(default_price or 0)
+    if cash_price_krw <= 0:
+        raise SettlementError("아이템의 기본 원화 시세를 먼저 설정해 주세요.")
+    return item_version_id, cash_price_krw
+
+
 async def _attendance_epoch(session: AsyncSession, attendance_id: int, guild_id: int) -> int:
     value = await session.scalar(
         text("""
@@ -242,7 +260,7 @@ async def create_drop(
     excluded_alliance_ids: Iterable[Any] = (),
 ) -> OperationResult:
     occurred_at = await _attendance_epoch(session, attendance_id, guild_id)
-    item_version_id = await _catalog_version(session, item_id, guild_id)
+    item_version_id, cash_price_krw = await _drop_item_snapshot(session, item_id, guild_id)
     drop_id = int(
         await session.scalar(
             text("""
@@ -250,13 +268,15 @@ async def create_drop(
                     guild_id, attendance_id, item_version_id, cash_price_krw,
                     adena_market_rate, gross_adena, occurred_at, created_by_user_id
                 ) VALUES (
-                    :guild_id, :attendance_id, :item_version_id, 0, 1, 0, :occurred_at, NULL
+                    :guild_id, :attendance_id, :item_version_id, :cash_price_krw,
+                    1, 0, :occurred_at, NULL
                 ) RETURNING drop_id
             """),
             {
                 "guild_id": guild_id,
                 "attendance_id": attendance_id,
                 "item_version_id": item_version_id,
+                "cash_price_krw": cash_price_krw,
                 "occurred_at": occurred_at,
             },
         )
@@ -314,7 +334,7 @@ async def update_drop(
     if int(drop["status_code"]) != 0:
         raise SettlementError("판매 완료된 드랍은 판매를 취소한 뒤 수정해 주세요.")
     occurred_at = await _attendance_epoch(session, attendance_id, guild_id)
-    item_version_id = await _catalog_version(session, item_id, guild_id)
+    item_version_id, cash_price_krw = await _drop_item_snapshot(session, item_id, guild_id)
     await session.execute(
         text("DELETE FROM settlement_payout_objects WHERE drop_id = :drop_id"),
         {"drop_id": drop_id},
@@ -324,6 +344,9 @@ async def update_drop(
             UPDATE settlement_drops
             SET attendance_id = :attendance_id,
                 item_version_id = :item_version_id,
+                cash_price_krw = :cash_price_krw,
+                adena_market_rate = 1,
+                gross_adena = 0,
                 occurred_at = :occurred_at
             WHERE drop_id = :drop_id
         """),
@@ -331,6 +354,7 @@ async def update_drop(
             "drop_id": drop_id,
             "attendance_id": attendance_id,
             "item_version_id": item_version_id,
+            "cash_price_krw": cash_price_krw,
             "occurred_at": occurred_at,
         },
     )
@@ -510,17 +534,17 @@ async def complete_sale(
     guild_id: int,
     buyer_alliance_id: int,
     buyer_user_id: int | None,
-    cash_price_krw: int,
     adena_market_rate: int,
 ) -> OperationResult:
-    cash_price_krw = _positive_int(cash_price_krw, label="판매 원화")
     adena_market_rate = _positive_int(adena_market_rate, label="아데나 시세")
     sale = (
         await session.execute(
             text("""
-                SELECT s.status_code
+                SELECT s.status_code, d.cash_price_krw, i.default_price
                 FROM settlement_drop_sales s
                 JOIN settlement_drops d ON d.drop_id = s.drop_id
+                JOIN catalog_item_versions v ON v.item_version_id = d.item_version_id
+                JOIN items i ON i.item_id = v.item_id
                 WHERE s.drop_id = :drop_id AND d.guild_id = :guild_id
                 FOR UPDATE
             """),
@@ -529,6 +553,9 @@ async def complete_sale(
     ).mappings().one_or_none()
     if sale is None:
         raise SettlementError("판매할 드랍 기록을 찾을 수 없습니다.")
+    cash_price_krw = int(sale["cash_price_krw"] or sale["default_price"] or 0)
+    if cash_price_krw <= 0:
+        raise SettlementError("저장된 원화 시세가 없습니다. 아이템 시세를 설정한 뒤 드랍 정보를 다시 저장해 주세요.")
     buyer_exists = await session.scalar(
         text("""
             SELECT 1

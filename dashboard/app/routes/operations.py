@@ -432,7 +432,6 @@ async def complete_sale(drop_id: int, request: Request, session: AsyncSession = 
             guild_id=int(_int(form.get("guild_id"))),
             buyer_alliance_id=int(_int(form.get("buyer_alliance_id"))),
             buyer_user_id=buyer_user_id,
-            cash_price_krw=int(_int(form.get("cash_price_krw"))),
             adena_market_rate=int(_int(form.get("adena_market_rate"))),
         ),
     )

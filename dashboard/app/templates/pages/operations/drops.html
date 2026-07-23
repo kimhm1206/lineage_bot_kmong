@@ -29,10 +29,14 @@
           <p>출석 #{{ drop.attendance_id }} · {{ drop.occurred_at_label }}</p>
         </div>
         <div class="drop-metric"><span>참여 인원</span><strong>{{ drop.participant_count }}명</strong><small>{{ drop.alliance_count }}개 혈맹</small></div>
-        <div class="drop-metric"><span>판매 아데나</span><strong>{{ drop.gross_label }}</strong><small>{{ drop.cash_label }}</small></div>
+        {% if drop.sale_status == 1 %}
+        <div class="drop-metric"><span>판매 아데나</span><strong>{{ drop.gross_label }}</strong><small>원화 {{ drop.cash_label }}</small></div>
+        {% else %}
+        <div class="drop-metric"><span>등록 원화</span><strong>{{ drop.cash_label }}</strong><small>판매 완료 시 아데나 환산</small></div>
+        {% endif %}
         <div class="drop-sale-state">
           <span class="ops-status ops-status-{{ drop.sale_tone }}">{{ drop.sale_label }}</span>
-          {% if drop.sale_status == 1 %}<small>{{ drop.buyer_alliance_name }}{% if drop.buyer_user_name %} · {{ drop.buyer_user_name }}{% endif %}</small>{% else %}<small>구매 혈맹과 판매 금액 미확정</small>{% endif %}
+          {% if drop.sale_status == 1 %}<small>{{ drop.buyer_alliance_name }}{% if drop.buyer_user_name %} · {{ drop.buyer_user_name }}{% endif %}</small>{% else %}<small>구매 혈맹과 아데나 시세 미확정</small>{% endif %}
         </div>
         <div class="drop-actions">
           {% if drop.sale_status == 0 %}
@@ -72,12 +76,12 @@
   {% endif %}
 </div>
 
-{% call modal('drop-create-modal', '새 드랍 등록', '판매 전 단계입니다. 출석 회차와 드랍 아이템만 먼저 연결합니다.') %}
+{% call modal('drop-create-modal', '새 드랍 등록', '선택한 아이템의 현재 원화 시세가 이 드랍에 고정 저장됩니다.') %}
 <form class="ops-form" data-async-form method="post" action="/api/drops">
   <input type="hidden" name="guild_id" value="{{ guild_id }}">
   <div class="ops-form-grid ops-form-grid-two">
     <label class="ops-field"><span>출석 회차</span><select name="attendance_id" required><option value="">회차 선택</option>{% for attendance in attendance_options %}<option value="{{ attendance.attendance_id }}">#{{ attendance.attendance_id }} · {{ attendance.started_at_label }} · {{ attendance.participant_count }}명</option>{% endfor %}</select></label>
-    <label class="ops-field"><span>아이템</span><select name="item_id" required><option value="">아이템 선택</option>{% for item in item_options %}<option value="{{ item.item_id }}">{{ item.item_name }}</option>{% endfor %}</select></label>
+    <label class="ops-field"><span>아이템</span><select name="item_id" required><option value="">아이템 선택</option>{% for item in item_options %}<option value="{{ item.item_id }}"{% if not item.default_price %} disabled{% endif %}>{{ item.item_name }} · {{ item.default_price_label }}</option>{% endfor %}</select></label>
   </div>
   <fieldset class="ops-choice-fieldset"><legend>분배 제외 혈맹 <small>필요한 혈맹만 선택</small></legend><div class="ops-choice-grid">{% for alliance in alliance_options %}<label><input type="checkbox" name="excluded_alliance_ids" value="{{ alliance.alliance_id }}"><span>{{ alliance.alliance_name }}</span></label>{% endfor %}</div></fieldset>
   <footer class="ops-form-actions"><button class="secondary-button" type="button" data-modal-close>취소</button><button class="primary-button" type="submit">드랍 등록</button></footer>
@@ -89,27 +93,26 @@
   <input type="hidden" name="guild_id" value="{{ guild_id }}">
   <div class="ops-form-grid ops-form-grid-two">
     <label class="ops-field"><span>출석 회차</span><select name="attendance_id" required>{% for attendance in attendance_options %}<option value="{{ attendance.attendance_id }}">#{{ attendance.attendance_id }} · {{ attendance.started_at_label }} · {{ attendance.participant_count }}명</option>{% endfor %}</select></label>
-    <label class="ops-field"><span>아이템</span><select name="item_id" required>{% for item in item_options %}<option value="{{ item.item_id }}">{{ item.item_name }}</option>{% endfor %}</select></label>
+    <label class="ops-field"><span>아이템</span><select name="item_id" required>{% for item in item_options %}<option value="{{ item.item_id }}"{% if not item.default_price %} disabled{% endif %}>{{ item.item_name }} · {{ item.default_price_label }}</option>{% endfor %}</select></label>
   </div>
   <fieldset class="ops-choice-fieldset"><legend>분배 제외 혈맹</legend><div class="ops-choice-grid">{% for alliance in alliance_options %}<label><input type="checkbox" name="excluded_alliance_ids" value="{{ alliance.alliance_id }}"><span>{{ alliance.alliance_name }}</span></label>{% endfor %}</div></fieldset>
   <footer class="ops-form-actions"><button class="secondary-button" type="button" data-modal-close>취소</button><button class="primary-button" type="submit">수정 저장</button></footer>
 </form>
 {% endcall %}
 
-{% call modal('drop-sale-modal', '판매 완료', '구매 혈맹은 이번 분배 대상에서 자동 제외됩니다.') %}
+{% call modal('drop-sale-modal', '판매 완료', '등록된 원화 시세에 판매 시점의 아데나 시세를 적용합니다.') %}
 <form class="ops-form" data-async-form method="post" action="" data-sale-form>
   <input type="hidden" name="guild_id" value="{{ guild_id }}">
-  <div class="sale-preview-strip"><span data-sale-item>아이템</span><strong data-sale-adena>0 아데나</strong></div>
+  <div class="sale-preview-strip"><div class="sale-preview-copy"><span data-sale-item>아이템</span><small data-sale-cash-label>0원</small></div><strong data-sale-adena>0 아데나</strong></div>
   <div class="ops-form-grid ops-form-grid-two">
     <label class="ops-field"><span>구매 혈맹</span><select name="buyer_alliance_id" required data-buyer-alliance><option value="">혈맹 선택</option>{% for alliance in alliance_options %}<option value="{{ alliance.alliance_id }}">{{ alliance.alliance_name }}</option>{% endfor %}</select></label>
     <label class="ops-field"><span>구매자 <small>선택</small></span><select name="buyer_user_id" data-buyer-user><option value="">구매자 미지정</option>{% for user in buyer_users %}<option value="{{ user.user_id }}" data-alliance-id="{{ user.alliance_id }}">{{ user.user_name }}</option>{% endfor %}</select></label>
-    <label class="ops-field"><span>판매 원화</span><input type="number" name="cash_price_krw" min="1" step="1" required data-sale-cash placeholder="0"></label>
-    <label class="ops-field"><span>아데나 시세 <small>1만 아데나 기준 원화</small></span><input type="number" name="adena_market_rate" min="1" step="1" required data-sale-rate placeholder="1500"></label>
+    <label class="ops-field ops-field-span-two"><span>아데나 시세 <small>1만 아데나 기준 원화</small></span><input type="number" name="adena_market_rate" min="1" step="1" required data-sale-rate placeholder="1500"></label>
   </div>
-  <div class="ops-inline-note">{{ icon("info") }} 모든 금액은 각 계산 단계에서 정수 내림 처리됩니다.</div>
+  <div class="ops-inline-note">{{ icon("info") }} 저장된 원화 ÷ 아데나 시세로 환산하며 모든 계산은 정수 내림 처리됩니다.</div>
   <footer class="ops-form-actions"><button class="secondary-button" type="button" data-modal-close>취소</button><button class="primary-button" type="submit">판매 완료 및 분배 계산</button></footer>
 </form>
 {% endcall %}
 {% endblock %}
 
-{% block scripts %}<script src="{{ url_for('static', path='/js/operations.js') }}?v=20260723.1" defer></script>{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', path='/js/operations.js') }}?v=20260723.2" defer></script>{% endblock %}

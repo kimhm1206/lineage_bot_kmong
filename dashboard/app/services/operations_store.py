@@ -73,7 +73,7 @@ async def drop_management_page(
                 text(f"""
                     SELECT d.drop_id, d.attendance_id, d.cash_price_krw,
                            d.adena_market_rate, d.gross_adena, d.occurred_at,
-                           v.item_name, i.item_id, s.status_code AS sale_status,
+                           v.item_name, i.item_id, i.default_price, s.status_code AS sale_status,
                            s.buyer_alliance_id, s.buyer_user_id,
                            COALESCE(buyer_a.display_name, buyer_a.alliance_name) AS buyer_alliance_name,
                            COALESCE(buyer_u.game_nickname, buyer_u.discord_nickname) AS buyer_user_name,
@@ -139,6 +139,7 @@ async def drop_management_page(
             "drop_id",
             "attendance_id",
             "item_id",
+            "default_price",
             "cash_price_krw",
             "adena_market_rate",
             "gross_adena",
@@ -149,6 +150,8 @@ async def drop_management_page(
             "processed_count",
         ):
             row[key] = int(row[key] or 0)
+        if row["sale_status"] == 0 and row["cash_price_krw"] <= 0:
+            row["cash_price_krw"] = row["default_price"]
         for key in ("buyer_alliance_id", "buyer_user_id"):
             row[key] = int(row[key]) if row[key] is not None else None
         row["sale_label"] = "판매 완료" if int(row["sale_status"]) == 1 else "판매 대기"
@@ -215,6 +218,10 @@ async def drop_management_page(
             )
         ).mappings().all()
     ]
+    for item in item_options:
+        item["item_id"] = int(item["item_id"])
+        item["default_price"] = int(item["default_price"] or 0)
+        item["default_price_label"] = f"{_money(item['default_price'])}원" if item["default_price"] else "시세 미설정"
     alliance_options = [
         dict(row)
         for row in (
@@ -256,7 +263,7 @@ async def drop_management_page(
         "selected_status": status,
         "summary_cards": [
             {"label": "등록 드랍", "value": f"{int(overview['drop_count']):,}", "meta": "선택 기간"},
-            {"label": "판매 대기", "value": f"{int(overview['pending_sales']):,}", "meta": "가격·구매 혈맹 확정 전"},
+            {"label": "판매 대기", "value": f"{int(overview['pending_sales']):,}", "meta": "구매 혈맹·아데나 시세 확정 전"},
             {"label": "판매 완료", "value": f"{int(overview['sold_count']):,}", "meta": "분배 계산 생성"},
             {"label": "판매 아데나", "value": _money(overview["sold_adena"]), "meta": "수수료 차감 전"},
         ],
