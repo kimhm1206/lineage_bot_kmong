@@ -44,7 +44,6 @@ NAV_GROUPS: tuple[NavGroup, ...] = (
             NavItem("alliance.treasury", "연합비 가계부", "/alliance/treasury", "receipt", "연합 전체 입출금과 잔액"),
             NavItem("alliance.bidding", "아이템 입찰", "/alliance/bidding", "gavel", "혈맹별 구매 횟수와 이력"),
             NavItem("alliance.items", "아이템 관리", "/alliance/items", "tag", "아이템과 원화 시세"),
-            NavItem("alliance.settings", "연합 분배 설정", "/alliance/settings", "sliders", "경리·연합 수수료"),
         ),
         description="드랍, 판매와 혈맹별 1차 분배",
         tone="alliance",
@@ -56,8 +55,6 @@ NAV_GROUPS: tuple[NavGroup, ...] = (
         items=(
             NavItem("clan.settlement", "혈맹원 분배", "/clan/settlements", "list-check", "인원별 2차 정산"),
             NavItem("clan.treasury", "혈비 가계부", "/clan/treasury", "receipt", "잔액과 입출금 흐름"),
-            NavItem("clan.forfeits", "귀속 관리", "/clan/forfeits", "archive", "미수령 분배금 귀속"),
-            NavItem("clan.settings", "혈맹 분배 설정", "/clan/settings", "settings", "혈비와 내부 수수료"),
             NavItem("clan.staff", "혈맹 운영 설정", "/settings/clan", "users-round", "경리와 공개 범위"),
         ),
         description="혈맹원 분배, 혈비와 귀속 관리",
@@ -118,12 +115,6 @@ def get_navigation(
         items = []
         group_is_active = False
         for item in group.items:
-            if (
-                group.id == "alliance-operations"
-                and item.id == "alliance.settings"
-                and not can_manage_alliance
-            ):
-                continue
             if (
                 group.id == "clan-operations"
                 and item.id == "clan.staff"

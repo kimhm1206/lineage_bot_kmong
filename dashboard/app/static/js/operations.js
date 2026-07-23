@@ -36,6 +36,68 @@
     if (!document.querySelector(".ops-modal.is-open")) body.classList.remove("has-open-modal");
   };
 
+  const appendHistoryDateParams = (params, state) => {
+    if (state.period !== "-1") return;
+    params.set("date_from", state.dateFrom || "");
+    params.set("date_to", state.dateTo || "");
+  };
+
+  const resetHistoryPeriodButtons = (selector, datasetKey) => {
+    document.querySelectorAll(selector).forEach((button) => {
+      button.classList.toggle("is-active", button.dataset[datasetKey] === "30");
+    });
+  };
+
+  let historyDateApply = null;
+
+  const openHistoryDateRange = (state, apply) => {
+    const modal = document.getElementById("history-date-range-modal");
+    if (!modal) return;
+    const today = new Date();
+    const monthAgo = new Date(today);
+    monthAgo.setDate(today.getDate() - 29);
+    const iso = (value) => {
+      const local = new Date(value.getTime() - value.getTimezoneOffset() * 60000);
+      return local.toISOString().slice(0, 10);
+    };
+    modal.querySelector("[data-history-date-from]").value =
+      state.dateFrom || iso(monthAgo);
+    modal.querySelector("[data-history-date-to]").value =
+      state.dateTo || iso(today);
+    modal.querySelector("[data-history-date-error]").hidden = true;
+    historyDateApply = apply;
+    openModal("history-date-range-modal");
+  };
+
+  const selectHistoryPeriod = ({
+    button,
+    state,
+    datasetKey,
+    buttonSelector,
+    load,
+  }) => {
+    const selected = button.dataset[datasetKey] || "30";
+    if (selected === "custom") {
+      openHistoryDateRange(state, ({ dateFrom, dateTo }) => {
+        state.period = "-1";
+        state.dateFrom = dateFrom;
+        state.dateTo = dateTo;
+        document.querySelectorAll(buttonSelector).forEach((candidate) => {
+          candidate.classList.toggle("is-active", candidate === button);
+        });
+        load({ reset: true });
+      });
+      return;
+    }
+    state.period = selected;
+    state.dateFrom = "";
+    state.dateTo = "";
+    document.querySelectorAll(buttonSelector).forEach((candidate) => {
+      candidate.classList.toggle("is-active", candidate === button);
+    });
+    load({ reset: true });
+  };
+
   let pendingConfirmationForm = null;
 
   const closeConfirmation = () => {
@@ -254,6 +316,8 @@
   const dropHistoryState = {
     guildId: "",
     period: "30",
+    dateFrom: "",
+    dateTo: "",
     query: "",
     page: 1,
     request: 0,
@@ -344,6 +408,7 @@
       q: dropHistoryState.query,
       page: String(dropHistoryState.page),
     });
+    appendHistoryDateParams(params, dropHistoryState);
     try {
       const response = await fetch(`/api/drop-sale-history?${params.toString()}`, {
         headers: { Accept: "application/json" },
@@ -386,6 +451,8 @@
     window.clearTimeout(dropHistoryState.searchTimer);
     dropHistoryState.guildId = button.dataset.guildId || modal.dataset.guildId || "";
     dropHistoryState.period = "30";
+    dropHistoryState.dateFrom = "";
+    dropHistoryState.dateTo = "";
     dropHistoryState.query = "";
     modal.querySelector("[data-drop-history-search]").value = "";
     modal.querySelectorAll("[data-drop-history-period]").forEach((periodButton) => {
@@ -417,6 +484,9 @@
   const feeHistoryState = {
     feeRuleId: "",
     guildId: "",
+    period: "30",
+    dateFrom: "",
+    dateTo: "",
     page: 1,
     request: 0,
     loading: false,
@@ -490,8 +560,10 @@
 
     const params = new URLSearchParams({
       guild_id: feeHistoryState.guildId,
+      period: feeHistoryState.period,
       page: String(feeHistoryState.page),
     });
+    appendHistoryDateParams(params, feeHistoryState);
     try {
       const response = await fetch(
         `/api/fee-rules/${encodeURIComponent(feeHistoryState.feeRuleId)}/history?${params.toString()}`,
@@ -540,6 +612,10 @@
     if (!modal) return;
     feeHistoryState.feeRuleId = button.dataset.feeRuleId || "";
     feeHistoryState.guildId = button.dataset.guildId || "";
+    feeHistoryState.period = "30";
+    feeHistoryState.dateFrom = "";
+    feeHistoryState.dateTo = "";
+    resetHistoryPeriodButtons("[data-fee-history-period]", "feeHistoryPeriod");
     modal.querySelector("[data-fee-history-name]").textContent =
       button.dataset.feeRuleName || "-";
     openModal("fee-history-modal");
@@ -615,6 +691,9 @@
     userName: "",
     page: 1,
     status: "all",
+    period: "30",
+    dateFrom: "",
+    dateTo: "",
     request: 0,
     loading: false,
     hasNext: false,
@@ -691,10 +770,11 @@
       guild_id: modal.dataset.guildId,
       alliance_id: modal.dataset.allianceId,
       user_id: clanHistoryState.userId,
-      period: modal.dataset.period || "0",
+      period: clanHistoryState.period,
       history_status: clanHistoryState.status,
       page: String(clanHistoryState.page),
     });
+    appendHistoryDateParams(params, clanHistoryState);
 
     try {
       const response = await fetch(`/api/clan-settlement-history?${params.toString()}`, {
@@ -735,14 +815,17 @@
     if (!modal) return;
     modal.dataset.guildId = button.dataset.guildId || modal.dataset.guildId;
     modal.dataset.allianceId = button.dataset.allianceId || modal.dataset.allianceId;
-    modal.dataset.period = button.dataset.period || modal.dataset.period;
     clanHistoryState.userId = button.dataset.userId || "";
     clanHistoryState.userName = button.dataset.userName || "알 수 없는 유저";
     clanHistoryState.status = "all";
+    clanHistoryState.period = "30";
+    clanHistoryState.dateFrom = "";
+    clanHistoryState.dateTo = "";
     modal.querySelector("[data-history-user-name]").textContent = clanHistoryState.userName;
     modal.querySelectorAll("[data-history-status]").forEach((filter) => {
       filter.classList.toggle("is-active", filter.dataset.historyStatus === "all");
     });
+    resetHistoryPeriodButtons("[data-clan-history-period]", "clanHistoryPeriod");
     openModal("clan-settlement-history-modal");
     loadClanHistory({ reset: true });
   };
@@ -751,6 +834,8 @@
     guildId: "",
     allianceId: "",
     period: "30",
+    dateFrom: "",
+    dateTo: "",
     query: "",
     page: 1,
     request: 0,
@@ -841,6 +926,7 @@
       q: clanItemHistoryState.query,
       page: String(clanItemHistoryState.page),
     });
+    appendHistoryDateParams(params, clanItemHistoryState);
     try {
       const response = await fetch(`/api/clan-completed-item-history?${params.toString()}`, {
         headers: { Accept: "application/json" },
@@ -887,6 +973,8 @@
     clanItemHistoryState.allianceId =
       button.dataset.allianceId || modal.dataset.allianceId || "";
     clanItemHistoryState.period = "30";
+    clanItemHistoryState.dateFrom = "";
+    clanItemHistoryState.dateTo = "";
     clanItemHistoryState.query = "";
     modal.querySelector("[data-clan-item-search]").value = "";
     modal.querySelectorAll("[data-clan-item-period]").forEach((periodButton) => {
@@ -900,6 +988,9 @@
     guildId: "",
     allianceId: "",
     allianceName: "",
+    period: "30",
+    dateFrom: "",
+    dateTo: "",
     page: 1,
     request: 0,
     loading: false,
@@ -986,8 +1077,10 @@
     const params = new URLSearchParams({
       guild_id: allianceHistoryState.guildId,
       alliance_id: allianceHistoryState.allianceId,
+      period: allianceHistoryState.period,
       page: String(allianceHistoryState.page),
     });
+    appendHistoryDateParams(params, allianceHistoryState);
     try {
       const response = await fetch(`/api/alliance-settlement-history?${params.toString()}`, {
         headers: { Accept: "application/json" },
@@ -1028,6 +1121,13 @@
     allianceHistoryState.guildId = button.dataset.guildId || "";
     allianceHistoryState.allianceId = button.dataset.allianceId || "";
     allianceHistoryState.allianceName = button.dataset.allianceName || "";
+    allianceHistoryState.period = "30";
+    allianceHistoryState.dateFrom = "";
+    allianceHistoryState.dateTo = "";
+    resetHistoryPeriodButtons(
+      "[data-alliance-history-period]",
+      "allianceHistoryPeriod",
+    );
     modal.querySelector("[data-alliance-history-name]").textContent =
       allianceHistoryState.allianceName || "-";
     openModal("alliance-settlement-history-modal");
@@ -1035,6 +1135,26 @@
   };
 
   document.addEventListener("submit", (event) => {
+    const historyDateForm = event.target.closest("[data-history-date-form]");
+    if (historyDateForm) {
+      event.preventDefault();
+      event.stopPropagation();
+      const dateFrom = historyDateForm.elements.date_from.value;
+      const dateTo = historyDateForm.elements.date_to.value;
+      const error = historyDateForm.querySelector("[data-history-date-error]");
+      if (!dateFrom || !dateTo || dateFrom > dateTo) {
+        error.textContent = !dateFrom || !dateTo
+          ? "시작일과 종료일을 모두 선택해 주세요."
+          : "종료일은 시작일보다 빠를 수 없습니다.";
+        error.hidden = false;
+        return;
+      }
+      const apply = historyDateApply;
+      historyDateApply = null;
+      closeModal(historyDateForm);
+      if (apply) apply({ dateFrom, dateTo });
+      return;
+    }
     const clientSearchForm = event.target.closest("[data-client-search-form]");
     if (clientSearchForm) {
       event.preventDefault();
@@ -1079,11 +1199,13 @@
     const dropHistoryPeriod = event.target.closest("[data-drop-history-period]");
     if (dropHistoryPeriod) {
       window.clearTimeout(dropHistoryState.searchTimer);
-      dropHistoryState.period = dropHistoryPeriod.dataset.dropHistoryPeriod || "30";
-      dropHistoryPeriod.parentElement.querySelectorAll("[data-drop-history-period]").forEach((button) => {
-        button.classList.toggle("is-active", button === dropHistoryPeriod);
+      selectHistoryPeriod({
+        button: dropHistoryPeriod,
+        state: dropHistoryState,
+        datasetKey: "dropHistoryPeriod",
+        buttonSelector: "[data-drop-history-period]",
+        load: loadDropHistory,
       });
-      loadDropHistory({ reset: true });
     }
     const dropHistoryMore = event.target.closest("[data-drop-history-more]");
     if (dropHistoryMore && dropHistoryState.hasNext) {
@@ -1109,6 +1231,16 @@
     if (feeEdit) populateFeeEdit(feeEdit);
     const feeHistoryOpen = event.target.closest("[data-fee-history-open]");
     if (feeHistoryOpen) openFeeHistory(feeHistoryOpen);
+    const feeHistoryPeriod = event.target.closest("[data-fee-history-period]");
+    if (feeHistoryPeriod) {
+      selectHistoryPeriod({
+        button: feeHistoryPeriod,
+        state: feeHistoryState,
+        datasetKey: "feeHistoryPeriod",
+        buttonSelector: "[data-fee-history-period]",
+        load: loadFeeHistory,
+      });
+    }
     const feeHistoryMore = event.target.closest("[data-fee-history-more]");
     if (feeHistoryMore && feeHistoryState.hasNext) {
       feeHistoryState.page += 1;
@@ -1123,11 +1255,13 @@
     const clanItemPeriod = event.target.closest("[data-clan-item-period]");
     if (clanItemPeriod) {
       window.clearTimeout(clanItemHistoryState.searchTimer);
-      clanItemHistoryState.period = clanItemPeriod.dataset.clanItemPeriod || "30";
-      clanItemPeriod.parentElement.querySelectorAll("[data-clan-item-period]").forEach((button) => {
-        button.classList.toggle("is-active", button === clanItemPeriod);
+      selectHistoryPeriod({
+        button: clanItemPeriod,
+        state: clanItemHistoryState,
+        datasetKey: "clanItemPeriod",
+        buttonSelector: "[data-clan-item-period]",
+        load: loadClanItemHistory,
       });
-      loadClanItemHistory({ reset: true });
     }
     const clanItemMore = event.target.closest("[data-clan-item-more]");
     if (clanItemMore && clanItemHistoryState.hasNext) {
@@ -1139,6 +1273,16 @@
       event.preventDefault();
       openAllianceHistory(allianceHistoryOpen);
     }
+    const allianceHistoryPeriod = event.target.closest("[data-alliance-history-period]");
+    if (allianceHistoryPeriod) {
+      selectHistoryPeriod({
+        button: allianceHistoryPeriod,
+        state: allianceHistoryState,
+        datasetKey: "allianceHistoryPeriod",
+        buttonSelector: "[data-alliance-history-period]",
+        load: loadAllianceHistory,
+      });
+    }
     const clanHistoryStatus = event.target.closest("[data-history-status]");
     if (clanHistoryStatus) {
       clanHistoryState.status = clanHistoryStatus.dataset.historyStatus || "all";
@@ -1146,6 +1290,16 @@
         filter.classList.toggle("is-active", filter === clanHistoryStatus);
       });
       loadClanHistory({ reset: true });
+    }
+    const clanHistoryPeriod = event.target.closest("[data-clan-history-period]");
+    if (clanHistoryPeriod) {
+      selectHistoryPeriod({
+        button: clanHistoryPeriod,
+        state: clanHistoryState,
+        datasetKey: "clanHistoryPeriod",
+        buttonSelector: "[data-clan-history-period]",
+        load: loadClanHistory,
+      });
     }
     const clanHistoryMore = event.target.closest("[data-history-more]");
     if (clanHistoryMore && clanHistoryState.hasNext) {
@@ -1202,7 +1356,8 @@
       closeConfirmation();
       return;
     }
-    closeModal(document.querySelector(".ops-modal.is-open"));
+    const openModals = [...document.querySelectorAll(".ops-modal.is-open")];
+    closeModal(openModals.at(-1));
   });
 
   const initializeOperationsPage = () => {

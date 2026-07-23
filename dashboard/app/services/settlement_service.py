@@ -901,7 +901,7 @@ async def set_payout_status(
     row = (
         await session.execute(
             text("""
-                SELECT po.*, d.guild_id, v.item_name,
+                SELECT po.*, d.guild_id, d.attendance_id, v.item_name,
                        parent.recipient_alliance_id AS parent_alliance_id,
                        fr.scope_code, fr.alliance_id AS fee_alliance_id,
                        fr.fixed_code,
@@ -1014,8 +1014,12 @@ async def set_payout_status(
             source_type_id=2,
             source_id=payout_object_id,
             amount=int(row["amount_adena"]),
-            category_name="귀속 혈비",
-            memo=f"미수령 귀속 · {row['recipient_name'] or '알 수 없는 유저'} · {row['item_name']}",
+            category_name="귀속",
+            memo=(
+                f"미수령 귀속 · "
+                f"{row['recipient_name'] or '알 수 없는 유저'} · "
+                f"{row['item_name']} · 출석 #{int(row['attendance_id'])}"
+            ),
         )
     await _audit(
         session,
@@ -1220,7 +1224,7 @@ async def set_treasury_distribution_recipient_status(
             source_type_id=int(source_type_id),
             source_id=recipient_id,
             amount=int(row["per_recipient_amount"]),
-            category_name="귀속 혈비",
+            category_name="귀속",
             memo=(
                 f"혈비 잔액 분배 귀속 · "
                 f"{row['recipient_name'] or '알 수 없는 유저'}"

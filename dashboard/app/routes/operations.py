@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable
+from datetime import date, datetime, time, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,6 +30,7 @@ from dashboard.app.ui.context import build_template_context
 
 router = APIRouter(tags=["operations"])
 templates = Jinja2Templates(directory=str(BASE_DIR / "app" / "templates"))
+KST = ZoneInfo("Asia/Seoul")
 
 
 def _int(value: Any, *, required: bool = True) -> int | None:
@@ -109,6 +112,33 @@ async def _context(
 
 def _query(value: str) -> str:
     return value.strip()[:100]
+
+
+def _history_window(
+    period: int,
+    date_from: str,
+    date_to: str,
+) -> tuple[int, int | None, int | None]:
+    if period != -1:
+        return (0 if period == 0 else 30), None, None
+    try:
+        start_date = date.fromisoformat(date_from)
+        end_date = date.fromisoformat(date_to)
+    except ValueError:
+        raise HTTPException(
+            status_code=422,
+            detail="조회 시작일과 종료일을 확인해 주세요.",
+        ) from None
+    if start_date > end_date:
+        raise HTTPException(
+            status_code=422,
+            detail="종료일은 시작일보다 빠를 수 없습니다.",
+        )
+    start_epoch = int(datetime.combine(start_date, time.min, KST).timestamp())
+    end_epoch = int(
+        datetime.combine(end_date + timedelta(days=1), time.min, KST).timestamp()
+    )
+    return 0, start_epoch, end_epoch
 
 
 async def _require_bid_management(
@@ -219,7 +249,19 @@ async def alliance_settlements_page(
         if workspace["guild_id"] is not None
         else {"entities": [], "summary_cards": []}
     )
+    fee_data = (
+        await operations_store.fee_management_page(
+            session,
+            guild_id=int(workspace["guild_id"]),
+            alliance_id=None,
+            scope_code=1,
+            query="",
+        )
+        if workspace["guild_id"] is not None
+        else {"fee_rules": []}
+    )
     context.update(page_data)
+    context.update(fee_data)
     context.update(
         {
             "period": selected_period,
@@ -227,6 +269,8 @@ async def alliance_settlements_page(
             "query": _query(q),
             "settlement_level": "alliance",
             "can_manage_settlement": can_manage,
+            "can_edit_fee_rules": can_manage,
+            "scope_code": 1,
         }
     )
     return templates.TemplateResponse(request, "pages/operations/settlements.html", context)
@@ -262,12 +306,26 @@ async def clan_settlements_page(
         if workspace["guild_id"] is not None and workspace["alliance_id"] is not None
         else {"entities": [], "summary_cards": []}
     )
+    fee_data = (
+        await operations_store.fee_management_page(
+            session,
+            guild_id=int(workspace["guild_id"]),
+            alliance_id=int(workspace["alliance_id"]),
+            scope_code=2,
+            query="",
+        )
+        if workspace["guild_id"] is not None and workspace["alliance_id"] is not None
+        else {"fee_rules": []}
+    )
     context.update(page_data)
+    context.update(fee_data)
     context.update(
         {
             "query": _query(q),
             "settlement_level": "clan",
             "can_manage_settlement": can_manage_clan_treasury(request),
+            "can_edit_fee_rules": can_manage_clan_treasury(request),
+            "scope_code": 2,
         }
     )
     return templates.TemplateResponse(request, "pages/operations/settlements.html", context)
@@ -308,33 +366,7 @@ async def alliance_fee_page(
     q: str = "",
     session: AsyncSession = Depends(get_session),
 ):
-    _require_alliance_management(request)
-    context, workspace = await _context(
-        request,
-        session,
-        guild_id=guild_id,
-        alliance_id=None,
-        active_nav="alliance.settings",
-        page_title="연합 분배 설정",
-        page_description="판매금에서 먼저 차감할 연합 수수료 규칙을 관리합니다.",
-        page_badge="OWNER",
-    )
-    page_data = (
-        await operations_store.fee_management_page(
-            session, guild_id=int(workspace["guild_id"]), alliance_id=None, scope_code=1, query=""
-        )
-        if workspace["guild_id"] is not None
-        else {"fee_rules": []}
-    )
-    context.update(page_data)
-    context.update(
-        {
-            "query": _query(q),
-            "scope_code": 1,
-            "can_edit_fee_rules": can_manage_alliance_operations(request),
-        }
-    )
-    return templates.TemplateResponse(request, "pages/operations/fees.html", context)
+    return RedirectResponse("/alliance/settlements", status_code=302)
 
 
 @router.get("/clan/settings")
@@ -345,37 +377,10 @@ async def clan_fee_page(
     q: str = "",
     session: AsyncSession = Depends(get_session),
 ):
-    context, workspace = await _context(
-        request,
-        session,
-        guild_id=guild_id,
-        alliance_id=alliance_id,
-        active_nav="clan.settings",
-        page_title="혈맹 분배 설정",
-        page_description="혈맹 분배금에서 차감할 혈비와 내부 수수료를 관리합니다.",
-        page_badge="CLAN MANAGER",
-        clan_scoped=True,
-    )
-    page_data = (
-        await operations_store.fee_management_page(
-            session,
-            guild_id=int(workspace["guild_id"]),
-            alliance_id=int(workspace["alliance_id"]),
-            scope_code=2,
-            query="",
-        )
-        if workspace["guild_id"] is not None and workspace["alliance_id"] is not None
-        else {"fee_rules": []}
-    )
-    context.update(page_data)
-    context.update(
-        {
-            "query": _query(q),
-            "scope_code": 2,
-            "can_edit_fee_rules": can_manage_clan_treasury(request),
-        }
-    )
-    return templates.TemplateResponse(request, "pages/operations/fees.html", context)
+    target = "/clan/settlements"
+    if alliance_id is not None:
+        target += f"?alliance_id={alliance_id}"
+    return RedirectResponse(target, status_code=302)
 
 
 @router.get("/alliance/bidding")
@@ -789,18 +794,26 @@ async def drop_sale_history(
     request: Request,
     guild_id: int,
     period: int = 30,
+    date_from: str = "",
+    date_to: str = "",
     q: str = "",
     page: int = 1,
     session: AsyncSession = Depends(get_session),
 ):
     require_selected_guild(request, guild_id)
-    selected_period = period if period in {0, 30} else 30
+    selected_period, date_from_epoch, date_to_epoch = _history_window(
+        period,
+        date_from,
+        date_to,
+    )
     return {
         "ok": True,
         **await operations_store.drop_sale_history_page(
             session,
             guild_id=guild_id,
             period_days=selected_period,
+            date_from_epoch=date_from_epoch,
+            date_to_epoch=date_to_epoch,
             query=_query(q),
             page=max(page, 1),
         ),
@@ -812,9 +825,17 @@ async def fee_rule_history(
     fee_rule_id: int,
     request: Request,
     guild_id: int,
+    period: int = 30,
+    date_from: str = "",
+    date_to: str = "",
     page: int = 1,
     session: AsyncSession = Depends(get_session),
 ):
+    selected_period, date_from_epoch, date_to_epoch = _history_window(
+        period,
+        date_from,
+        date_to,
+    )
     rule_scope = await settlement_service.fee_rule_access_scope(
         session,
         guild_id=guild_id,
@@ -838,6 +859,9 @@ async def fee_rule_history(
         session,
         guild_id=guild_id,
         fee_rule_id=fee_rule_id,
+        period_days=selected_period,
+        date_from_epoch=date_from_epoch,
+        date_to_epoch=date_to_epoch,
         page=max(page, 1),
     )
     if history is None:
@@ -852,6 +876,8 @@ async def clan_settlement_history(
     alliance_id: int,
     user_id: int,
     period: int | None = None,
+    date_from: str = "",
+    date_to: str = "",
     history_status: str = "all",
     page: int = 1,
     session: AsyncSession = Depends(get_session),
@@ -863,6 +889,11 @@ async def clan_settlement_history(
         alliance_id=alliance_id,
     )
     selected_status = history_status if history_status in {"all", "complete", "forfeited"} else "all"
+    selected_period, date_from_epoch, date_to_epoch = _history_window(
+        30 if period is None else period,
+        date_from,
+        date_to,
+    )
     return {
         "ok": True,
         **await operations_store.clan_settlement_history_page(
@@ -870,7 +901,9 @@ async def clan_settlement_history(
             guild_id=guild_id,
             alliance_id=alliance_id,
             user_id=user_id,
-            period_days=workspace_store.normalize_period(period),
+            period_days=selected_period,
+            date_from_epoch=date_from_epoch,
+            date_to_epoch=date_to_epoch,
             status_filter=selected_status,
             page=max(page, 1),
         ),
@@ -883,6 +916,8 @@ async def clan_completed_item_history(
     guild_id: int,
     alliance_id: int,
     period: int = 30,
+    date_from: str = "",
+    date_to: str = "",
     q: str = "",
     page: int = 1,
     session: AsyncSession = Depends(get_session),
@@ -893,7 +928,11 @@ async def clan_completed_item_history(
         guild_id=guild_id,
         alliance_id=alliance_id,
     )
-    selected_period = period if period in {0, 30} else 30
+    selected_period, date_from_epoch, date_to_epoch = _history_window(
+        period,
+        date_from,
+        date_to,
+    )
     return {
         "ok": True,
         **await operations_store.clan_completed_item_history_page(
@@ -901,6 +940,8 @@ async def clan_completed_item_history(
             guild_id=guild_id,
             alliance_id=alliance_id,
             period_days=selected_period,
+            date_from_epoch=date_from_epoch,
+            date_to_epoch=date_to_epoch,
             query=_query(q),
             page=max(page, 1),
         ),
@@ -912,14 +953,25 @@ async def alliance_settlement_history(
     request: Request,
     guild_id: int,
     alliance_id: int,
+    period: int = 30,
+    date_from: str = "",
+    date_to: str = "",
     page: int = 1,
     session: AsyncSession = Depends(get_session),
 ):
     require_selected_guild(request, guild_id)
+    selected_period, date_from_epoch, date_to_epoch = _history_window(
+        period,
+        date_from,
+        date_to,
+    )
     page_data = await operations_store.alliance_settlement_history_page(
         session,
         guild_id=guild_id,
         alliance_id=alliance_id,
+        period_days=selected_period,
+        date_from_epoch=date_from_epoch,
+        date_to_epoch=date_to_epoch,
         page=max(page, 1),
     )
     if not can_manage_alliance_operations(request):

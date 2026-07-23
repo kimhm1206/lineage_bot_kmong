@@ -5,11 +5,9 @@
 {% block title %}{{ page_title }} · {{ app_name }}{% endblock %}
 {% block content %}
 <div data-live-page>
-  {% if settlement_level == 'alliance' %}
-  {{ toolbar(guilds, guild_id, query, period_options, alliances if settlement_level == 'clan' and can_select_alliance else [], alliance_id, search_label='정산 대상 검색', search_placeholder='혈맹, 유저 또는 아이템 검색', client_search=True) }}
-  {{ summary(summary_cards) }}
-  {% else %}
-  <section class="clan-settlement-toolbar">
+  {% set active_fee_rules = fee_rules | selectattr('is_active') | list %}
+  <section class="settlement-command-layout{% if settlement_level == 'clan' %} is-clan{% endif %}">
+    {% if settlement_level == 'clan' %}
     <div class="clan-settlement-search">
       {% if can_select_alliance and alliances %}
       <form method="get" action="{{ request.url.path }}">
@@ -39,21 +37,55 @@
         </label>
       </form>
     </div>
-    <article class="clan-toolbar-metric">
-      <span>미분배 아데나</span>
-      <strong>{{ summary_cards[0].value if summary_cards else '0' }}</strong>
-      <small>현재 지급할 금액</small>
-    </article>
-    <button class="clan-toolbar-history-card" type="button"
-            data-clan-item-history-open
-            data-guild-id="{{ guild_id }}"
-            data-alliance-id="{{ alliance_id }}">
-      <span>{{ icon("clipboard-list") }}</span>
-      <strong>기록 확인</strong>
-      <small>완료된 아이템별 정산</small>
-    </button>
+    {% endif %}
+    <div class="settlement-command-cards">
+      <article class="settlement-command-card is-primary">
+        <span>미분배 아데나</span>
+        <strong>{{ summary_cards[0].value if summary_cards else '0' }}</strong>
+        {% if settlement_level == 'alliance' and period_options %}
+        <form method="get" action="{{ request.url.path }}">
+          <label>
+            <span class="sr-only">조회 기간</span>
+            <select name="period" onchange="this.form.submit()">
+              {% for option in period_options %}
+              <option value="{{ option.value }}" {% if option.selected %}selected{% endif %}>{{ option.label }}</option>
+              {% endfor %}
+            </select>
+          </label>
+        </form>
+        {% else %}
+        <small>현재 지급할 금액</small>
+        {% endif %}
+      </article>
+      {% if settlement_level == 'clan' %}
+      <button class="settlement-command-card is-action" type="button"
+              data-clan-item-history-open
+              data-guild-id="{{ guild_id }}"
+              data-alliance-id="{{ alliance_id }}">
+        <span>{{ icon("clipboard-list") }}</span>
+        <strong>기록 확인</strong>
+        <small>완료된 아이템별 정산</small>
+      </button>
+      {% endif %}
+      <article class="settlement-command-card is-fee-preview">
+        <span>수수료 간략히 보기</span>
+        <strong>
+          {% if active_fee_rules %}
+            {% for fee in active_fee_rules[:3] %}{{ fee.rule_name }} {{ fee.rate_label }}{% if not loop.last %}<em>·</em>{% endif %}{% endfor %}
+          {% else %}
+            설정 없음
+          {% endif %}
+        </strong>
+        <small>{% if active_fee_rules|length > 3 %}외 {{ active_fee_rules|length - 3 }}개{% else %}현재 적용 규칙{% endif %}</small>
+      </article>
+      <button class="settlement-command-card is-action is-settings" type="button"
+              data-modal-open="settlement-fee-settings-modal">
+        <span>{{ icon("settings") }}</span>
+        <strong>수수료 설정</strong>
+        <small>{{ '추가·수정 및 사용 상태' if can_edit_fee_rules else '현재 수수료 확인' }}</small>
+      </button>
+    </div>
   </section>
-  {% endif %}
 
   <section class="ops-section-heading settlement-heading">
     <div>
@@ -171,6 +203,77 @@
     {{ empty('정산 대상이 없습니다.', '역할 매핑된 혈맹과 판매 완료된 드랍을 확인해 주세요.') }}
     {% endif %}
   {% endif %}
+{% call modal('settlement-fee-settings-modal', '수수료 설정', '현재 정산에 적용할 수수료 이름과 비율을 관리합니다.') %}
+<section class="settlement-fee-settings">
+  {% if can_edit_fee_rules %}
+  <form class="settlement-fee-create" data-async-form method="post" action="/api/fee-rules">
+    <input type="hidden" name="guild_id" value="{{ guild_id }}">
+    <input type="hidden" name="alliance_id" value="{{ alliance_id or '' }}">
+    <input type="hidden" name="scope_code" value="{{ scope_code }}">
+    <div>
+      <span>새 수수료</span>
+      <strong>수수료 규칙 추가</strong>
+    </div>
+    <label class="ops-field">
+      <span>수수료 이름</span>
+      <input type="text" name="rule_name" maxlength="60" required placeholder="예: 운영비">
+    </label>
+    <label class="ops-field">
+      <span>수수료율 (%)</span>
+      <input type="number" name="percent" min="0" max="100" step="0.01" required placeholder="10">
+    </label>
+    <button class="primary-button" type="submit">{{ icon("plus-square") }} 추가</button>
+  </form>
+  {% endif %}
+
+  <div class="settlement-fee-list">
+    {% for fee in fee_rules %}
+    <article class="settlement-fee-row{% if not fee.is_active %} is-inactive{% endif %}">
+      {% if can_edit_fee_rules %}
+      <form data-async-form method="post" action="/api/fee-rules/{{ fee.fee_rule_id }}">
+        <input type="hidden" name="guild_id" value="{{ guild_id }}">
+        <div class="settlement-fee-identity">
+          <small>{{ '고정 수수료' if fee.is_fixed else '커스텀 수수료' }}</small>
+          {% if fee.is_fixed %}
+          <strong>{{ fee.rule_name }}</strong>
+          <input type="hidden" name="rule_name" value="{{ fee.rule_name }}">
+          {% else %}
+          <input type="text" name="rule_name" maxlength="60" required value="{{ fee.rule_name }}">
+          {% endif %}
+        </div>
+        <label class="ops-field settlement-fee-rate">
+          <span>수수료율 (%)</span>
+          <input type="number" name="percent" min="0" max="100" step="0.01"
+                 required value="{{ fee.rate_ppm / 10000 }}">
+        </label>
+        {% if fee.is_fixed %}
+        <input type="hidden" name="is_active" value="1">
+        <span class="ops-status ops-status-complete">고정</span>
+        {% else %}
+        <label class="settlement-fee-toggle">
+          <input type="checkbox" name="is_active" value="1" {% if fee.is_active %}checked{% endif %}>
+          <span>{{ '사용 중' if fee.is_active else '중지' }}</span>
+        </label>
+        {% endif %}
+        <button class="secondary-button" type="submit">저장</button>
+      </form>
+      {% else %}
+      <div class="settlement-fee-readonly">
+        <div><small>{{ '고정 수수료' if fee.is_fixed else '커스텀 수수료' }}</small><strong>{{ fee.rule_name }}</strong></div>
+        <strong>{{ fee.rate_label }}</strong>
+        <span class="ops-status ops-status-{{ 'complete' if fee.is_active else 'muted' }}">{{ '사용 중' if fee.is_active else '중지' }}</span>
+      </div>
+      {% endif %}
+    </article>
+    {% else %}
+    <div class="ops-empty-state compact">
+      <strong>설정된 수수료가 없습니다.</strong>
+      <p>새 수수료를 추가하면 정산 대상에 자동 반영됩니다.</p>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endcall %}
 </div>
 
 {% if settlement_level == 'alliance' %}
@@ -198,6 +301,13 @@
       <div><span>완료 항목</span><strong>아이템별 분배 기록</strong></div>
       <p>최근 완료 항목부터 표시됩니다.</p>
     </header>
+    <div class="history-modal-toolbar">
+      <div class="settlement-history-segments" data-alliance-history-periods>
+        <button class="is-active" type="button" data-alliance-history-period="30">최근 한 달</button>
+        <button type="button" data-alliance-history-period="0">전체</button>
+        <button type="button" data-alliance-history-period="custom">커스텀</button>
+      </div>
+    </div>
     <div class="alliance-history-records-body">
       <div class="settlement-history-loading" data-alliance-history-loading>완료 기록을 불러오는 중입니다.</div>
       <div class="alliance-history-list" data-alliance-history-list hidden></div>
@@ -230,6 +340,11 @@
       <button class="is-active" type="button" data-history-status="all">전체</button>
       <button type="button" data-history-status="complete">완료</button>
       <button type="button" data-history-status="forfeited">귀속</button>
+    </div>
+    <div class="settlement-history-segments" data-clan-history-periods>
+      <button class="is-active" type="button" data-clan-history-period="30">최근 한 달</button>
+      <button type="button" data-clan-history-period="0">전체</button>
+      <button type="button" data-clan-history-period="custom">커스텀</button>
     </div>
   </div>
   <div class="settlement-history-loading" data-history-loading>과거 기록을 불러오는 중입니다.</div>
@@ -272,6 +387,7 @@
     <div class="settlement-history-segments" data-clan-item-periods>
       <button class="is-active" type="button" data-clan-item-period="30">최근 한 달</button>
       <button type="button" data-clan-item-period="0">전체</button>
+      <button type="button" data-clan-item-period="custom">커스텀</button>
     </div>
     <label class="settlement-history-search">
       {{ icon("search") }}
@@ -314,6 +430,13 @@
       <small data-fee-history-complete-count>0건</small>
     </div>
   </header>
+  <div class="history-modal-toolbar">
+    <div class="settlement-history-segments" data-fee-history-periods>
+      <button class="is-active" type="button" data-fee-history-period="30">최근 한 달</button>
+      <button type="button" data-fee-history-period="0">전체</button>
+      <button type="button" data-fee-history-period="custom">커스텀</button>
+    </div>
+  </div>
   <div class="settlement-history-loading" data-fee-history-loading>기록을 불러오는 중입니다.</div>
   <div class="fee-history-list" data-fee-history-list hidden></div>
   <div class="ops-empty-state fee-history-empty" data-fee-history-empty hidden>

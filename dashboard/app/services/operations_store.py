@@ -37,6 +37,38 @@ def _pagination(total: int, page: int, page_size: int = PAGE_SIZE) -> dict[str, 
     }
 
 
+def _history_period_clause(
+    column: str,
+    period_days: int,
+    date_from_epoch: int | None,
+    date_to_epoch: int | None,
+) -> str:
+    if date_from_epoch is not None and date_to_epoch is not None:
+        return (
+            f"AND {column} >= :date_from_epoch "
+            f"AND {column} < :date_to_epoch"
+        )
+    if period_days == 0:
+        return ""
+    return (
+        f"AND {column} >= EXTRACT("
+        "EPOCH FROM NOW() - (:period_days * INTERVAL '1 day')"
+        ")::BIGINT"
+    )
+
+
+def _history_period_params(
+    period_days: int,
+    date_from_epoch: int | None,
+    date_to_epoch: int | None,
+) -> dict[str, int | None]:
+    return {
+        "period_days": period_days,
+        "date_from_epoch": date_from_epoch,
+        "date_to_epoch": date_to_epoch,
+    }
+
+
 async def drop_management_page(
     session: AsyncSession,
     *,
@@ -299,15 +331,14 @@ async def drop_sale_history_page(
     period_days: int,
     query: str,
     page: int,
+    date_from_epoch: int | None = None,
+    date_to_epoch: int | None = None,
 ) -> dict[str, Any]:
-    period_clause = (
-        ""
-        if period_days == 0
-        else """
-            AND sale.completed_at >= EXTRACT(
-                EPOCH FROM NOW() - (:period_days * INTERVAL '1 day')
-            )::BIGINT
-        """
+    period_clause = _history_period_clause(
+        "sale.completed_at",
+        period_days,
+        date_from_epoch,
+        date_to_epoch,
     )
     search_clause = (
         """
@@ -331,8 +362,12 @@ async def drop_sale_history_page(
     )
     params = {
         "guild_id": guild_id,
-        "period_days": period_days,
         "query": f"%{query}%",
+        **_history_period_params(
+            period_days,
+            date_from_epoch,
+            date_to_epoch,
+        ),
     }
     history_from = f"""
         FROM settlement_drops drop_row
@@ -730,11 +765,19 @@ async def alliance_settlement_history_page(
     *,
     guild_id: int,
     alliance_id: int,
+    period_days: int,
     page: int,
+    date_from_epoch: int | None = None,
+    date_to_epoch: int | None = None,
 ) -> dict[str, Any]:
     params = {
         "guild_id": guild_id,
         "alliance_id": alliance_id,
+        **_history_period_params(
+            period_days,
+            date_from_epoch,
+            date_to_epoch,
+        ),
     }
     alliance_name = await session.scalar(
         text("""
@@ -802,14 +845,21 @@ async def alliance_settlement_history_page(
               AND recipient.status_code = 1
         )
     """
+    period_clause = _history_period_clause(
+        "completed_at",
+        period_days,
+        date_from_epoch,
+        date_to_epoch,
+    )
+    filtered_from = f"FROM history WHERE TRUE {period_clause}"
     total_row = (
         await session.execute(
             text(
                 history_sql
-                + """
+                + f"""
                 SELECT COUNT(*) AS complete_count,
                        COALESCE(SUM(amount_adena), 0) AS total_amount
-                FROM history
+                {filtered_from}
                 """
             ),
             params,
@@ -823,7 +873,7 @@ async def alliance_settlement_history_page(
             await session.execute(
                 text(
                     history_sql
-                    + """
+                    + f"""
                     SELECT source_type, payout_object_id, amount_adena,
                            attendance_id, item_name,
                            TO_CHAR(
@@ -835,7 +885,7 @@ async def alliance_settlement_history_page(
                                'YYYY-MM-DD HH24:MI'
                            ) AS completed_at_label,
                            started_child_count
-                    FROM history
+                    {filtered_from}
                     ORDER BY completed_at DESC NULLS LAST,
                              payout_object_id DESC NULLS LAST
                     LIMIT :limit OFFSET :offset
@@ -1134,11 +1184,14 @@ async def clan_settlement_history_page(
     period_days: int,
     status_filter: str,
     page: int,
+    date_from_epoch: int | None = None,
+    date_to_epoch: int | None = None,
 ) -> dict[str, Any]:
-    period_clause = (
-        ""
-        if period_days == 0
-        else "AND history.occurred_at >= EXTRACT(EPOCH FROM NOW() - (:period_days * INTERVAL '1 day'))::BIGINT"
+    period_clause = _history_period_clause(
+        "history.occurred_at",
+        period_days,
+        date_from_epoch,
+        date_to_epoch,
     )
     status_clause = {
         "complete": "AND history.status_code = 1",
@@ -1148,7 +1201,11 @@ async def clan_settlement_history_page(
         "guild_id": guild_id,
         "alliance_id": alliance_id,
         "user_id": user_id,
-        "period_days": period_days,
+        **_history_period_params(
+            period_days,
+            date_from_epoch,
+            date_to_epoch,
+        ),
     }
     history_cte = """
         WITH history AS (
@@ -1318,15 +1375,14 @@ async def clan_completed_item_history_page(
     period_days: int,
     query: str,
     page: int,
+    date_from_epoch: int | None = None,
+    date_to_epoch: int | None = None,
 ) -> dict[str, Any]:
-    period_clause = (
-        ""
-        if period_days == 0
-        else """
-            AND completed_items.completed_at >= EXTRACT(
-                EPOCH FROM NOW() - (:period_days * INTERVAL '1 day')
-            )::BIGINT
-        """
+    period_clause = _history_period_clause(
+        "completed_items.completed_at",
+        period_days,
+        date_from_epoch,
+        date_to_epoch,
     )
     search_clause = (
         """
@@ -1341,8 +1397,12 @@ async def clan_completed_item_history_page(
     params = {
         "guild_id": guild_id,
         "alliance_id": alliance_id,
-        "period_days": period_days,
         "query": f"%{query}%",
+        **_history_period_params(
+            period_days,
+            date_from_epoch,
+            date_to_epoch,
+        ),
     }
     completed_cte = """
         WITH completed_items AS (
@@ -1594,7 +1654,10 @@ async def fee_rule_history_page(
     *,
     guild_id: int,
     fee_rule_id: int,
+    period_days: int,
     page: int,
+    date_from_epoch: int | None = None,
+    date_to_epoch: int | None = None,
 ) -> dict[str, Any] | None:
     rule = (
         await session.execute(
@@ -1618,7 +1681,13 @@ async def fee_rule_history_page(
     if rule is None:
         return None
 
-    history_from = """
+    period_clause = _history_period_clause(
+        "drop_row.occurred_at",
+        period_days,
+        date_from_epoch,
+        date_to_epoch,
+    )
+    history_from = f"""
         FROM settlement_payout_objects payout
         JOIN settlement_fee_rule_versions version
           ON version.fee_rule_version_id = payout.fee_rule_version_id
@@ -1634,8 +1703,17 @@ async def fee_rule_history_page(
         WHERE drop_row.guild_id = :guild_id
           AND version.fee_rule_id = :fee_rule_id
           AND payout.object_code = 3
+          {period_clause}
     """
-    params = {"guild_id": guild_id, "fee_rule_id": fee_rule_id}
+    params = {
+        "guild_id": guild_id,
+        "fee_rule_id": fee_rule_id,
+        **_history_period_params(
+            period_days,
+            date_from_epoch,
+            date_to_epoch,
+        ),
+    }
     summary = (
         await session.execute(
             text(f"""

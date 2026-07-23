@@ -434,7 +434,6 @@ async def alliance_settlements(
         page_badge="ALLIANCE MANAGER",
         builder=workspace_store.alliance_settlements_page,
         guild_id=guild_id, alliance_id=None, period=period, query=q, page=page,
-        settings_href="/alliance/settings", settings_label="분배 설정",
     )
 
 
@@ -541,18 +540,7 @@ async def alliance_settings(
     request: Request, guild_id: int | None = None, q: str = "", page: int = 1,
     session: AsyncSession = Depends(get_session),
 ):
-    return await _render_workspace(
-        request, session,
-        active_nav="alliance.settings",
-        page_title="연합 분배 설정",
-        page_description="혈맹별 1차 분배 전에 적용되는 연합 수수료 규칙을 확인합니다.",
-        page_kicker="Alliance fee rules",
-        page_badge="OWNER",
-        builder=workspace_store.fee_rules_page,
-        guild_id=guild_id, alliance_id=None, period=None, query=q, page=page,
-        supports_period=False,
-        builder_kwargs={"alliance_id": None, "scope_code": 1},
-    )
+    return RedirectResponse("/alliance/settlements", status_code=302)
 
 
 @router.get("/_legacy/clan/settlements", include_in_schema=False)
@@ -571,7 +559,6 @@ async def clan_settlements(
         builder=workspace_store.clan_settlements_page,
         guild_id=guild_id, alliance_id=alliance_id, period=period, query=q, page=page,
         needs_alliance=True,
-        settings_href="/clan/settings", settings_label="혈맹 분배 설정",
     )
 
 
@@ -605,11 +592,10 @@ async def clan_treasury(
             ),
             "category_filter_active": treasury_category_active == 1,
             "category_ids": treasury_category_id,
-            "category_names": (
-                ["혈비"]
-                if treasury_category == "clan_fund"
-                else []
-            ),
+            "category_names": {
+                "clan_fund": ["혈비"],
+                "forfeiture": ["귀속"],
+            }.get(treasury_category, []),
         },
         treasury_form_action="/clan/treasury/entries",
         can_edit_treasury=can_edit,
@@ -677,16 +663,12 @@ async def clan_forfeits(
     period: int | None = None, q: str = "", page: int = 1,
     session: AsyncSession = Depends(get_session),
 ):
-    return await _render_workspace(
-        request, session,
-        active_nav="clan.forfeits",
-        page_title="귀속 관리",
-        page_description="관리자가 수동으로 혈비 귀속 처리한 분배 기록을 조회합니다.",
-        page_kicker="Member forfeitures",
-        page_badge="CLAN MANAGER",
-        builder=workspace_store.forfeits_page,
-        guild_id=guild_id, alliance_id=alliance_id, period=period, query=q, page=page,
-        needs_alliance=True,
+    params: dict[str, Any] = {"treasury_category": "forfeiture"}
+    if alliance_id is not None:
+        params["alliance_id"] = alliance_id
+    return RedirectResponse(
+        f"/clan/treasury?{urlencode(params)}",
+        status_code=302,
     )
 
 
@@ -695,17 +677,11 @@ async def clan_settings(
     request: Request, guild_id: int | None = None, alliance_id: int | None = None,
     q: str = "", page: int = 1, session: AsyncSession = Depends(get_session),
 ):
-    return await _render_workspace(
-        request, session,
-        active_nav="clan.settings",
-        page_title="혈맹 분배 설정",
-        page_description="혈비와 기타 내부 수수료 규칙을 혈맹 단위로 확인합니다.",
-        page_kicker="Clan fee rules",
-        page_badge="CLAN MANAGER",
-        builder=workspace_store.fee_rules_page,
-        guild_id=guild_id, alliance_id=alliance_id, period=None, query=q, page=page,
-        needs_alliance=True, supports_period=False,
-        builder_kwargs={"scope_code": 2},
+    params = {"alliance_id": alliance_id} if alliance_id is not None else {}
+    query_string = urlencode(params)
+    return RedirectResponse(
+        f"/clan/settlements{'?' + query_string if query_string else ''}",
+        status_code=302,
     )
 
 

@@ -1436,6 +1436,55 @@ async def apply_local_schema_cleanup() -> bool:
                 """)
             )
             changed = True
+
+        forfeiture_category_applied = await connection.scalar(
+            text("SELECT 1 FROM schema_migrations WHERE version = 21")
+        )
+        if not forfeiture_category_applied:
+            await connection.execute(
+                text("""
+                    DELETE FROM treasury_categories replacement
+                    WHERE replacement.category_name = '귀속'
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM treasury_entries entry
+                          WHERE entry.treasury_category_id =
+                                replacement.treasury_category_id
+                      )
+                      AND EXISTS (
+                          SELECT 1
+                          FROM treasury_categories previous
+                          WHERE previous.guild_id = replacement.guild_id
+                            AND previous.account_scope_code =
+                                replacement.account_scope_code
+                            AND previous.direction = replacement.direction
+                            AND previous.category_name = '귀속 혈비'
+                      )
+                """)
+            )
+            await connection.execute(
+                text("""
+                    UPDATE treasury_categories previous
+                    SET category_name = '귀속'
+                    WHERE previous.category_name = '귀속 혈비'
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM treasury_categories replacement
+                          WHERE replacement.guild_id = previous.guild_id
+                            AND replacement.account_scope_code =
+                                previous.account_scope_code
+                            AND replacement.direction = previous.direction
+                            AND replacement.category_name = '귀속'
+                      )
+                """)
+            )
+            await connection.execute(
+                text("""
+                    INSERT INTO schema_migrations(version, applied_at)
+                    VALUES (21, EXTRACT(EPOCH FROM NOW())::BIGINT)
+                """)
+            )
+            changed = True
     return changed
 
 

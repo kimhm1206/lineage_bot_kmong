@@ -6481,12 +6481,18 @@ body.modal-open {
 .alliance-history-records {
   display: grid;
   min-height: 0;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
   overflow: hidden;
 }
 
 .alliance-history-records > header {
   padding: 14px 16px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.alliance-history-records > .history-modal-toolbar {
+  padding: 10px 16px;
   border-bottom: 1px solid var(--line);
   background: var(--panel);
 }
@@ -6756,11 +6762,24 @@ body.modal-open {
   justify-self: center;
 }
 
-.clan-settlement-toolbar {
+.settlement-command-layout {
   display: grid;
-  grid-template-columns: minmax(360px, 1fr) minmax(190px, .28fr) minmax(180px, .24fr);
   gap: 10px;
   margin-bottom: 20px;
+}
+
+.settlement-command-layout.is-clan {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.settlement-command-cards {
+  display: grid;
+  grid-template-columns: minmax(190px, .8fr) minmax(280px, 1.35fr) minmax(190px, .8fr);
+  gap: 10px;
+}
+
+.settlement-command-layout.is-clan .settlement-command-cards {
+  grid-template-columns: repeat(4, minmax(170px, 1fr));
 }
 
 .clan-settlement-search {
@@ -6789,8 +6808,7 @@ body.modal-open {
   min-width: 0;
 }
 
-.clan-toolbar-metric,
-.clan-toolbar-history-card {
+.settlement-command-card {
   display: grid;
   min-width: 0;
   min-height: 92px;
@@ -6800,11 +6818,13 @@ body.modal-open {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--panel);
+  color: var(--text-strong);
+  font: inherit;
+  text-align: left;
 }
 
-.clan-toolbar-metric span,
-.clan-toolbar-metric small,
-.clan-toolbar-history-card small {
+.settlement-command-card > span,
+.settlement-command-card > small {
   overflow: hidden;
   color: var(--muted);
   font-size: 11px;
@@ -6812,7 +6832,7 @@ body.modal-open {
   white-space: nowrap;
 }
 
-.clan-toolbar-metric strong {
+.settlement-command-card.is-primary > strong {
   overflow: hidden;
   color: var(--accent-strong);
   font-size: 23px;
@@ -6820,21 +6840,48 @@ body.modal-open {
   white-space: nowrap;
 }
 
-.clan-toolbar-history-card {
-  position: relative;
-  border-color: color-mix(in srgb, var(--accent) 35%, var(--line));
-  color: var(--text-strong);
-  cursor: pointer;
-  font: inherit;
-  text-align: left;
+.settlement-command-card.is-primary form {
+  justify-self: start;
 }
 
-.clan-toolbar-history-card:hover {
+.settlement-command-card.is-primary select {
+  min-width: 112px;
+  height: 29px;
+  padding: 0 28px 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--panel-subtle);
+  color: var(--muted-strong);
+  font-size: 11px;
+}
+
+.settlement-command-card.is-fee-preview strong {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 3px 6px;
+  color: var(--text-strong);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.settlement-command-card.is-fee-preview em {
+  color: var(--muted);
+  font-style: normal;
+}
+
+.settlement-command-card.is-action {
+  position: relative;
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--line));
+  cursor: pointer;
+}
+
+.settlement-command-card.is-action:hover {
   border-color: var(--accent);
   background: var(--accent-soft);
 }
 
-.clan-toolbar-history-card > span {
+.settlement-command-card.is-action > span {
   position: absolute;
   top: 14px;
   right: 14px;
@@ -6847,15 +6894,121 @@ body.modal-open {
   color: var(--accent-strong);
 }
 
-.clan-toolbar-history-card .icon {
+.settlement-command-card.is-action .icon {
   width: 16px;
   height: 16px;
 }
 
-.clan-toolbar-history-card strong {
+.settlement-command-card.is-action strong {
   padding-right: 40px;
   color: var(--text-strong);
   font-size: 15px;
+}
+
+#settlement-fee-settings-modal .ops-modal-dialog {
+  width: min(1040px, calc(100vw - 40px));
+  height: min(820px, calc(100dvh - 48px));
+  max-height: none;
+}
+
+.settlement-fee-settings {
+  display: grid;
+  min-height: 0;
+  gap: 14px;
+}
+
+.settlement-fee-create {
+  display: grid;
+  grid-template-columns: minmax(150px, .7fr) minmax(180px, 1fr) minmax(130px, .55fr) auto;
+  align-items: end;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--accent);
+  border-radius: 8px;
+  background: var(--panel-subtle);
+}
+
+.settlement-fee-create > div,
+.settlement-fee-identity {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.settlement-fee-create > div span,
+.settlement-fee-identity small,
+.settlement-fee-readonly small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.settlement-fee-create > div strong,
+.settlement-fee-identity strong {
+  color: var(--text-strong);
+  font-size: 15px;
+}
+
+.settlement-fee-list {
+  display: grid;
+  min-height: 0;
+  align-content: start;
+  gap: 8px;
+}
+
+.settlement-fee-row {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.settlement-fee-row.is-inactive {
+  border-left-color: var(--muted);
+  opacity: .68;
+}
+
+.settlement-fee-row > form,
+.settlement-fee-readonly {
+  display: grid;
+  grid-template-columns: minmax(190px, 1fr) minmax(140px, .45fr) auto auto;
+  align-items: end;
+  gap: 12px;
+  padding: 12px 14px;
+}
+
+.settlement-fee-identity input {
+  width: 100%;
+}
+
+.settlement-fee-toggle {
+  display: flex;
+  min-height: 40px;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted-strong);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.settlement-fee-toggle input {
+  width: 17px;
+  height: 17px;
+  accent-color: var(--accent);
+}
+
+.settlement-fee-readonly {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+}
+
+.settlement-fee-readonly > div {
+  display: grid;
+  gap: 3px;
+}
+
+.settlement-fee-readonly > strong {
+  color: var(--text-strong);
 }
 
 .drop-sale-history,
@@ -7344,6 +7497,16 @@ body.modal-open {
   overscroll-behavior: contain;
 }
 
+.fee-history-content > .settlement-history-loading,
+.fee-history-content > .fee-history-list,
+.fee-history-content > .fee-history-empty {
+  grid-row: 3;
+}
+
+.fee-history-content > .settlement-history-more {
+  grid-row: 4;
+}
+
 .fee-history-row {
   display: grid;
   grid-template-columns: minmax(190px, 1.2fr) minmax(120px, .55fr) minmax(170px, .8fr) auto;
@@ -7659,6 +7822,32 @@ body.modal-open {
 #ops-confirm-modal .ops-modal-dialog {
   width: min(480px, calc(100vw - 32px));
 }
+.history-date-modal { z-index: 130; }
+.history-date-modal .ops-modal-dialog {
+  width: min(560px, calc(100vw - 32px));
+}
+.history-date-form {
+  display: grid;
+  gap: 16px;
+}
+.history-date-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 28px minmax(0, 1fr);
+  align-items: end;
+  gap: 10px;
+}
+.history-date-divider {
+  display: grid;
+  height: 42px;
+  place-items: center;
+  color: var(--muted);
+}
+.history-date-divider .icon { width: 16px; height: 16px; }
+.history-date-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 12px;
+}
 .ops-confirm-content {
   display: flex;
   align-items: flex-start;
@@ -7790,8 +7979,10 @@ body.modal-open {
   .drop-summary-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .ops-summary-card.has-summary-action { padding-right: 18px; padding-bottom: 62px; }
   .summary-history-button { top: auto; right: 18px; bottom: 15px; left: 18px; transform: none; }
-  .clan-settlement-toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .settlement-command-layout.is-clan .settlement-command-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .clan-settlement-search { grid-column: 1 / -1; }
+  .settlement-fee-create { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .settlement-fee-create > div { grid-column: 1 / -1; }
   .clan-item-history-overview { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .clan-item-history-grid { grid-template-columns: 1fr; }
   .drop-record-main { grid-template-columns: minmax(210px, 1fr) repeat(2, minmax(110px, .5fr)); }
@@ -7831,7 +8022,8 @@ body.modal-open {
   .ops-summary-card { min-height: 92px; }
   .drop-page-actions { align-items: stretch; flex-direction: column; }
   .drop-page-actions .primary-button { width: 100%; }
-  .clan-settlement-toolbar { grid-template-columns: 1fr; }
+  .settlement-command-cards,
+  .settlement-command-layout.is-clan .settlement-command-cards { grid-template-columns: 1fr; }
   .clan-settlement-search { align-items: stretch; flex-direction: column; }
   .clan-settlement-search > form:first-child:not(:last-child) { max-width: none; }
   .history-modal-toolbar { align-items: stretch; flex-direction: column; }
@@ -7884,6 +8076,9 @@ body.modal-open {
   .alliance-history-row > form { grid-column: 2; grid-row: 2 / span 2; align-self: center; }
   .fee-rule-grid,
   .personal-distribution-grid { grid-template-columns: 1fr; }
+  .settlement-fee-create,
+  .settlement-fee-row > form,
+  .settlement-fee-readonly { grid-template-columns: 1fr; align-items: stretch; }
   .fee-rule-card { grid-template-columns: 38px minmax(0, 1fr) auto; }
   .fee-rule-rate { grid-column: 2; }
   .fee-rule-card > .ops-status { grid-column: 2; justify-self: start; }
@@ -7912,6 +8107,8 @@ body.modal-open {
   .ops-choice-grid,
   .ops-form-grid-two,
   .ops-toggle-grid { grid-template-columns: 1fr; }
+  .history-date-fields { grid-template-columns: 1fr; }
+  .history-date-divider { display: none; }
   .bid-matrix-item-name-column { width: 150px; min-width: 150px; max-width: 150px; }
   .bid-matrix-alliance-heading,
   .bid-matrix-count-cell { width: 118px; min-width: 118px; max-width: 118px; }

@@ -852,59 +852,6 @@ async def items_page(
     }
 
 
-async def fee_rules_page(
-    session: AsyncSession,
-    *, guild_id: int, alliance_id: int | None, scope_code: int, query: str, page: int
-) -> dict[str, Any]:
-    alliance_filter = " AND r.alliance_id = :alliance_id" if scope_code == 2 else " AND r.alliance_id IS NULL"
-    search = " AND latest.rule_name ILIKE :query" if query else ""
-    params = {"guild_id": guild_id, "alliance_id": alliance_id, "scope_code": scope_code, "query": f"%{query}%"}
-    from_sql = f"""
-        FROM settlement_fee_rules r
-        JOIN LATERAL (
-            SELECT v.rule_name, v.rate_ppm, v.valid_from
-            FROM settlement_fee_rule_versions v
-            WHERE v.fee_rule_id = r.fee_rule_id
-            ORDER BY v.valid_from DESC, v.fee_rule_version_id DESC
-            LIMIT 1
-        ) latest ON TRUE
-        WHERE r.guild_id = :guild_id AND r.scope_code = :scope_code {alliance_filter} {search}
-    """
-    rows, pagination = await _fetch_page(
-        session,
-        count_sql=f"SELECT COUNT(*) {from_sql}",
-        rows_sql=f"""
-            SELECT r.fee_rule_id, latest.rule_name, latest.rate_ppm, r.is_active,
-                   TO_CHAR(TO_TIMESTAMP(latest.valid_from), 'YYYY-MM-DD HH24:MI') AS valid_from_label
-            {from_sql}
-            ORDER BY r.is_active DESC, latest.rule_name
-            LIMIT :limit OFFSET :offset
-        """,
-        params=params,
-        page=page,
-    )
-    for row in rows:
-        row["rate_label"] = _percent(row["rate_ppm"])
-        row["state"] = "사용" if row["is_active"] else "중지"
-        row["state_tone"] = "success" if row["is_active"] else "muted"
-    total_rate = sum(_int(row["rate_ppm"]) for row in rows if row["is_active"])
-    return {
-        "summary_cards": [
-            {"label": "수수료 규칙", "value": f"{pagination['total']:,}개", "meta": "현재 범위"},
-            {"label": "활성 규칙", "value": f"{sum(1 for r in rows if r['is_active']):,}개", "meta": "현재 페이지"},
-            {"label": "합산 비율", "value": _percent(total_rate), "meta": "현재 페이지 활성 규칙"},
-        ],
-        "columns": [
-            {"key": "rule_name", "label": "수수료", "emphasis": True},
-            {"key": "rate_label", "label": "비율"},
-            {"key": "valid_from_label", "label": "적용 시각"},
-            {"key": "state", "label": "상태", "status_key": "state_tone"},
-        ],
-        "rows": rows,
-        "pagination": pagination,
-    }
-
-
 async def clan_settlements_page(
     session: AsyncSession,
     *, guild_id: int, alliance_id: int, period_days: int, query: str, page: int
@@ -1085,7 +1032,9 @@ async def treasury_page(
         rows_sql=f"""
             SELECT e.treasury_entry_id, e.direction,
                    COALESCE(c.category_name, st.source_code, '기타') AS category_name,
-                   e.amount_adena, e.balance_after, COALESCE(e.memo, '-') AS memo,
+                   e.amount_adena, e.balance_after,
+                   e.source_id, st.source_code,
+                   COALESCE(e.memo, '-') AS memo,
                    TO_CHAR(TO_TIMESTAMP(e.occurred_at) AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD HH24:MI') AS occurred_at_label
             {from_sql}
             ORDER BY e.occurred_at DESC, e.treasury_entry_id DESC
@@ -1094,7 +1043,55 @@ async def treasury_page(
         params=params,
         page=page,
     )
+    forfeited_source_ids = sorted({
+        _int(row["source_id"])
+        for row in rows
+        if row["source_code"] == "member_forfeiture"
+        and row["source_id"] is not None
+    })
+    forfeited_details: dict[int, dict[str, Any]] = {}
+    if forfeited_source_ids:
+        detail_rows = (
+            await session.execute(
+                text("""
+                    SELECT payout.payout_object_id,
+                           COALESCE(
+                               recipient.game_nickname,
+                               recipient.discord_nickname,
+                               '알 수 없는 유저'
+                           ) AS recipient_name,
+                           COALESCE(item.item_name, '알 수 없는 아이템')
+                               AS item_name,
+                           drop_row.attendance_id
+                    FROM settlement_payout_objects payout
+                    JOIN settlement_drops drop_row
+                      ON drop_row.drop_id = payout.drop_id
+                    JOIN catalog_item_versions item
+                      ON item.item_version_id = drop_row.item_version_id
+                    LEFT JOIN users recipient
+                      ON recipient.user_id = payout.recipient_user_id
+                    WHERE payout.payout_object_id = ANY(:source_ids)
+                """),
+                {"source_ids": forfeited_source_ids},
+            )
+        ).mappings().all()
+        forfeited_details = {
+            _int(detail["payout_object_id"]): dict(detail)
+            for detail in detail_rows
+        }
     for row in rows:
+        forfeited_detail = (
+            forfeited_details.get(_int(row["source_id"]))
+            if row["source_code"] == "member_forfeiture"
+            and row["source_id"] is not None
+            else None
+        )
+        if forfeited_detail:
+            row["memo"] = (
+                f"미수령 귀속 · {forfeited_detail['recipient_name']} · "
+                f"{forfeited_detail['item_name']} · "
+                f"출석 #{_int(forfeited_detail['attendance_id'])}"
+            )
         is_income = _int(row["direction"]) == 1
         row["direction_label"] = "입금" if is_income else "출금"
         row["direction_tone"] = "success" if is_income else "warning"
@@ -1764,60 +1761,6 @@ async def set_treasury_distribution_recipient_status(
     )
     await session.commit()
     return int(result.rowcount or 0)
-
-
-async def forfeits_page(
-    session: AsyncSession,
-    *, guild_id: int, alliance_id: int, period_days: int, query: str, page: int
-) -> dict[str, Any]:
-    period = _period_clause("COALESCE(po.completed_at, d.occurred_at)", period_days, unix=True)
-    search = " AND (v.item_name ILIKE :query OR COALESCE(u.game_nickname, u.discord_nickname, '') ILIKE :query)" if query else ""
-    params = {"guild_id": guild_id, "alliance_id": alliance_id, "period_days": period_days, "query": f"%{query}%"}
-    from_sql = f"""
-        FROM settlement_payout_objects po
-        JOIN settlement_drops d ON d.drop_id = po.drop_id
-        JOIN catalog_item_versions v ON v.item_version_id = d.item_version_id
-        JOIN users u ON u.user_id = po.recipient_user_id
-        LEFT JOIN settlement_payout_objects parent_po ON parent_po.payout_object_id = po.parent_payout_object_id
-        WHERE d.guild_id = :guild_id
-          AND COALESCE(parent_po.recipient_alliance_id, u.alliance_id) = :alliance_id
-          AND po.object_code = 2 AND po.status_code = 2 {period} {search}
-    """
-    rows, pagination = await _fetch_page(
-        session,
-        count_sql=f"SELECT COUNT(*) {from_sql}",
-        rows_sql=f"""
-            SELECT po.payout_object_id, COALESCE(u.game_nickname, u.discord_nickname) AS user_name,
-                   v.item_name, po.amount_adena,
-                   TO_CHAR(TO_TIMESTAMP(COALESCE(po.completed_at, d.occurred_at)), 'YYYY-MM-DD HH24:MI') AS completed_at_label
-            {from_sql}
-            ORDER BY COALESCE(po.completed_at, d.occurred_at) DESC, po.payout_object_id DESC
-            LIMIT :limit OFFSET :offset
-        """,
-        params=params,
-        page=page,
-    )
-    for row in rows:
-        row["amount_label"] = _money(row["amount_adena"])
-        row["state"] = "혈비 귀속"
-        row["state_tone"] = "muted"
-    total_amount = _int(await session.scalar(text(f"SELECT COALESCE(SUM(po.amount_adena), 0) {from_sql}"), params))
-    return {
-        "summary_cards": [
-            {"label": "귀속 혈비", "value": _money(total_amount), "meta": "선택 기간"},
-            {"label": "귀속 건수", "value": f"{pagination['total']:,}건", "meta": "미수령 전환"},
-            {"label": "대상 인원", "value": f"{len({row['user_name'] for row in rows}):,}명", "meta": "현재 페이지"},
-        ],
-        "columns": [
-            {"key": "user_name", "label": "유저", "emphasis": True},
-            {"key": "item_name", "label": "아이템"},
-            {"key": "amount_label", "label": "귀속 아데나", "numeric": True},
-            {"key": "completed_at_label", "label": "귀속 시각"},
-            {"key": "state", "label": "상태", "status_key": "state_tone"},
-        ],
-        "rows": rows,
-        "pagination": pagination,
-    }
 
 
 async def reports_page(

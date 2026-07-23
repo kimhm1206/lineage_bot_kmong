@@ -45,11 +45,8 @@ DISCORD_BOT_TOKEN=실제_봇_토큰
 /alliance/treasury         연합 전체 입출금 가계부
 /alliance/bidding          아이템 입찰 현황
 /alliance/items            아이템 목록과 기본 시세
-/alliance/settings         연합 수수료 규칙
-/clan/settlements          혈맹원과 내부 수수료 분배
+/clan/settlements          혈맹원 분배와 수수료 설정
 /clan/treasury             혈비 가계부
-/clan/forfeits             미수령 분배금 귀속
-/clan/settings             혈맹 내부 수수료 규칙
 /attendance/status         회차별 출석 현황
 /attendance/statistics     유저별 출석 통계
 /attendance/clan           혈맹별 출석 통계

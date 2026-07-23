@@ -1,0 +1,35 @@
+{% from "components/icons.html" import icon %}
+<div class="ops-modal history-date-modal" id="history-date-range-modal"
+     aria-hidden="true" role="dialog" aria-modal="true"
+     aria-labelledby="history-date-range-title">
+  <button class="ops-modal-backdrop" type="button"
+          data-modal-close aria-label="닫기"></button>
+  <section class="ops-modal-dialog">
+    <header class="ops-modal-header">
+      <div>
+        <h2 id="history-date-range-title">조회 기간 선택</h2>
+        <p>시작일과 종료일을 포함해 기록을 조회합니다.</p>
+      </div>
+      <button class="icon-button" type="button"
+              data-modal-close aria-label="닫기">{{ icon("x") }}</button>
+    </header>
+    <form class="ops-modal-body history-date-form" data-history-date-form>
+      <div class="history-date-fields">
+        <label class="ops-field">
+          <span>언제부터</span>
+          <input type="date" name="date_from" required data-history-date-from>
+        </label>
+        <span class="history-date-divider">{{ icon("chevron-right") }}</span>
+        <label class="ops-field">
+          <span>언제까지</span>
+          <input type="date" name="date_to" required data-history-date-to>
+        </label>
+      </div>
+      <p class="history-date-error" data-history-date-error hidden></p>
+      <footer class="ops-form-actions">
+        <button class="secondary-button" type="button" data-modal-close>취소</button>
+        <button class="primary-button" type="submit">기간 적용</button>
+      </footer>
+    </form>
+  </section>
+</div>
