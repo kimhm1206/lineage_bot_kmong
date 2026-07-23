@@ -1,66 +1,121 @@
 (() => {
-  const sidebar = document.querySelector(".sidebar-shell");
-  const toggle = document.querySelector("[data-nav-toggle]");
-  const sidebarScrollKey = "lineage-dashboard:sidebar-scroll-top";
+  const sidebar = document.querySelector("[data-sidebar]");
+  if (!sidebar) return;
 
-  if (!sidebar || !toggle) return;
+  const groupTriggers = [...sidebar.querySelectorAll("[data-nav-group-trigger]")];
+  const groupPanels = [...sidebar.querySelectorAll("[data-nav-group-panel]")];
+  const mobileToggle = sidebar.querySelector("[data-nav-toggle]");
+  const collapseButton = sidebar.querySelector("[data-sidebar-collapse]");
+  const mobileQuery = window.matchMedia("(max-width: 980px)");
+  const collapsedKey = "lineage-dashboard:sidebar-collapsed";
+  const activeGroup = sidebar.dataset.activeGroup || groupTriggers[0]?.dataset.navGroupTrigger || "";
+  let selectedGroup = activeGroup;
 
-  function readSidebarScroll() {
+  function readCollapsedPreference() {
     try {
-      const value = Number.parseInt(sessionStorage.getItem(sidebarScrollKey) || "0", 10);
-      return Number.isFinite(value) ? Math.max(value, 0) : 0;
+      const saved = localStorage.getItem(collapsedKey);
+      return saved === null ? true : saved === "true";
     } catch {
-      return 0;
+      return true;
     }
   }
 
-  function saveSidebarScroll() {
+  function saveCollapsedPreference(isCollapsed) {
     try {
-      sessionStorage.setItem(sidebarScrollKey, String(Math.round(sidebar.scrollTop)));
+      localStorage.setItem(collapsedKey, String(isCollapsed));
     } catch {
-      // The sidebar still works when browser storage is unavailable.
+      // Navigation remains usable when browser storage is unavailable.
     }
   }
 
-  function restoreSidebarScroll() {
-    const savedScroll = readSidebarScroll();
-    const maxScroll = Math.max(sidebar.scrollHeight - sidebar.clientHeight, 0);
-    sidebar.scrollTop = Math.min(savedScroll, maxScroll);
-  }
-
-  restoreSidebarScroll();
-  window.requestAnimationFrame(restoreSidebarScroll);
-  window.addEventListener("load", restoreSidebarScroll, { once: true });
-
-  let scrollFrame = null;
-  sidebar.addEventListener("scroll", () => {
-    if (scrollFrame !== null) return;
-    scrollFrame = window.requestAnimationFrame(() => {
-      saveSidebarScroll();
-      scrollFrame = null;
+  function selectGroup(groupId) {
+    if (!groupId) return;
+    selectedGroup = groupId;
+    groupTriggers.forEach((trigger) => {
+      const isSelected = trigger.dataset.navGroupTrigger === groupId;
+      trigger.classList.toggle("is-active", isSelected);
     });
-  }, { passive: true });
-
-  window.addEventListener("pagehide", saveSidebarScroll);
-
-  function setOpen(isOpen) {
-    sidebar.classList.toggle("is-open", isOpen);
-    toggle.setAttribute("aria-expanded", String(isOpen));
-    toggle.setAttribute("aria-label", isOpen ? "메뉴 닫기" : "메뉴 열기");
+    groupPanels.forEach((panel) => {
+      const isSelected = panel.dataset.navGroupPanel === groupId;
+      panel.hidden = !isSelected;
+      panel.classList.toggle("is-current", isSelected);
+    });
+    updateExpandedState();
   }
 
-  toggle.addEventListener("click", () => {
-    setOpen(!sidebar.classList.contains("is-open"));
+  function updateExpandedState() {
+    const panelIsVisible = mobileQuery.matches
+      ? sidebar.classList.contains("is-open")
+      : !sidebar.classList.contains("is-collapsed");
+    groupTriggers.forEach((trigger) => {
+      const isSelected = trigger.dataset.navGroupTrigger === selectedGroup;
+      trigger.setAttribute("aria-expanded", String(isSelected && panelIsVisible));
+    });
+  }
+
+  function setDesktopCollapsed(isCollapsed, { persist = true } = {}) {
+    if (mobileQuery.matches) return;
+    sidebar.classList.toggle("is-collapsed", isCollapsed);
+    updateExpandedState();
+    if (persist) saveCollapsedPreference(isCollapsed);
+  }
+
+  function setMobileOpen(isOpen) {
+    sidebar.classList.toggle("is-open", isOpen);
+    updateExpandedState();
+    if (!mobileToggle) return;
+    mobileToggle.setAttribute("aria-expanded", String(isOpen));
+    mobileToggle.setAttribute("aria-label", isOpen ? "메뉴 닫기" : "메뉴 열기");
+  }
+
+  function syncViewport() {
+    if (mobileQuery.matches) {
+      sidebar.classList.remove("is-collapsed");
+      setMobileOpen(false);
+      return;
+    }
+    sidebar.classList.remove("is-open");
+    setDesktopCollapsed(readCollapsedPreference(), { persist: false });
+  }
+
+  selectGroup(activeGroup);
+  syncViewport();
+
+  groupTriggers.forEach((trigger) => {
+    trigger.addEventListener("click", () => {
+      const groupId = trigger.dataset.navGroupTrigger || activeGroup;
+      const isSameGroup = selectedGroup === groupId;
+      selectGroup(groupId);
+
+      if (mobileQuery.matches) {
+        setMobileOpen(true);
+        return;
+      }
+
+      if (sidebar.classList.contains("is-collapsed")) {
+        setDesktopCollapsed(false);
+      } else if (isSameGroup) {
+        setDesktopCollapsed(true);
+      }
+    });
+  });
+
+  collapseButton?.addEventListener("click", () => setDesktopCollapsed(true));
+  mobileToggle?.addEventListener("click", () => {
+    setMobileOpen(!sidebar.classList.contains("is-open"));
   });
 
   sidebar.querySelectorAll(".nav-link").forEach((link) => {
     link.addEventListener("click", () => {
-      saveSidebarScroll();
-      if (window.matchMedia("(max-width: 980px)").matches) setOpen(false);
+      if (mobileQuery.matches) setMobileOpen(false);
     });
   });
 
-  window.addEventListener("resize", () => {
-    if (!window.matchMedia("(max-width: 980px)").matches) setOpen(false);
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    if (mobileQuery.matches) setMobileOpen(false);
+    else setDesktopCollapsed(true);
   });
+
+  mobileQuery.addEventListener("change", syncViewport);
 })();

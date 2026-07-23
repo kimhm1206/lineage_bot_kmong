@@ -1,42 +1,64 @@
 {% from "components/icons.html" import icon %}
 
-<aside class="sidebar-shell" aria-label="주요 메뉴">
-  <div class="brand-block">
-    <div class="brand-mark">{{ icon("layout-dashboard") }}</div>
-    <div>
-      <strong>Lineage Ops</strong>
-      <span>Settlement Console</span>
-    </div>
+<aside class="sidebar-shell is-collapsed" aria-label="주요 메뉴" data-sidebar data-active-group="{{ active_nav_group }}">
+  <div class="sidebar-rail">
+    <a class="rail-brand" href="/" aria-label="Lineage Ops 홈">
+      {{ icon("layout-dashboard") }}
+    </a>
+
+    <nav class="rail-nav" aria-label="업무 분류">
+      {% for group in navigation %}
+      <button
+        class="rail-nav-button{% if group.is_active %} is-active{% endif %}"
+        type="button"
+        data-nav-group-trigger="{{ group.id }}"
+        aria-controls="nav-panel-{{ group.id }}"
+        aria-expanded="false"
+        aria-label="{{ group.label }} 메뉴"
+        title="{{ group.label }}"
+      >
+        {{ icon(group.icon) }}
+        <span class="rail-nav-tooltip">{{ group.label }}</span>
+      </button>
+      {% endfor %}
+    </nav>
+
     <button class="nav-toggle" type="button" data-nav-toggle aria-expanded="false" aria-controls="side-navigation" aria-label="메뉴 열기">
       <span class="nav-toggle-open">{{ icon("menu") }}</span>
       <span class="nav-toggle-close">{{ icon("x") }}</span>
     </button>
   </div>
 
-  <nav class="side-nav" id="side-navigation">
+  <div class="sidebar-panel" id="side-navigation">
+    <button class="sidebar-collapse-button" type="button" data-sidebar-collapse aria-label="메뉴 접기" title="메뉴 접기">
+      {{ icon("chevron-left") }}
+    </button>
+
     {% for group in navigation %}
-    <section class="nav-section nav-section-{{ group.tone }}{% if group.is_active %} is-current{% endif %}" aria-labelledby="nav-{{ group.id }}">
-      <div class="nav-section-heading">
-        <div class="nav-section-title" id="nav-{{ group.id }}">
-          {{ icon(group.icon) }}
-          <span>{{ group.label }}</span>
-        </div>
-        {% if group.audience %}<span class="nav-audience">{{ group.audience }}</span>{% endif %}
-      </div>
-      {% if group.description %}<p class="nav-section-description">{{ group.description }}</p>{% endif %}
-      <div class="nav-list">
+    <section
+      class="nav-section nav-section-{{ group.tone }}{% if group.is_active %} is-current{% endif %}"
+      id="nav-panel-{{ group.id }}"
+      data-nav-group-panel="{{ group.id }}"
+      {% if not group.is_active %}hidden{% endif %}
+    >
+      <header class="nav-section-heading">
+        <span>업무 메뉴</span>
+        <h2>{{ group.label }}</h2>
+        {% if group.description %}<p>{{ group.description }}</p>{% endif %}
+      </header>
+
+      <nav class="nav-list" aria-label="{{ group.label }} 페이지">
         {% for item in group.nav_items %}
         <a class="nav-link{% if item.is_active %} is-active{% endif %}" href="{{ item.href }}" {% if item.is_active %}aria-current="page"{% endif %}>
-          <span class="nav-link-icon">{{ icon(item.icon) }}</span>
           <span class="nav-link-text">
             <strong>{{ item.label }}</strong>
             {% if item.description %}<small>{{ item.description }}</small>{% endif %}
           </span>
-          {% if item.badge %}<span class="nav-badge">{{ item.badge }}</span>{% endif %}
+          {{ icon("chevron-right") }}
         </a>
         {% endfor %}
-      </div>
+      </nav>
     </section>
     {% endfor %}
-  </nav>
+  </div>
 </aside>

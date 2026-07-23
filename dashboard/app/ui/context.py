@@ -18,11 +18,17 @@ def build_template_context(
 ) -> dict[str, object]:
     settings = get_settings()
     access_role = current_access_role(request)
+    navigation = get_navigation(active_nav, developer_access=is_developer(request))
+    active_nav_group = next(
+        (str(group["id"]) for group in navigation if group["is_active"]),
+        str(navigation[0]["id"]) if navigation else "",
+    )
     return {
         "request": request,
         "app_name": settings.app_name,
         "environment": settings.environment,
-        "navigation": get_navigation(active_nav, developer_access=is_developer(request)),
+        "navigation": navigation,
+        "active_nav_group": active_nav_group,
         "current_access_role": access_role,
         "current_access_role_label": {
             "developer": "Developer",

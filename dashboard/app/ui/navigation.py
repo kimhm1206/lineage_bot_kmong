@@ -10,7 +10,6 @@ class NavItem:
     href: str
     icon: str
     description: str = ""
-    badge: str = ""
 
 
 @dataclass(frozen=True)
@@ -19,7 +18,6 @@ class NavGroup:
     label: str
     icon: str
     items: tuple[NavItem, ...]
-    audience: str = ""
     description: str = ""
     tone: str = "common"
     developer_only: bool = False
@@ -32,16 +30,14 @@ NAV_GROUPS: tuple[NavGroup, ...] = (
         icon="layout-dashboard",
         items=(
             NavItem("home.personal", "내 현황", "/", "user", "분배금과 최근 활동"),
-            NavItem("home.payments", "내 분배금", "/#personal-dashboard", "wallet", "수령 및 귀속 내역"),
         ),
-        description="모든 구성원이 확인하는 개인 영역",
+        description="나의 분배금과 최근 활동",
     ),
     NavGroup(
         id="alliance-operations",
         label="연합 운영",
         icon="network",
         items=(
-            NavItem("alliance.dashboard", "연합 대시보드", "/alliance/drops", "layout-dashboard", "판매대금과 1차 정산"),
             NavItem("alliance.drops", "드랍 등록", "/alliance/drops", "plus-square", "출석 회차와 아이템 연결"),
             NavItem("alliance.settlement", "각혈 분배", "/alliance/settlements", "network", "혈맹별 1차 정산"),
             NavItem("alliance.treasury", "연합비 가계부", "/alliance/treasury", "receipt", "연합 전체 입출금과 잔액"),
@@ -49,8 +45,7 @@ NAV_GROUPS: tuple[NavGroup, ...] = (
             NavItem("alliance.items", "아이템 관리", "/alliance/items", "tag", "시세와 입찰 아이템"),
             NavItem("alliance.settings", "연합 분배 설정", "/alliance/settings", "sliders", "경리·연합 수수료"),
         ),
-        audience="연합 관리자",
-        description="연합 전체 드랍과 혈맹별 1차 분배",
+        description="드랍, 판매와 혈맹별 1차 분배",
         tone="alliance",
     ),
     NavGroup(
@@ -58,17 +53,13 @@ NAV_GROUPS: tuple[NavGroup, ...] = (
         label="내 혈맹 운영",
         icon="landmark",
         items=(
-            NavItem("clan.dashboard", "혈맹 대시보드", "/clan/settlements", "layout-dashboard", "내 혈맹 정산 요약"),
             NavItem("clan.settlement", "혈맹원 분배", "/clan/settlements", "list-check", "인원별 2차 정산"),
             NavItem("clan.treasury", "혈비 가계부", "/clan/treasury", "receipt", "잔액과 입출금 흐름"),
             NavItem("clan.forfeits", "귀속 관리", "/clan/forfeits", "archive", "미수령 분배금 귀속"),
             NavItem("clan.settings", "혈맹 분배 설정", "/clan/settings", "settings", "혈비와 내부 수수료"),
-            NavItem("clan.staff", "혈맹 경리 관리", "/settings/clan?section=staff#staff", "users-round", "혈맹 경리 지정", "관리자"),
-            NavItem("clan.visibility", "정보 공개 설정", "/settings/clan?section=visibility#visibility", "eye", "일반 유저 공개 범위", "관리자"),
-            NavItem("clan.permissions", "일반 유저 권한", "/settings/clan?section=permissions#user-permissions", "key-round", "조회와 기능 허용 범위", "관리자"),
+            NavItem("clan.staff", "혈맹 운영 설정", "/settings/clan", "users-round", "경리와 공개 범위"),
         ),
-        audience="각혈 관리자 · 경리",
-        description="내 혈맹의 분배, 혈비와 공개 정책",
+        description="혈맹원 분배, 혈비와 귀속 관리",
         tone="clan",
     ),
     NavGroup(
@@ -89,11 +80,10 @@ NAV_GROUPS: tuple[NavGroup, ...] = (
         icon="shield",
         items=(
             NavItem("operations.alliances", "혈맹 관리", "/settings/alliances", "users-round", "혈맹과 역할 매핑"),
-            NavItem("operations.delegation", "운영 담당자 지정", "/settings/managers", "key-round", "관리자 유저 지정", "오너"),
+            NavItem("operations.delegation", "운영 담당자 지정", "/settings/managers", "key-round", "관리자 유저 지정"),
             NavItem("operations.notifications", "알림 관리", "/operations/notifications", "bell", "통계와 정산 알림"),
             NavItem("operations.audit", "작업 로그", "/operations/audit", "clipboard-list", "관리 작업 이력"),
         ),
-        audience="오너",
         description="혈맹, 담당자와 운영 기록",
     ),
     NavGroup(
@@ -105,7 +95,6 @@ NAV_GROUPS: tuple[NavGroup, ...] = (
             NavItem("developer.bot", "봇 연동", "/developer/bot", "bot", "Discord REST 연결 상태"),
             NavItem("developer.system", "시스템 점검", "/developer/system", "database", "DB 구조와 데이터 상태"),
         ),
-        audience="개발자",
         description="연결 정보와 시스템 진단",
         tone="developer",
         developer_only=True,
@@ -130,7 +119,6 @@ def get_navigation(active_item_id: str, *, developer_access: bool = False) -> li
                     "href": item.href,
                     "icon": item.icon,
                     "description": item.description,
-                    "badge": item.badge,
                     "is_active": is_active,
                 }
             )
@@ -141,7 +129,6 @@ def get_navigation(active_item_id: str, *, developer_access: bool = False) -> li
                 "icon": group.icon,
                 "nav_items": items,
                 "is_active": group_is_active,
-                "audience": group.audience,
                 "description": group.description,
                 "tone": group.tone,
             }
