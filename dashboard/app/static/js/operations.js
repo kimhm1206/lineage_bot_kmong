@@ -191,51 +191,21 @@
     openModal("fee-edit-modal");
   };
 
-  const populateBidEdit = (button) => {
-    const bid = JSON.parse(button.dataset.bid);
-    const form = document.querySelector("[data-bid-edit-form]");
-    form.action = `/api/bid-items/${bid.bid_item_id}`;
-    form.dataset.bidItemId = String(bid.bid_item_id);
-    form.elements.item_name.value = bid.item_name;
-    form.elements.is_free.checked = Boolean(bid.is_free);
-    form.elements.is_active.checked = Boolean(bid.is_active);
-    openModal("bid-edit-modal");
-  };
-
-  const deleteBidItem = async (button) => {
-    const form = button.closest("[data-bid-edit-form]");
-    if (!window.confirm("입찰 아이템과 과거 완료 기록을 함께 삭제하시겠습니까?")) return;
-    const data = new FormData();
-    data.set("guild_id", form.elements.guild_id.value);
-    try {
-      const response = await fetch(`/api/bid-items/${form.dataset.bidItemId}/delete`, { method: "POST", body: data });
-      const payload = await response.json();
-      if (!response.ok || !payload.ok) throw new Error(payload.message);
-      closeModal(form);
-      showToast(payload.message);
-      await refreshLivePage();
-    } catch (error) {
-      showToast(error.message || "삭제하지 못했습니다.", "error");
-    }
-  };
-
   let bidHistoryRequest = 0;
 
   const openBidHistory = async (button) => {
     const modal = document.getElementById("bid-history-modal");
     if (!modal) return;
     const requestNumber = ++bidHistoryRequest;
-    const allianceName = button.dataset.allianceName || "혈맹";
-    const allianceId = button.dataset.allianceId;
+    const itemName = button.dataset.itemName || "아이템";
+    const itemId = button.dataset.itemId;
     const guildId = button.dataset.guildId;
-    const allianceOutput = modal.querySelector("[data-bid-history-alliance]");
-    const totalOutput = modal.querySelector("[data-bid-history-total]");
+    const itemOutput = modal.querySelector("[data-bid-history-item]");
     const loading = modal.querySelector("[data-bid-history-loading]");
     const list = modal.querySelector("[data-bid-history-list]");
     const empty = modal.querySelector("[data-bid-history-empty]");
 
-    allianceOutput.textContent = allianceName;
-    totalOutput.textContent = "-";
+    itemOutput.textContent = itemName;
     loading.hidden = false;
     loading.textContent = "구매 기록을 불러오는 중입니다.";
     list.hidden = true;
@@ -245,7 +215,7 @@
 
     try {
       const response = await fetch(
-        `/api/bid-purchases/alliances/${encodeURIComponent(allianceId)}?guild_id=${encodeURIComponent(guildId)}`,
+        `/api/bid-purchases/items/${encodeURIComponent(itemId)}?guild_id=${encodeURIComponent(guildId)}`,
         { headers: { Accept: "application/json" } },
       );
       const payload = await response.json().catch(() => ({}));
@@ -253,7 +223,7 @@
         throw new Error(payload.detail || payload.message || "구매 기록을 불러오지 못했습니다.");
       }
       if (requestNumber !== bidHistoryRequest) return;
-      totalOutput.textContent = `${Number(payload.total || 0).toLocaleString("ko-KR")}회`;
+      itemOutput.textContent = payload.item_name || itemName;
       loading.hidden = true;
       const history = Array.isArray(payload.history) ? payload.history : [];
       if (!history.length) {
@@ -263,20 +233,17 @@
       const fragment = document.createDocumentFragment();
       history.forEach((record, index) => {
         const row = document.createElement("article");
-        row.className = `bid-history-row${record.is_free ? " is-free" : ""}`;
+        row.className = "bid-history-row";
         const number = document.createElement("span");
         number.className = "bid-history-number";
-        number.textContent = String(history.length - index);
+        number.textContent = String(index + 1);
         const copy = document.createElement("div");
-        const item = document.createElement("strong");
-        item.textContent = record.item_name || "이름 없는 아이템";
+        const alliance = document.createElement("strong");
+        alliance.textContent = record.alliance_name || "알 수 없는 혈맹";
         const date = document.createElement("small");
         date.textContent = record.purchased_at_short || record.purchased_at || "-";
-        copy.append(item, date);
-        const type = document.createElement("span");
-        type.className = "bid-history-type";
-        type.textContent = record.is_free ? "무료 나눔" : "입찰 구매";
-        row.append(number, copy, type);
+        copy.append(alliance, date);
+        row.append(number, copy);
         fragment.append(row);
       });
       list.append(fragment);
@@ -285,7 +252,6 @@
       if (requestNumber !== bidHistoryRequest) return;
       loading.hidden = false;
       loading.textContent = error.message || "구매 기록을 불러오지 못했습니다.";
-      totalOutput.textContent = "-";
     }
   };
 
@@ -463,10 +429,6 @@
     if (itemEditCancel) setItemEditor(itemEditCancel.closest("[data-item-row]"), false);
     const feeEdit = event.target.closest("[data-fee-edit]");
     if (feeEdit) populateFeeEdit(feeEdit);
-    const bidEdit = event.target.closest("[data-bid-edit]");
-    if (bidEdit) populateBidEdit(bidEdit);
-    const bidDelete = event.target.closest("[data-bid-delete]");
-    if (bidDelete) deleteBidItem(bidDelete);
     const bidHistoryOpen = event.target.closest("[data-bid-history-open]");
     if (bidHistoryOpen) openBidHistory(bidHistoryOpen);
     const clanHistoryOpen = event.target.closest("[data-clan-history-open]");

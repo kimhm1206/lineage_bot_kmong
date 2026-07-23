@@ -37,7 +37,7 @@
         <span class="entity-summary-actions">
           {% if entity.pending_count > 0 %}
           <form data-async-form method="post" action="/api/payout-groups/{{ entity.entity_type }}/{{ entity.target_id }}/status">
-            <input type="hidden" name="guild_id" value="{{ guild_id }}"><input type="hidden" name="alliance_id" value="{{ alliance_id or '' }}"><input type="hidden" name="status_code" value="1">
+            <input type="hidden" name="guild_id" value="{{ guild_id }}"><input type="hidden" name="alliance_id" value="{{ alliance_id if settlement_level == 'clan' else '' }}"><input type="hidden" name="status_code" value="1">
             <button class="primary-button" type="submit">전체 완료</button>
           </form>
           {% if settlement_level == 'clan' and entity.entity_type == 'member' %}

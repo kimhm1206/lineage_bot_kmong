@@ -43,7 +43,7 @@ NAV_GROUPS: tuple[NavGroup, ...] = (
             NavItem("alliance.settlement", "각혈 분배", "/alliance/settlements", "network", "혈맹별 1차 정산"),
             NavItem("alliance.treasury", "연합비 가계부", "/alliance/treasury", "receipt", "연합 전체 입출금과 잔액"),
             NavItem("alliance.bidding", "아이템 입찰", "/alliance/bidding", "gavel", "혈맹별 구매 횟수와 이력"),
-            NavItem("alliance.items", "아이템 관리", "/alliance/items", "tag", "시세와 입찰 아이템"),
+            NavItem("alliance.items", "아이템 관리", "/alliance/items", "tag", "아이템과 원화 시세"),
             NavItem("alliance.settings", "연합 분배 설정", "/alliance/settings", "sliders", "경리·연합 수수료"),
         ),
         description="드랍, 판매와 혈맹별 1차 분배",

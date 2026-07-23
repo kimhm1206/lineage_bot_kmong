@@ -1382,98 +1382,28 @@ async def recalculate_open_settlements(
         await _build_clan_children(session, parent_payout_object_id=parent_id)
 
 
-async def create_bid_item(
-    session: AsyncSession,
-    *,
-    guild_id: int,
-    item_name: str,
-    is_free: bool,
-) -> OperationResult:
-    name = _clean_name(item_name, label="입찰 아이템 이름")
-    try:
-        bid_item_id = int(
-            await session.scalar(
-                text("""
-                    INSERT INTO bid_items (
-                        guild_id, item_name, is_free, is_active, updated_at
-                    ) VALUES (:guild_id, :name, :is_free, TRUE, NOW())
-                    RETURNING bid_item_id
-                """),
-                {"guild_id": guild_id, "name": name, "is_free": is_free},
-            )
-        )
-    except Exception as exc:
-        if "idx_bid_items_guild_name_unique" in str(exc):
-            raise SettlementError("같은 이름의 입찰 아이템이 이미 있습니다.") from exc
-        raise
-    await _audit(session, guild_id=guild_id, action_code="bid_item", target_id=bid_item_id)
-    return OperationResult("입찰 아이템을 추가했습니다.", (bid_item_id,))
-
-
-async def update_bid_item(
-    session: AsyncSession,
-    *,
-    guild_id: int,
-    bid_item_id: int,
-    item_name: str,
-    is_free: bool,
-    is_active: bool,
-) -> OperationResult:
-    name = _clean_name(item_name, label="입찰 아이템 이름")
-    updated = await session.execute(
-        text("""
-            UPDATE bid_items
-            SET item_name = :name, is_free = :is_free,
-                is_active = :is_active, updated_at = NOW()
-            WHERE bid_item_id = :bid_item_id AND guild_id = :guild_id
-        """),
-        {
-            "guild_id": guild_id,
-            "bid_item_id": bid_item_id,
-            "name": name,
-            "is_free": is_free,
-            "is_active": is_active,
-        },
-    )
-    if updated.rowcount == 0:
-        raise SettlementError("입찰 아이템을 찾을 수 없습니다.")
-    await _audit(session, guild_id=guild_id, action_code="bid_item", target_id=bid_item_id)
-    return OperationResult("입찰 아이템을 수정했습니다.", (bid_item_id,))
-
-
-async def delete_bid_item(session: AsyncSession, *, guild_id: int, bid_item_id: int) -> OperationResult:
-    deleted = await session.execute(
-        text("DELETE FROM bid_items WHERE bid_item_id = :bid_item_id AND guild_id = :guild_id"),
-        {"bid_item_id": bid_item_id, "guild_id": guild_id},
-    )
-    if deleted.rowcount == 0:
-        raise SettlementError("입찰 아이템을 찾을 수 없습니다.")
-    await _audit(session, guild_id=guild_id, action_code="bid_item_delete", target_id=bid_item_id)
-    return OperationResult("입찰 아이템을 삭제했습니다.", (bid_item_id,))
-
-
 async def record_bid_purchase(
     session: AsyncSession,
     *,
     guild_id: int,
-    bid_item_id: int,
+    item_id: int,
     alliance_id: int,
 ) -> OperationResult:
     item = (
         await session.execute(
             text("""
-                SELECT bid_item_id
-                FROM bid_items
-                WHERE bid_item_id = :bid_item_id
+                SELECT item_id
+                FROM items
+                WHERE item_id = :item_id
                   AND guild_id = :guild_id
-                  AND is_active IS TRUE
+                  AND status_code = 1
                 FOR UPDATE
             """),
-            {"bid_item_id": bid_item_id, "guild_id": guild_id},
+            {"item_id": item_id, "guild_id": guild_id},
         )
     ).mappings().one_or_none()
     if item is None:
-        raise SettlementError("사용 중인 입찰 아이템을 찾을 수 없습니다.")
+        raise SettlementError("아이템 관리에서 해당 아이템을 찾을 수 없습니다.")
     mapped = await session.scalar(
         text("""
             SELECT 1
@@ -1490,12 +1420,12 @@ async def record_bid_purchase(
                 SELECT COALESCE(MAX(cycle_no), 0) + 1
                 FROM bid_item_results
                 WHERE guild_id = :guild_id
-                  AND bid_item_id = :bid_item_id
+                  AND item_id = :item_id
                   AND alliance_id = :alliance_id
             """),
             {
                 "guild_id": guild_id,
-                "bid_item_id": bid_item_id,
+                "item_id": item_id,
                 "alliance_id": alliance_id,
             },
         )
@@ -1505,17 +1435,17 @@ async def record_bid_purchase(
         await session.scalar(
             text("""
                 INSERT INTO bid_item_results (
-                    guild_id, bid_item_id, alliance_id, cycle_no,
+                    guild_id, item_id, alliance_id, cycle_no,
                     selected_by_discord_id, selected_at, memo, updated_at
                 ) VALUES (
-                    :guild_id, :bid_item_id, :alliance_id, :purchase_no,
+                    :guild_id, :item_id, :alliance_id, :purchase_no,
                     NULL, TO_CHAR(NOW(), 'YYYY-MM-DD HH24:MI:SS'), NULL, NOW()
                 )
                 RETURNING result_id
             """),
             {
                 "guild_id": guild_id,
-                "bid_item_id": bid_item_id,
+                "item_id": item_id,
                 "alliance_id": alliance_id,
                 "purchase_no": purchase_no,
             },
@@ -1529,4 +1459,4 @@ async def record_bid_purchase(
         alliance_id=alliance_id,
         state_code=1,
     )
-    return OperationResult("구매 횟수를 1회 추가했습니다.", (bid_item_id, alliance_id))
+    return OperationResult("구매 횟수를 1회 추가했습니다.", (item_id, alliance_id))

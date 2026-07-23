@@ -373,7 +373,7 @@ async def bidding_page(
             visible_alliance_id=visible_alliance_id,
         )
         if workspace["guild_id"] is not None
-        else {"bid_items": [], "alliances": [], "alliance_rows": [], "summary_cards": []}
+        else {"item_rows": [], "alliances": [], "summary_cards": []}
     )
     context.update(page_data)
     context.update(
@@ -598,54 +598,9 @@ async def update_fee_rule(fee_rule_id: int, request: Request, session: AsyncSess
     )
 
 
-@router.post("/api/bid-items")
-async def create_bid_item(request: Request, session: AsyncSession = Depends(get_session)):
-    form = await request.form()
-    guild_id = int(_int(form.get("guild_id")))
-    await _require_bid_management(request, session, guild_id)
-    return await _result(
-        session,
-        settlement_service.create_bid_item(
-            session,
-            guild_id=guild_id,
-            item_name=str(form.get("item_name") or ""),
-            is_free=_bool(form.get("is_free")),
-        ),
-    )
-
-
-@router.post("/api/bid-items/{bid_item_id}")
-async def update_bid_item(bid_item_id: int, request: Request, session: AsyncSession = Depends(get_session)):
-    form = await request.form()
-    guild_id = int(_int(form.get("guild_id")))
-    await _require_bid_management(request, session, guild_id)
-    return await _result(
-        session,
-        settlement_service.update_bid_item(
-            session,
-            guild_id=guild_id,
-            bid_item_id=bid_item_id,
-            item_name=str(form.get("item_name") or ""),
-            is_free=_bool(form.get("is_free")),
-            is_active=_bool(form.get("is_active")),
-        ),
-    )
-
-
-@router.post("/api/bid-items/{bid_item_id}/delete")
-async def delete_bid_item(bid_item_id: int, request: Request, session: AsyncSession = Depends(get_session)):
-    form = await request.form()
-    guild_id = int(_int(form.get("guild_id")))
-    await _require_bid_management(request, session, guild_id)
-    return await _result(
-        session,
-        settlement_service.delete_bid_item(session, guild_id=guild_id, bid_item_id=bid_item_id),
-    )
-
-
-@router.post("/api/bid-items/{bid_item_id}/alliances/{alliance_id}/purchase")
+@router.post("/api/items/{item_id}/alliances/{alliance_id}/purchase")
 async def record_bid_purchase(
-    bid_item_id: int,
+    item_id: int,
     alliance_id: int,
     request: Request,
     session: AsyncSession = Depends(get_session),
@@ -664,31 +619,37 @@ async def record_bid_purchase(
         settlement_service.record_bid_purchase(
             session,
             guild_id=guild_id,
-            bid_item_id=bid_item_id,
+            item_id=item_id,
             alliance_id=alliance_id,
         ),
     )
 
 
-@router.get("/api/bid-purchases/alliances/{alliance_id}")
+@router.get("/api/bid-purchases/items/{item_id}")
 async def bid_purchase_history(
-    alliance_id: int,
+    item_id: int,
     request: Request,
     guild_id: int,
     session: AsyncSession = Depends(get_session),
 ):
-    await require_alliance_access(
-        request,
-        session,
-        guild_id=guild_id,
-        alliance_id=alliance_id,
+    can_select = await can_select_alliances(request, session, guild_id)
+    visible_alliance_id = (
+        None
+        if can_select
+        else await current_user_alliance_id(request, session, guild_id)
     )
+    if visible_alliance_id is None and not can_select:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="본인 혈맹의 구매 기록만 확인할 수 있습니다.",
+        )
     return {
         "ok": True,
-        **await operations_store.bid_purchase_history(
+        **await operations_store.bid_item_purchase_history(
             session,
             guild_id=guild_id,
-            alliance_id=alliance_id,
+            item_id=item_id,
+            visible_alliance_id=visible_alliance_id,
         ),
     }
 

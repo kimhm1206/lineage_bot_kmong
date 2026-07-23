@@ -4808,14 +4808,12 @@ body.modal-open {
   font-weight: 700;
 }
 
-.drop-board,
-.bid-item-list {
+.drop-board {
   display: grid;
   gap: 12px;
 }
 
 .drop-record,
-.bid-item-card,
 .settlement-entity-card {
   overflow: hidden;
   border: 1px solid var(--line);
@@ -4910,8 +4908,7 @@ body.modal-open {
 .drop-actions form,
 .detail-actions form,
 .entity-summary-actions form,
-.management-actions form,
-.bid-alliance-grid form {
+.management-actions form {
   margin: 0;
 }
 
@@ -4935,14 +4932,12 @@ body.modal-open {
 }
 
 .drop-details summary::-webkit-details-marker,
-.settlement-entity-card summary::-webkit-details-marker,
-.bid-item-card summary::-webkit-details-marker {
+.settlement-entity-card summary::-webkit-details-marker {
   display: none;
 }
 
 .drop-details[open] summary .icon,
-.settlement-entity-card[open] .entity-expand-icon,
-.bid-item-card[open] .entity-expand-icon {
+.settlement-entity-card[open] .entity-expand-icon {
   transform: rotate(90deg);
 }
 
@@ -5683,37 +5678,6 @@ body.modal-open {
 .fee-rule-copy h3 { overflow: hidden; margin: 0; color: var(--text-strong); font-size: 16px; text-overflow: ellipsis; white-space: nowrap; }
 .fee-rule-rate strong { color: var(--text-strong); font-size: 16px; }
 
-.bid-item-card { border-left-color: var(--accent); }
-.bid-item-card.is-free { border-left-color: var(--warning); }
-.bid-item-card.is-inactive { opacity: .64; }
-.bid-item-card > summary {
-  display: grid;
-  grid-template-columns: minmax(240px, 1fr) 120px minmax(180px, .7fr) 90px 38px 24px;
-  align-items: center;
-  gap: 16px;
-  min-height: 82px;
-  padding: 12px 16px;
-  list-style: none;
-  cursor: pointer;
-}
-.bid-item-name,
-.bid-cycle { display: grid; min-width: 0; gap: 4px; }
-.bid-item-name small,
-.bid-cycle span { color: var(--muted); font-size: 11px; }
-.bid-item-name strong,
-.bid-cycle strong { overflow: hidden; color: var(--text-strong); font-size: 16px; text-overflow: ellipsis; white-space: nowrap; }
-.bid-progress-copy { display: grid; gap: 7px; color: var(--muted-strong); font-size: 12px; font-weight: 700; }
-.bid-progress-track { height: 5px; overflow: hidden; border-radius: 4px; background: var(--line); }
-.bid-progress-track i { display: block; height: 100%; background: var(--accent); }
-.bid-alliance-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: 8px; }
-.bid-alliance-button { display: flex; width: 100%; min-height: 44px; align-items: center; justify-content: space-between; padding: 9px 11px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--muted-strong); cursor: pointer; }
-.bid-alliance-button.is-complete { border-color: color-mix(in srgb, var(--success) 45%, var(--line)); background: color-mix(in srgb, var(--success) 10%, var(--panel)); color: var(--success); }
-.bid-alliance-button:disabled { cursor: not-allowed; opacity: .55; }
-.bid-history { display: grid; gap: 8px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
-.bid-history > strong { font-size: 12px; }
-.bid-history > div { display: flex; flex-wrap: wrap; gap: 6px; }
-.bid-history span { padding: 5px 8px; border: 1px solid var(--line); border-radius: 5px; background: var(--panel); color: var(--muted); font-size: 11px; }
-
 .bid-matrix-panel {
   overflow: hidden;
   border: 1px solid var(--line);
@@ -5758,85 +5722,43 @@ body.modal-open {
 .bid-matrix-table tr > *:last-child { border-right: 0; }
 .bid-matrix-table tbody tr:hover > * { background: color-mix(in srgb, var(--accent) 3%, var(--panel)); }
 
-.bid-matrix-alliance-column {
+.bid-matrix-item-name-column {
   position: sticky;
   left: 0;
   z-index: 3;
-  width: 170px;
-  min-width: 170px;
-  max-width: 170px;
+  width: 210px;
+  min-width: 210px;
+  max-width: 210px;
   text-align: left !important;
   box-shadow: 1px 0 0 var(--line);
 }
 
-.bid-matrix-table thead .bid-matrix-alliance-column,
+.bid-matrix-table thead .bid-matrix-item-name-column,
 .bid-matrix-table thead .bid-matrix-history-column {
   z-index: 5;
 }
 
-.bid-matrix-alliance-column strong,
-.bid-matrix-alliance-column small {
+.bid-matrix-item-name-column strong {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.bid-matrix-alliance-column strong {
+.bid-matrix-item-name-column strong {
   color: var(--text-strong);
   font-size: 15px;
 }
 
-.bid-matrix-alliance-column small {
-  margin-top: 5px;
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 650;
-}
-
-.bid-matrix-item-column {
-  position: relative;
-  width: 148px;
-  min-width: 148px;
-  max-width: 148px;
-  padding-inline: 34px 12px !important;
-}
-
-.bid-matrix-item-column > span,
-.bid-matrix-item-column > small {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.bid-matrix-item-column > span {
-  color: var(--text-strong);
-  font-size: 13px;
-}
-
-.bid-matrix-item-column > small {
-  margin-top: 5px;
-  color: var(--muted);
-  font-size: 10px;
-}
-
-.bid-matrix-item-column.is-free > span { color: var(--warning); }
-.bid-matrix-item-column.is-inactive { opacity: .58; }
-
-.bid-item-edit-button {
-  position: absolute;
-  top: 9px;
-  left: 7px;
-  width: 26px;
-  min-width: 26px;
-  height: 26px;
-  min-height: 26px;
-  padding: 5px;
+.bid-matrix-alliance-heading {
+  width: 140px;
+  min-width: 140px;
+  max-width: 140px;
+  color: var(--text-strong) !important;
 }
 
 .bid-matrix-count-cell {
-  min-width: 148px;
+  min-width: 140px;
 }
 
 .bid-matrix-count-cell > strong {
@@ -5905,7 +5827,7 @@ body.modal-open {
 
 .bid-history-modal-summary {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 10px;
 }
 
@@ -5940,6 +5862,12 @@ body.modal-open {
   font-size: 13px;
 }
 
+.bid-history-loading[hidden],
+.bid-history-timeline[hidden],
+.bid-history-empty[hidden] {
+  display: none;
+}
+
 .bid-history-timeline {
   display: grid;
   max-height: min(480px, 56dvh);
@@ -5951,7 +5879,7 @@ body.modal-open {
 
 .bid-history-row {
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) auto;
+  grid-template-columns: 34px minmax(0, 1fr);
   align-items: center;
   gap: 12px;
   min-height: 64px;
@@ -5994,21 +5922,6 @@ body.modal-open {
 .bid-history-row small {
   color: var(--muted);
   font-size: 11px;
-}
-
-.bid-history-type {
-  padding: 5px 8px;
-  border-radius: 5px;
-  background: var(--panel-subtle);
-  color: var(--muted-strong);
-  font-size: 10px;
-  font-weight: 700;
-}
-
-.bid-history-row.is-free .bid-history-number,
-.bid-history-row.is-free .bid-history-type {
-  background: color-mix(in srgb, var(--warning) 11%, var(--panel));
-  color: var(--warning);
 }
 
 .bid-history-empty { min-height: 210px; }
@@ -6111,8 +6024,6 @@ body.modal-open {
   .item-quick-create { grid-template-columns: minmax(200px, 1fr) minmax(170px, .7fr) auto; }
   .item-create-copy { grid-column: 1 / -1; }
   .item-row-editor { padding-left: 14px; }
-  .bid-item-card > summary { grid-template-columns: minmax(190px, 1fr) 100px minmax(150px, .7fr) 38px 24px; }
-  .bid-item-card > summary > .ops-status { display: none; }
 }
 
 @media (max-width: 680px) {
@@ -6174,20 +6085,15 @@ body.modal-open {
   }
   .item-row-editor { grid-template-columns: 1fr; padding-inline: 4px; }
   .item-editor-actions { justify-content: flex-end; }
-  .bid-item-card > summary { grid-template-columns: minmax(0, 1fr) 38px 22px; }
-  .bid-cycle,
-  .bid-progress-copy { grid-column: 1; }
-  .bid-item-card > summary > .icon-button { grid-column: 2; grid-row: 1; }
-  .bid-item-card > summary > .entity-expand-icon { grid-column: 3; grid-row: 1; }
-  .bid-alliance-grid,
   .ops-choice-grid,
   .ops-form-grid-two,
   .ops-toggle-grid { grid-template-columns: 1fr; }
-  .bid-matrix-alliance-column { width: 132px; min-width: 132px; max-width: 132px; }
+  .bid-matrix-item-name-column { width: 150px; min-width: 150px; max-width: 150px; }
+  .bid-matrix-alliance-heading,
+  .bid-matrix-count-cell { width: 118px; min-width: 118px; max-width: 118px; }
   .bid-matrix-history-column { width: 126px; min-width: 126px; max-width: 126px; }
   .bid-history-modal-summary { grid-template-columns: 1fr; }
   .bid-history-row { grid-template-columns: 30px minmax(0, 1fr); }
-  .bid-history-type { grid-column: 2; justify-self: start; }
   .ops-modal { padding: 10px; }
   .ops-modal-dialog { width: calc(100vw - 20px); max-height: calc(100dvh - 20px); }
   .ops-modal-header,

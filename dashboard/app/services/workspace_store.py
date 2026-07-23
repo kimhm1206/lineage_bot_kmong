@@ -696,58 +696,6 @@ async def alliance_settlements_page(
     }
 
 
-async def bid_items_page(
-    session: AsyncSession,
-    *, guild_id: int, query: str, page: int
-) -> dict[str, Any]:
-    search = " AND b.item_name ILIKE :query" if query else ""
-    params = {"guild_id": guild_id, "query": f"%{query}%"}
-    count_from_sql = f"FROM bid_items b WHERE b.guild_id = :guild_id {search}"
-    rows, pagination = await _fetch_page(
-        session,
-        count_sql=f"SELECT COUNT(*) {count_from_sql}",
-        rows_sql=f"""
-            SELECT b.bid_item_id, b.item_name, b.is_free, b.is_active,
-                   COUNT(r.result_id) AS result_count,
-                   COALESCE(MAX(r.cycle_no), 1) AS cycle_no,
-                   TO_CHAR(MAX(r.updated_at), 'YYYY-MM-DD HH24:MI') AS last_bid
-            FROM bid_items b
-            LEFT JOIN bid_item_results r ON r.bid_item_id = b.bid_item_id
-            WHERE b.guild_id = :guild_id {search}
-            GROUP BY b.bid_item_id
-            ORDER BY b.is_free, b.item_name
-            LIMIT :limit OFFSET :offset
-        """,
-        params=params,
-        page=page,
-    )
-    for row in rows:
-        row["type_label"] = "무료 나눔" if row["is_free"] else "입찰"
-        row["cycle_label"] = f"{_int(row['cycle_no'], 1)}회차"
-        row["result_label"] = f"{_int(row['result_count']):,}건"
-        row["state"] = "사용" if row["is_active"] else "중지"
-        row["state_tone"] = "success" if row["is_active"] else "muted"
-        row["last_bid"] = row["last_bid"] or "기록 없음"
-    active_count = sum(1 for row in rows if row["is_active"])
-    return {
-        "summary_cards": [
-            {"label": "입찰 아이템", "value": f"{pagination['total']:,}개", "meta": "검색 결과"},
-            {"label": "현재 페이지 사용", "value": f"{active_count:,}개", "meta": "활성 상태"},
-            {"label": "완료 기록", "value": f"{sum(_int(r['result_count']) for r in rows):,}건", "meta": "현재 페이지"},
-        ],
-        "columns": [
-            {"key": "item_name", "label": "아이템", "emphasis": True},
-            {"key": "type_label", "label": "구분"},
-            {"key": "cycle_label", "label": "현재 회차"},
-            {"key": "result_label", "label": "입찰 기록"},
-            {"key": "last_bid", "label": "최근 완료"},
-            {"key": "state", "label": "상태", "status_key": "state_tone"},
-        ],
-        "rows": rows,
-        "pagination": pagination,
-    }
-
-
 async def items_page(
     session: AsyncSession,
     *, guild_id: int, query: str, page: int

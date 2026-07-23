@@ -23,7 +23,6 @@ EXPECTED_TABLES = frozenset(
         "audit_event_contexts",
         "audit_events",
         "bid_item_results",
-        "bid_items",
         "catalog_item_versions",
         "guild_alliance_role_mappings",
         "guild_settings",
@@ -727,6 +726,74 @@ async def apply_local_schema_cleanup() -> bool:
                 text("""
                     INSERT INTO schema_migrations(version, applied_at)
                     VALUES (13, EXTRACT(EPOCH FROM NOW())::BIGINT)
+                """)
+            )
+            changed = True
+
+        bid_catalog_unification_applied = await connection.scalar(
+            text("SELECT 1 FROM schema_migrations WHERE version = 14")
+        )
+        if not bid_catalog_unification_applied:
+            await connection.execute(
+                text("""
+                    ALTER TABLE bid_item_results
+                    ADD COLUMN IF NOT EXISTS item_id BIGINT
+                """)
+            )
+            await connection.execute(
+                text("""
+                    UPDATE bid_item_results r
+                    SET item_id = i.item_id
+                    FROM bid_items b
+                    JOIN items i
+                      ON i.guild_id = b.guild_id
+                     AND LOWER(i.item_name) = LOWER(b.item_name)
+                    WHERE r.bid_item_id = b.bid_item_id
+                      AND r.item_id IS NULL
+                """)
+            )
+            await connection.execute(
+                text("DELETE FROM bid_item_results WHERE item_id IS NULL")
+            )
+            await connection.execute(
+                text("""
+                    ALTER TABLE bid_item_results
+                    DROP CONSTRAINT IF EXISTS bid_item_results_bid_item_id_fkey
+                """)
+            )
+            await connection.execute(text("DROP INDEX IF EXISTS idx_bid_results_item_cycle"))
+            await connection.execute(text("DROP INDEX IF EXISTS idx_bid_results_unique_cycle"))
+            await connection.execute(
+                text("""
+                    ALTER TABLE bid_item_results
+                    ALTER COLUMN item_id SET NOT NULL,
+                    DROP COLUMN IF EXISTS bid_item_id,
+                    ADD CONSTRAINT bid_item_results_item_id_fkey
+                        FOREIGN KEY (item_id)
+                        REFERENCES items(item_id) ON DELETE CASCADE
+                """)
+            )
+            await connection.execute(
+                text("""
+                    CREATE INDEX idx_bid_results_item_time
+                    ON bid_item_results (
+                        guild_id, item_id, selected_at DESC, result_id DESC
+                    )
+                """)
+            )
+            await connection.execute(
+                text("""
+                    CREATE UNIQUE INDEX idx_bid_results_unique_cycle
+                    ON bid_item_results (
+                        guild_id, item_id, alliance_id, cycle_no
+                    )
+                """)
+            )
+            await connection.execute(text("DROP TABLE bid_items"))
+            await connection.execute(
+                text("""
+                    INSERT INTO schema_migrations(version, applied_at)
+                    VALUES (14, EXTRACT(EPOCH FROM NOW())::BIGINT)
                 """)
             )
             changed = True

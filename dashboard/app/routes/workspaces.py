@@ -474,16 +474,11 @@ async def alliance_bidding(
     request: Request, guild_id: int | None = None, q: str = "", page: int = 1,
     session: AsyncSession = Depends(get_session),
 ):
-    return await _render_workspace(
-        request, session,
-        active_nav="alliance.bidding",
-        page_title="아이템 입찰",
-        page_description="입찰 아이템의 현재 회차와 혈맹별 완료 기록을 조회합니다.",
-        page_kicker="Alliance bidding",
-        page_badge="USER",
-        builder=workspace_store.bid_items_page,
-        guild_id=guild_id, alliance_id=None, period=None, query=q, page=page,
-        supports_period=False,
+    params = {"guild_id": guild_id, "q": q}
+    query_string = urlencode({key: value for key, value in params.items() if value not in (None, "")})
+    return RedirectResponse(
+        f"/alliance/bidding{'?' + query_string if query_string else ''}",
+        status_code=302,
     )
 
 
