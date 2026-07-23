@@ -6,21 +6,15 @@
 {% block content %}
 <div data-live-page>
   {{ toolbar(guilds, guild_id, query, alliances=alliances if scope_code == 2 else [], alliance_id=alliance_id, primary_label='수수료 추가', primary_modal='fee-create-modal', search_label='수수료 검색', search_placeholder='수수료 이름 검색', client_search=True) }}
-  <section class="fee-overview-strip">
-    <div><span>활성 수수료 합계</span><strong>{{ total_rate_label }}</strong><small>100%를 초과할 수 없습니다.</small></div>
-    <div><span>현재 미정산 수수료</span><strong>{{ pending_total_label }}</strong><small>아데나</small></div>
-    <p>{{ icon("info") }} 완료된 분배금은 당시 수수료 버전을 유지하며, 전부 미완료인 정산만 새 규칙으로 다시 계산됩니다.</p>
-  </section>
 
-  <section class="ops-section-heading"><div><h2>{{ '연합 수수료' if scope_code == 1 else '혈맹 내부 수수료' }}</h2><p>수수료마다 현재 비율과 미정산 금액을 확인할 수 있습니다.</p></div><span data-client-search-count data-count-suffix="개 규칙">{{ fee_rules|length }}개 규칙</span></section>
+  <section class="ops-section-heading"><div><h2>{{ '연합 수수료' if scope_code == 1 else '혈맹 내부 수수료' }}</h2><p>적용할 수수료 이름과 비율, 사용 상태를 관리합니다.</p></div><span data-client-search-count data-count-suffix="개 규칙">{{ fee_rules|length }}개 규칙</span></section>
   {% if fee_rules %}
   <section class="fee-rule-grid">
     {% for fee in fee_rules %}
     <article class="fee-rule-card{% if not fee.is_active %} is-inactive{% endif %}" data-client-search-item data-search-text="{{ fee.rule_name }}">
       <div class="fee-rule-icon">{{ icon("receipt") }}</div>
-      <div class="fee-rule-copy"><small>{{ '연합 수수료' if scope_code == 1 else '내부 수수료' }}</small><h3>{{ fee.rule_name }}</h3><span>적용 {{ fee.valid_from_label }}</span></div>
+      <div class="fee-rule-copy"><small>{{ '연합 수수료' if scope_code == 1 else '내부 수수료' }}</small><h3>{{ fee.rule_name }}</h3></div>
       <div class="fee-rule-rate"><span>현재 비율</span><strong>{{ fee.rate_label }}</strong></div>
-      <div class="fee-rule-pending"><span>미정산</span><strong>{{ fee.pending_label }}</strong><small>{{ fee.pending_count }}건</small></div>
       <span class="ops-status ops-status-{{ 'complete' if fee.is_active else 'muted' }}">{{ '사용 중' if fee.is_active else '중지' }}</span>
       <button class="icon-button" type="button" title="수정" data-fee-edit data-fee='{{ fee | tojson | forceescape }}'>{{ icon("settings") }}</button>
     </article>
@@ -30,7 +24,7 @@
   {% else %}{{ empty('설정된 수수료가 없습니다.', '필요한 수수료만 추가할 수 있으며 기본 수수료는 강제하지 않습니다.') }}{% endif %}
 </div>
 
-{% call modal('fee-create-modal', '수수료 추가', '미정산 분배금에 즉시 반영되고 완료된 기록은 변경되지 않습니다.') %}
+{% call modal('fee-create-modal', '수수료 추가', '새 수수료 규칙을 등록합니다.') %}
 <form class="ops-form" data-async-form method="post" action="/api/fee-rules">
   <input type="hidden" name="guild_id" value="{{ guild_id }}"><input type="hidden" name="alliance_id" value="{{ alliance_id or '' }}"><input type="hidden" name="scope_code" value="{{ scope_code }}">
   <div class="ops-form-grid ops-form-grid-two"><label class="ops-field"><span>수수료 이름</span><input type="text" name="rule_name" maxlength="60" required placeholder="예: 혈비"></label><label class="ops-field"><span>수수료율 (%)</span><input type="number" name="percent" min="0" max="100" step="0.01" required placeholder="10"></label></div>
@@ -38,11 +32,11 @@
 </form>
 {% endcall %}
 
-{% call modal('fee-edit-modal', '수수료 수정', '새 버전을 저장해 과거 완료 내역과 현재 계산을 분리합니다.') %}
+{% call modal('fee-edit-modal', '수수료 수정', '수수료 이름과 비율, 사용 상태를 변경합니다.') %}
 <form class="ops-form" data-async-form method="post" action="" data-fee-edit-form>
   <input type="hidden" name="guild_id" value="{{ guild_id }}">
   <div class="ops-form-grid ops-form-grid-two"><label class="ops-field"><span>수수료 이름</span><input type="text" name="rule_name" maxlength="60" required></label><label class="ops-field"><span>수수료율 (%)</span><input type="number" name="percent" min="0" max="100" step="0.01" required></label></div>
-  <label class="ops-toggle-row"><input type="checkbox" name="is_active" value="1"><span><strong>사용 상태</strong><small>끄면 이후 미완료 재계산에서 제외됩니다.</small></span></label>
+  <label class="ops-toggle-row"><input type="checkbox" name="is_active" value="1"><span><strong>사용 상태</strong><small>끄면 새 정산 계산에서 제외됩니다.</small></span></label>
   <footer class="ops-form-actions"><button class="secondary-button" type="button" data-modal-close>취소</button><button class="primary-button" type="submit">수정 저장</button></footer>
 </form>
 {% endcall %}

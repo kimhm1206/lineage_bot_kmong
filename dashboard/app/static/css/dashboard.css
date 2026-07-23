@@ -5456,35 +5456,6 @@ body.modal-open {
   min-width: 0;
 }
 
-.fee-overview-strip {
-  display: grid;
-  grid-template-columns: minmax(210px, .6fr) minmax(240px, .7fr) minmax(300px, 1.6fr);
-  gap: 12px;
-  margin-bottom: 24px;
-}
-
-.fee-overview-strip > div,
-.fee-overview-strip > p {
-  min-height: 106px;
-  margin: 0;
-  padding: 17px 18px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--panel);
-}
-
-.fee-overview-strip > div {
-  display: grid;
-  align-content: center;
-  gap: 5px;
-}
-
-.fee-overview-strip span,
-.fee-overview-strip small { color: var(--muted); font-size: 11px; }
-.fee-overview-strip strong { color: var(--text-strong); font-size: 25px; }
-.fee-overview-strip > p { display: flex; align-items: center; gap: 10px; color: var(--muted-strong); font-size: 13px; line-height: 1.6; }
-.fee-overview-strip > p .icon { color: var(--accent); }
-
 .fee-rule-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -5493,10 +5464,10 @@ body.modal-open {
 
 .fee-rule-card {
   display: grid;
-  grid-template-columns: 42px minmax(150px, 1fr) minmax(90px, .5fr) minmax(120px, .65fr) auto 38px;
+  grid-template-columns: 42px minmax(150px, 1fr) minmax(90px, .5fr) auto 38px;
   align-items: center;
   gap: 14px;
-  min-height: 98px;
+  min-height: 82px;
   padding: 14px 16px;
   border: 1px solid var(--line);
   border-left: 4px solid var(--accent);
@@ -5507,16 +5478,12 @@ body.modal-open {
 .fee-rule-card.is-inactive { opacity: .62; border-left-color: var(--muted); }
 .fee-rule-icon { display: grid; width: 40px; height: 40px; place-items: center; border-radius: 7px; background: var(--accent-soft); color: var(--accent-strong); }
 .fee-rule-copy,
-.fee-rule-rate,
-.fee-rule-pending { display: grid; min-width: 0; gap: 3px; }
+.fee-rule-rate { display: grid; min-width: 0; gap: 3px; }
 .fee-rule-copy small,
 .fee-rule-rate span,
-.fee-rule-pending span,
-.fee-rule-copy span,
-.fee-rule-pending small { color: var(--muted); font-size: 11px; }
+.fee-rule-copy span { color: var(--muted); font-size: 11px; }
 .fee-rule-copy h3 { overflow: hidden; margin: 0; color: var(--text-strong); font-size: 16px; text-overflow: ellipsis; white-space: nowrap; }
-.fee-rule-rate strong,
-.fee-rule-pending strong { color: var(--text-strong); font-size: 16px; }
+.fee-rule-rate strong { color: var(--text-strong); font-size: 16px; }
 
 .bid-item-card { border-left-color: var(--accent); }
 .bid-item-card.is-free { border-left-color: var(--warning); }
@@ -5642,8 +5609,6 @@ body.modal-open {
   .entity-expand-icon { grid-column: 5; grid-row: 1; }
   .entity-detail-row { grid-template-columns: minmax(180px, 1fr) 120px 74px; }
   .detail-actions { grid-column: 1 / -1; padding-top: 7px; border-top: 1px solid var(--line); }
-  .fee-overview-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .fee-overview-strip > p { grid-column: 1 / -1; min-height: auto; }
   .item-quick-create { grid-template-columns: minmax(200px, 1fr) minmax(170px, .7fr) auto; }
   .item-create-copy { grid-column: 1 / -1; }
   .item-row-editor { padding-left: 14px; }
@@ -5679,12 +5644,10 @@ body.modal-open {
   .entity-detail-row { grid-template-columns: minmax(0, 1fr) 100px; gap: 9px; }
   .entity-detail-row > .ops-status { grid-column: 1; justify-self: start; }
   .detail-actions { grid-column: 1 / -1; }
-  .fee-overview-strip,
   .fee-rule-grid,
   .personal-distribution-grid { grid-template-columns: 1fr; }
   .fee-rule-card { grid-template-columns: 38px minmax(0, 1fr) 38px; }
-  .fee-rule-rate,
-  .fee-rule-pending { grid-column: 2; }
+  .fee-rule-rate { grid-column: 2; }
   .fee-rule-card > .ops-status { grid-column: 2; justify-self: start; }
   .fee-rule-card > .icon-button { grid-column: 3; grid-row: 1; }
   .item-quick-create { grid-template-columns: 1fr; }

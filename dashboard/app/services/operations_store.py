@@ -529,22 +529,17 @@ async def fee_management_page(
         for row in (
             await session.execute(
                 text(f"""
-                    SELECT r.fee_rule_id, r.is_active, latest.rule_name, latest.rate_ppm,
-                           TO_CHAR(TO_TIMESTAMP(latest.valid_from), 'YYYY-MM-DD HH24:MI') AS valid_from_label,
-                           COUNT(po.payout_object_id) FILTER (WHERE po.status_code = 0) AS pending_count,
-                           COALESCE(SUM(po.amount_adena) FILTER (WHERE po.status_code = 0), 0) AS pending_amount
+                    SELECT r.fee_rule_id, r.is_active,
+                           latest.rule_name, latest.rate_ppm
                     FROM settlement_fee_rules r
                     JOIN LATERAL (
-                        SELECT v.fee_rule_version_id, v.rule_name, v.rate_ppm, v.valid_from
+                        SELECT v.rule_name, v.rate_ppm
                         FROM settlement_fee_rule_versions v
                         WHERE v.fee_rule_id = r.fee_rule_id
                         ORDER BY v.valid_from DESC, v.fee_rule_version_id DESC LIMIT 1
                     ) latest ON TRUE
-                    LEFT JOIN settlement_fee_rule_versions all_versions ON all_versions.fee_rule_id = r.fee_rule_id
-                    LEFT JOIN settlement_payout_objects po ON po.fee_rule_version_id = all_versions.fee_rule_version_id
                     WHERE r.guild_id = :guild_id AND r.scope_code = :scope_code
                       AND {alliance_clause} {search}
-                    GROUP BY r.fee_rule_id, latest.rule_name, latest.rate_ppm, latest.valid_from
                     ORDER BY r.is_active DESC, latest.rule_name
                 """),
                 {
@@ -559,15 +554,8 @@ async def fee_management_page(
     for row in rows:
         row["fee_rule_id"] = int(row["fee_rule_id"])
         row["rate_ppm"] = int(row["rate_ppm"] or 0)
-        row["pending_count"] = int(row["pending_count"] or 0)
-        row["pending_amount"] = int(row["pending_amount"] or 0)
         row["rate_label"] = _percent(row["rate_ppm"])
-        row["pending_label"] = _money(row["pending_amount"])
-    return {
-        "fee_rules": rows,
-        "total_rate_label": _percent(sum(int(row["rate_ppm"]) for row in rows if row["is_active"])),
-        "pending_total_label": _money(sum(int(row["pending_amount"]) for row in rows)),
-    }
+    return {"fee_rules": rows}
 
 
 async def bid_management_page(session: AsyncSession, *, guild_id: int, query: str) -> dict[str, Any]:

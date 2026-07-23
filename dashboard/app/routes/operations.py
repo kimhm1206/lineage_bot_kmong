@@ -273,7 +273,7 @@ async def alliance_fee_page(
             session, guild_id=int(workspace["guild_id"]), alliance_id=None, scope_code=1, query=""
         )
         if workspace["guild_id"] is not None
-        else {"fee_rules": [], "total_rate_label": "0%", "pending_total_label": "0"}
+        else {"fee_rules": []}
     )
     context.update(page_data)
     context.update({"query": _query(q), "scope_code": 1})
@@ -307,7 +307,7 @@ async def clan_fee_page(
             query="",
         )
         if workspace["guild_id"] is not None and workspace["alliance_id"] is not None
-        else {"fee_rules": [], "total_rate_label": "0%", "pending_total_label": "0"}
+        else {"fee_rules": []}
     )
     context.update(page_data)
     context.update({"query": _query(q), "scope_code": 2})
