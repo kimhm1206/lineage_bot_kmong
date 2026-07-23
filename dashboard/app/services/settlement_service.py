@@ -16,6 +16,12 @@ STATUS_FORFEITED = 2
 OBJECT_ALLIANCE = 1
 OBJECT_MEMBER = 2
 OBJECT_FEE = 3
+FIXED_ALLIANCE_FEE = "alliance_fee"
+FIXED_CLAN_FUND = "clan_fund"
+FIXED_FEE_NAMES = {
+    FIXED_ALLIANCE_FEE: "연합 수수료",
+    FIXED_CLAN_FUND: "혈비",
+}
 
 
 class SettlementError(ValueError):
@@ -422,7 +428,8 @@ async def _latest_fee_rules(
     rows = (
         await session.execute(
             text(f"""
-                SELECT r.fee_rule_id, latest.fee_rule_version_id,
+                SELECT r.fee_rule_id, r.fixed_code,
+                       latest.fee_rule_version_id,
                        latest.rule_name, latest.rate_ppm
                 FROM settlement_fee_rules r
                 JOIN LATERAL (
@@ -472,6 +479,8 @@ async def _build_alliance_payouts(session: AsyncSession, *, drop_id: int) -> Non
     for rule in rules:
         amount = gross * int(rule["rate_ppm"]) // PPM_BASE
         total_fee += amount
+        if amount <= 0:
+            continue
         await session.execute(
             text("""
                 INSERT INTO settlement_payout_objects (
@@ -711,6 +720,8 @@ async def _build_clan_children(
     for rule in rules:
         amount = parent_amount * int(rule["rate_ppm"]) // PPM_BASE
         total_fee += amount
+        if amount <= 0:
+            continue
         await session.execute(
             text("""
                 INSERT INTO settlement_payout_objects (
@@ -893,6 +904,7 @@ async def set_payout_status(
                 SELECT po.*, d.guild_id, v.item_name,
                        parent.recipient_alliance_id AS parent_alliance_id,
                        fr.scope_code, fr.alliance_id AS fee_alliance_id,
+                       fr.fixed_code,
                        fv.rule_name,
                        COALESCE(recipient.game_nickname, recipient.discord_nickname) AS recipient_name
                 FROM settlement_payout_objects po
@@ -965,18 +977,33 @@ async def set_payout_status(
     )
     if status_code == STATUS_COMPLETE and object_code == OBJECT_FEE:
         scope_code = int(row["scope_code"] or 1)
-        alliance_id = int(row["parent_alliance_id"] or row["fee_alliance_id"]) if scope_code == 2 else None
-        await _treasury_credit(
-            session,
-            guild_id=int(row["guild_id"]),
-            alliance_id=alliance_id,
-            scope_code=scope_code,
-            source_type_id=4 if scope_code == 1 else 3,
-            source_id=payout_object_id,
-            amount=int(row["amount_adena"]),
-            category_name="수수료 입금",
-            memo=f"{row['rule_name'] or '수수료'} · {row['item_name']}",
+        fixed_code = str(row["fixed_code"] or "")
+        should_credit = (
+            scope_code == 1 and fixed_code == FIXED_ALLIANCE_FEE
+        ) or (
+            scope_code == 2 and fixed_code == FIXED_CLAN_FUND
         )
+        if should_credit:
+            alliance_id = (
+                int(row["parent_alliance_id"] or row["fee_alliance_id"])
+                if scope_code == 2
+                else None
+            )
+            await _treasury_credit(
+                session,
+                guild_id=int(row["guild_id"]),
+                alliance_id=alliance_id,
+                scope_code=scope_code,
+                source_type_id=4 if scope_code == 1 else 3,
+                source_id=payout_object_id,
+                amount=int(row["amount_adena"]),
+                category_name=(
+                    FIXED_FEE_NAMES[FIXED_ALLIANCE_FEE]
+                    if scope_code == 1
+                    else FIXED_FEE_NAMES[FIXED_CLAN_FUND]
+                ),
+                memo=f"{row['rule_name']} · {row['item_name']}",
+            )
     if status_code == STATUS_FORFEITED and object_code == OBJECT_MEMBER:
         alliance_id = int(row["parent_alliance_id"])
         await _treasury_credit(
@@ -1204,6 +1231,8 @@ async def create_fee_rule(
     percent: Any,
 ) -> OperationResult:
     name = _clean_name(rule_name, label="수수료 이름", max_length=60)
+    if name in FIXED_FEE_NAMES.values():
+        raise SettlementError(f"{name} 항목은 기본 규칙에서 비율만 수정할 수 있습니다.")
     ppm = _rate_ppm(percent)
     if scope_code == 1:
         alliance_id = None
@@ -1266,7 +1295,7 @@ async def update_fee_rule(
     rule = (
         await session.execute(
             text("""
-                SELECT fee_rule_id, scope_code, alliance_id
+                SELECT fee_rule_id, scope_code, alliance_id, fixed_code
                 FROM settlement_fee_rules
                 WHERE fee_rule_id = :fee_rule_id AND guild_id = :guild_id
                 FOR UPDATE
@@ -1276,6 +1305,10 @@ async def update_fee_rule(
     ).mappings().one_or_none()
     if rule is None:
         raise SettlementError("수수료 규칙을 찾을 수 없습니다.")
+    fixed_code = str(rule["fixed_code"] or "")
+    if fixed_code:
+        name = FIXED_FEE_NAMES[fixed_code]
+        is_active = True
     if is_active:
         other_total = int(
             await session.scalar(
@@ -1380,6 +1413,82 @@ async def recalculate_open_settlements(
             {"parent_id": parent_id},
         )
         await _build_clan_children(session, parent_payout_object_id=parent_id)
+
+
+async def normalize_all_open_settlements(session: AsyncSession) -> None:
+    await session.execute(
+        text("""
+            DELETE FROM settlement_payout_objects child
+            USING settlement_payout_objects parent
+            WHERE child.parent_payout_object_id = parent.payout_object_id
+              AND parent.object_code = 1
+              AND parent.status_code = 0
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM settlement_payout_objects sibling
+                  WHERE sibling.parent_payout_object_id = parent.payout_object_id
+                    AND sibling.status_code <> 0
+              )
+        """)
+    )
+    guild_ids = [
+        int(value)
+        for value in (
+            await session.execute(text("SELECT guild_id FROM guilds ORDER BY guild_id"))
+        ).scalars()
+    ]
+    for guild_id in guild_ids:
+        await recalculate_open_settlements(
+            session,
+            guild_id=guild_id,
+            scope_code=1,
+            alliance_id=None,
+        )
+    mappings = (
+        await session.execute(
+            text("""
+                SELECT DISTINCT guild_id, alliance_id
+                FROM guild_alliance_role_mappings
+                ORDER BY guild_id, alliance_id
+            """)
+        )
+    ).mappings().all()
+    for mapping in mappings:
+        await recalculate_open_settlements(
+            session,
+            guild_id=int(mapping["guild_id"]),
+            scope_code=2,
+            alliance_id=int(mapping["alliance_id"]),
+        )
+    await session.execute(
+        text("""
+            DELETE FROM settlement_fee_rules rule
+            WHERE rule.fixed_code IS NULL
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM settlement_fee_rule_versions version
+                  JOIN settlement_payout_objects payout
+                    ON payout.fee_rule_version_id = version.fee_rule_version_id
+                  WHERE version.fee_rule_id = rule.fee_rule_id
+              )
+              AND EXISTS (
+                  SELECT 1
+                  FROM settlement_fee_rule_versions latest
+                  WHERE latest.fee_rule_version_id = (
+                      SELECT candidate.fee_rule_version_id
+                      FROM settlement_fee_rule_versions candidate
+                      WHERE candidate.fee_rule_id = rule.fee_rule_id
+                      ORDER BY candidate.valid_from DESC,
+                               candidate.fee_rule_version_id DESC
+                      LIMIT 1
+                  )
+                    AND (
+                        (rule.scope_code = 1 AND latest.rule_name = '연합 수수료')
+                        OR (rule.scope_code = 2 AND latest.rule_name = '혈비')
+                    )
+              )
+        """)
+    )
 
 
 async def record_bid_purchase(

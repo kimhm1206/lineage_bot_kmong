@@ -13,15 +13,18 @@
     {% for fee in fee_rules %}
     <article class="fee-rule-card{% if not fee.is_active %} is-inactive{% endif %}" data-client-search-item data-search-text="{{ fee.rule_name }}">
       <div class="fee-rule-icon">{{ icon("receipt") }}</div>
-      <div class="fee-rule-copy"><small>{{ '연합 수수료' if scope_code == 1 else '내부 수수료' }}</small><h3>{{ fee.rule_name }}</h3></div>
+      <div class="fee-rule-copy">
+        <small>{{ '가계부 고정 항목' if fee.is_fixed else ('연합 수수료' if scope_code == 1 else '내부 수수료') }}</small>
+        <h3>{{ fee.rule_name }}</h3>
+      </div>
       <div class="fee-rule-rate"><span>현재 비율</span><strong>{{ fee.rate_label }}</strong></div>
-      <span class="ops-status ops-status-{{ 'complete' if fee.is_active else 'muted' }}">{{ '사용 중' if fee.is_active else '중지' }}</span>
+      <span class="ops-status ops-status-{{ 'complete' if fee.is_active else 'muted' }}">{{ '고정' if fee.is_fixed else ('사용 중' if fee.is_active else '중지') }}</span>
       <button class="icon-button" type="button" title="수정" data-fee-edit data-fee='{{ fee | tojson | forceescape }}'>{{ icon("settings") }}</button>
     </article>
     {% endfor %}
   </section>
   <div class="ops-client-search-empty" data-client-search-empty hidden>검색 결과가 없습니다.</div>
-  {% else %}{{ empty('설정된 수수료가 없습니다.', '필요한 수수료만 추가할 수 있으며 기본 수수료는 강제하지 않습니다.') }}{% endif %}
+{% else %}{{ empty('설정된 수수료가 없습니다.', '기본 수수료 규칙을 준비하고 있습니다.') }}{% endif %}
 </div>
 
 {% call modal('fee-create-modal', '수수료 추가', '새 수수료 규칙을 등록합니다.') %}
@@ -35,8 +38,8 @@
 {% call modal('fee-edit-modal', '수수료 수정', '수수료 이름과 비율, 사용 상태를 변경합니다.') %}
 <form class="ops-form" data-async-form method="post" action="" data-fee-edit-form>
   <input type="hidden" name="guild_id" value="{{ guild_id }}">
-  <div class="ops-form-grid ops-form-grid-two"><label class="ops-field"><span>수수료 이름</span><input type="text" name="rule_name" maxlength="60" required></label><label class="ops-field"><span>수수료율 (%)</span><input type="number" name="percent" min="0" max="100" step="0.01" required></label></div>
-  <label class="ops-toggle-row"><input type="checkbox" name="is_active" value="1"><span><strong>사용 상태</strong><small>끄면 새 정산 계산에서 제외됩니다.</small></span></label>
+  <div class="ops-form-grid ops-form-grid-two"><label class="ops-field"><span>수수료 이름</span><input type="text" name="rule_name" maxlength="60" required data-fee-rule-name></label><label class="ops-field"><span>수수료율 (%)</span><input type="number" name="percent" min="0" max="100" step="0.01" required></label></div>
+  <label class="ops-toggle-row"><input type="checkbox" name="is_active" value="1" data-fee-rule-active><span><strong>사용 상태</strong><small data-fee-rule-help>끄면 새 정산 계산에서 제외됩니다.</small></span></label>
   <footer class="ops-form-actions"><button class="secondary-button" type="button" data-modal-close>취소</button><button class="primary-button" type="submit">수정 저장</button></footer>
 </form>
 {% endcall %}

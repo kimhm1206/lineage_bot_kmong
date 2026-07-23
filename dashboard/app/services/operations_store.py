@@ -652,7 +652,7 @@ async def fee_management_page(
         for row in (
             await session.execute(
                 text(f"""
-                    SELECT r.fee_rule_id, r.is_active,
+                    SELECT r.fee_rule_id, r.is_active, r.fixed_code,
                            latest.rule_name, latest.rate_ppm
                     FROM settlement_fee_rules r
                     JOIN LATERAL (
@@ -678,6 +678,7 @@ async def fee_management_page(
         row["fee_rule_id"] = int(row["fee_rule_id"])
         row["rate_ppm"] = int(row["rate_ppm"] or 0)
         row["rate_label"] = _percent(row["rate_ppm"])
+        row["is_fixed"] = bool(row["fixed_code"])
     return {"fee_rules": rows}
 
 

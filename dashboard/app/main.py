@@ -7,8 +7,15 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from dashboard.app.config import BASE_DIR, get_settings
-from dashboard.app.database import apply_local_schema_cleanup, close_database, ensure_settings_schema, ping_database
+from dashboard.app.database import (
+    SessionLocal,
+    apply_local_schema_cleanup,
+    close_database,
+    ensure_settings_schema,
+    ping_database,
+)
 from dashboard.app.routes import developer, health, home, operations, settings as settings_routes, workspaces
+from dashboard.app.services import settlement_service
 from dashboard.app.services.discord_api import discord_api
 from dashboard.app.services.settlement_service import SettlementError
 
@@ -17,7 +24,11 @@ from dashboard.app.services.settlement_service import SettlementError
 async def lifespan(app: FastAPI):
     await ping_database()
     await ensure_settings_schema()
-    await apply_local_schema_cleanup()
+    schema_changed = await apply_local_schema_cleanup()
+    if schema_changed:
+        async with SessionLocal() as session:
+            await settlement_service.normalize_all_open_settlements(session)
+            await session.commit()
     try:
         yield
     finally:

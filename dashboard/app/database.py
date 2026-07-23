@@ -402,7 +402,7 @@ async def apply_local_schema_cleanup() -> bool:
                     VALUES
                         (1, '연합비 입금'),
                         (1, '이벤트비 입금'),
-                        (1, '수수료 입금'),
+                        (1, '연합 수수료'),
                         (1, '운영비 입금'),
                         (1, '기타 입금'),
                         (-1, '연합비 지출'),
@@ -794,6 +794,464 @@ async def apply_local_schema_cleanup() -> bool:
                 text("""
                     INSERT INTO schema_migrations(version, applied_at)
                     VALUES (14, EXTRACT(EPOCH FROM NOW())::BIGINT)
+                """)
+            )
+            changed = True
+
+        fixed_treasury_fee_rules_applied = await connection.scalar(
+            text("SELECT 1 FROM schema_migrations WHERE version = 15")
+        )
+        if not fixed_treasury_fee_rules_applied:
+            await connection.execute(
+                text("""
+                    ALTER TABLE settlement_fee_rules
+                    ADD COLUMN IF NOT EXISTS fixed_code TEXT
+                """)
+            )
+            await connection.execute(
+                text("""
+                    WITH candidates AS (
+                        SELECT r.fee_rule_id,
+                               CASE
+                                   WHEN r.scope_code = 1
+                                    AND r.alliance_id IS NULL
+                                    AND latest.rule_name = '연합 수수료'
+                                       THEN 'alliance_fee'
+                                   WHEN r.scope_code = 2
+                                    AND r.alliance_id IS NOT NULL
+                                    AND latest.rule_name = '혈비'
+                                       THEN 'clan_fund'
+                               END AS fixed_code,
+                               ROW_NUMBER() OVER (
+                                   PARTITION BY
+                                       r.guild_id,
+                                       r.scope_code,
+                                       CASE WHEN r.scope_code = 1 THEN NULL ELSE r.alliance_id END
+                                   ORDER BY r.fee_rule_id DESC
+                               ) AS position
+                        FROM settlement_fee_rules r
+                        JOIN LATERAL (
+                            SELECT v.rule_name
+                            FROM settlement_fee_rule_versions v
+                            WHERE v.fee_rule_id = r.fee_rule_id
+                            ORDER BY v.valid_from DESC, v.fee_rule_version_id DESC
+                            LIMIT 1
+                        ) latest ON TRUE
+                        WHERE (r.scope_code = 1 AND latest.rule_name = '연합 수수료')
+                           OR (r.scope_code = 2 AND latest.rule_name = '혈비')
+                    )
+                    UPDATE settlement_fee_rules r
+                    SET fixed_code = candidates.fixed_code,
+                        is_active = TRUE
+                    FROM candidates
+                    WHERE r.fee_rule_id = candidates.fee_rule_id
+                      AND candidates.fixed_code IS NOT NULL
+                      AND candidates.position = 1
+                """)
+            )
+            await connection.execute(
+                text("""
+                    WITH duplicate_fixed_rules AS (
+                        SELECT r.fee_rule_id,
+                               ROW_NUMBER() OVER (
+                                   PARTITION BY r.guild_id, r.scope_code, r.alliance_id
+                                   ORDER BY r.fee_rule_id DESC
+                               ) AS position
+                        FROM settlement_fee_rules r
+                        JOIN LATERAL (
+                            SELECT v.rule_name
+                            FROM settlement_fee_rule_versions v
+                            WHERE v.fee_rule_id = r.fee_rule_id
+                            ORDER BY v.valid_from DESC, v.fee_rule_version_id DESC
+                            LIMIT 1
+                        ) latest ON TRUE
+                        WHERE (r.scope_code = 1 AND latest.rule_name = '연합 수수료')
+                           OR (r.scope_code = 2 AND latest.rule_name = '혈비')
+                    )
+                    UPDATE settlement_fee_rules r
+                    SET is_active = FALSE
+                    FROM duplicate_fixed_rules duplicate
+                    WHERE r.fee_rule_id = duplicate.fee_rule_id
+                      AND duplicate.position > 1
+                """)
+            )
+            await connection.execute(
+                text("""
+                    WITH inserted AS (
+                        INSERT INTO settlement_fee_rules (
+                            guild_id, alliance_id, scope_code, is_active, fixed_code
+                        )
+                        SELECT g.guild_id, NULL, 1, TRUE, 'alliance_fee'
+                        FROM guilds g
+                        WHERE NOT EXISTS (
+                            SELECT 1
+                            FROM settlement_fee_rules r
+                            WHERE r.guild_id = g.guild_id
+                              AND r.fixed_code = 'alliance_fee'
+                        )
+                        RETURNING fee_rule_id
+                    )
+                    INSERT INTO settlement_fee_rule_versions (
+                        fee_rule_id, rule_name, rate_ppm, valid_from
+                    )
+                    SELECT fee_rule_id, '연합 수수료', 0,
+                           EXTRACT(EPOCH FROM NOW())::BIGINT
+                    FROM inserted
+                """)
+            )
+            await connection.execute(
+                text("""
+                    WITH mapped_alliances AS (
+                        SELECT DISTINCT guild_id, alliance_id
+                        FROM guild_alliance_role_mappings
+                    ),
+                    inserted AS (
+                        INSERT INTO settlement_fee_rules (
+                            guild_id, alliance_id, scope_code, is_active, fixed_code
+                        )
+                        SELECT mapped.guild_id, mapped.alliance_id, 2, TRUE, 'clan_fund'
+                        FROM mapped_alliances mapped
+                        WHERE NOT EXISTS (
+                            SELECT 1
+                            FROM settlement_fee_rules r
+                            WHERE r.guild_id = mapped.guild_id
+                              AND r.alliance_id = mapped.alliance_id
+                              AND r.fixed_code = 'clan_fund'
+                        )
+                        RETURNING fee_rule_id
+                    )
+                    INSERT INTO settlement_fee_rule_versions (
+                        fee_rule_id, rule_name, rate_ppm, valid_from
+                    )
+                    SELECT fee_rule_id, '혈비', 0,
+                           EXTRACT(EPOCH FROM NOW())::BIGINT
+                    FROM inserted
+                """)
+            )
+            await connection.execute(
+                text("""
+                    ALTER TABLE settlement_fee_rules
+                    DROP CONSTRAINT IF EXISTS chk_settlement_fee_rule_fixed_scope,
+                    ADD CONSTRAINT chk_settlement_fee_rule_fixed_scope
+                    CHECK (
+                        fixed_code IS NULL
+                        OR (
+                            fixed_code = 'alliance_fee'
+                            AND scope_code = 1
+                            AND alliance_id IS NULL
+                        )
+                        OR (
+                            fixed_code = 'clan_fund'
+                            AND scope_code = 2
+                            AND alliance_id IS NOT NULL
+                        )
+                    )
+                """)
+            )
+            await connection.execute(
+                text("""
+                    CREATE UNIQUE INDEX IF NOT EXISTS uq_fee_rules_fixed_alliance
+                    ON settlement_fee_rules (guild_id)
+                    WHERE fixed_code = 'alliance_fee'
+                """)
+            )
+            await connection.execute(
+                text("""
+                    CREATE UNIQUE INDEX IF NOT EXISTS uq_fee_rules_fixed_clan
+                    ON settlement_fee_rules (guild_id, alliance_id)
+                    WHERE fixed_code = 'clan_fund'
+                """)
+            )
+            await connection.execute(
+                text("""
+                    CREATE UNIQUE INDEX IF NOT EXISTS uq_payout_fee_drop_rule
+                    ON settlement_payout_objects (drop_id, fee_rule_version_id)
+                    WHERE object_code = 3 AND parent_payout_object_id IS NULL
+                """)
+            )
+            await connection.execute(
+                text("""
+                    CREATE UNIQUE INDEX IF NOT EXISTS uq_payout_fee_parent_rule
+                    ON settlement_payout_objects (
+                        parent_payout_object_id, fee_rule_version_id
+                    )
+                    WHERE object_code = 3 AND parent_payout_object_id IS NOT NULL
+                """)
+            )
+            await connection.execute(
+                text("""
+                    CREATE OR REPLACE FUNCTION ensure_guild_fixed_fee_rule()
+                    RETURNS TRIGGER AS $$
+                    DECLARE
+                        new_rule_id BIGINT;
+                    BEGIN
+                        INSERT INTO settlement_fee_rules (
+                            guild_id, alliance_id, scope_code, is_active, fixed_code
+                        ) VALUES (
+                            NEW.guild_id, NULL, 1, TRUE, 'alliance_fee'
+                        )
+                        ON CONFLICT (guild_id)
+                            WHERE fixed_code = 'alliance_fee'
+                        DO NOTHING
+                        RETURNING fee_rule_id INTO new_rule_id;
+
+                        IF new_rule_id IS NOT NULL THEN
+                            INSERT INTO settlement_fee_rule_versions (
+                                fee_rule_id, rule_name, rate_ppm, valid_from
+                            ) VALUES (
+                                new_rule_id, '연합 수수료', 0,
+                                EXTRACT(EPOCH FROM NOW())::BIGINT
+                            );
+                        END IF;
+                        RETURN NEW;
+                    END;
+                    $$ LANGUAGE plpgsql
+                """)
+            )
+            await connection.execute(
+                text("""
+                    DROP TRIGGER IF EXISTS trg_ensure_guild_fixed_fee_rule ON guilds
+                """)
+            )
+            await connection.execute(
+                text("""
+                    CREATE TRIGGER trg_ensure_guild_fixed_fee_rule
+                    AFTER INSERT ON guilds
+                    FOR EACH ROW EXECUTE FUNCTION ensure_guild_fixed_fee_rule()
+                """)
+            )
+            await connection.execute(
+                text("""
+                    CREATE OR REPLACE FUNCTION ensure_clan_fixed_fee_rule()
+                    RETURNS TRIGGER AS $$
+                    DECLARE
+                        new_rule_id BIGINT;
+                    BEGIN
+                        INSERT INTO settlement_fee_rules (
+                            guild_id, alliance_id, scope_code, is_active, fixed_code
+                        ) VALUES (
+                            NEW.guild_id, NEW.alliance_id, 2, TRUE, 'clan_fund'
+                        )
+                        ON CONFLICT (guild_id, alliance_id)
+                            WHERE fixed_code = 'clan_fund'
+                        DO NOTHING
+                        RETURNING fee_rule_id INTO new_rule_id;
+
+                        IF new_rule_id IS NOT NULL THEN
+                            INSERT INTO settlement_fee_rule_versions (
+                                fee_rule_id, rule_name, rate_ppm, valid_from
+                            ) VALUES (
+                                new_rule_id, '혈비', 0,
+                                EXTRACT(EPOCH FROM NOW())::BIGINT
+                            );
+                        END IF;
+                        RETURN NEW;
+                    END;
+                    $$ LANGUAGE plpgsql
+                """)
+            )
+            await connection.execute(
+                text("""
+                    DROP TRIGGER IF EXISTS trg_ensure_clan_fixed_fee_rule
+                    ON guild_alliance_role_mappings
+                """)
+            )
+            await connection.execute(
+                text("""
+                    CREATE TRIGGER trg_ensure_clan_fixed_fee_rule
+                    AFTER INSERT OR UPDATE OF guild_id, alliance_id
+                    ON guild_alliance_role_mappings
+                    FOR EACH ROW EXECUTE FUNCTION ensure_clan_fixed_fee_rule()
+                """)
+            )
+            await connection.execute(
+                text("""
+                    CREATE OR REPLACE FUNCTION protect_fixed_fee_rule()
+                    RETURNS TRIGGER AS $$
+                    BEGIN
+                        IF TG_OP = 'DELETE' AND OLD.fixed_code IS NOT NULL THEN
+                            RAISE EXCEPTION 'fixed fee rule cannot be deleted';
+                        END IF;
+                        IF TG_OP = 'UPDATE' AND OLD.fixed_code IS NOT NULL THEN
+                            NEW.guild_id := OLD.guild_id;
+                            NEW.alliance_id := OLD.alliance_id;
+                            NEW.scope_code := OLD.scope_code;
+                            NEW.fixed_code := OLD.fixed_code;
+                            NEW.is_active := TRUE;
+                        END IF;
+                        IF TG_OP = 'DELETE' THEN
+                            RETURN OLD;
+                        END IF;
+                        RETURN NEW;
+                    END;
+                    $$ LANGUAGE plpgsql
+                """)
+            )
+            await connection.execute(
+                text("""
+                    DROP TRIGGER IF EXISTS trg_protect_fixed_fee_rule
+                    ON settlement_fee_rules
+                """)
+            )
+            await connection.execute(
+                text("""
+                    CREATE TRIGGER trg_protect_fixed_fee_rule
+                    BEFORE UPDATE OR DELETE ON settlement_fee_rules
+                    FOR EACH ROW EXECUTE FUNCTION protect_fixed_fee_rule()
+                """)
+            )
+            await connection.execute(
+                text("""
+                    CREATE OR REPLACE FUNCTION normalize_fixed_fee_rule_version()
+                    RETURNS TRIGGER AS $$
+                    DECLARE
+                        rule_fixed_code TEXT;
+                    BEGIN
+                        SELECT fixed_code INTO rule_fixed_code
+                        FROM settlement_fee_rules
+                        WHERE fee_rule_id = NEW.fee_rule_id;
+                        IF rule_fixed_code = 'alliance_fee' THEN
+                            NEW.rule_name := '연합 수수료';
+                        ELSIF rule_fixed_code = 'clan_fund' THEN
+                            NEW.rule_name := '혈비';
+                        END IF;
+                        RETURN NEW;
+                    END;
+                    $$ LANGUAGE plpgsql
+                """)
+            )
+            await connection.execute(
+                text("""
+                    DROP TRIGGER IF EXISTS trg_normalize_fixed_fee_rule_version
+                    ON settlement_fee_rule_versions
+                """)
+            )
+            await connection.execute(
+                text("""
+                    CREATE TRIGGER trg_normalize_fixed_fee_rule_version
+                    BEFORE INSERT OR UPDATE ON settlement_fee_rule_versions
+                    FOR EACH ROW EXECUTE FUNCTION normalize_fixed_fee_rule_version()
+                """)
+            )
+            await connection.execute(
+                text("""
+                    INSERT INTO treasury_categories (
+                        guild_id, account_scope_code, direction,
+                        category_name, is_active
+                    )
+                    SELECT guild_id, 1, 1, '연합 수수료', TRUE FROM guilds
+                    UNION ALL
+                    SELECT guild_id, 2, 1, '혈비', TRUE FROM guilds
+                    ON CONFLICT (
+                        guild_id, account_scope_code, direction, category_name
+                    ) DO UPDATE SET is_active = TRUE
+                """)
+            )
+            await connection.execute(
+                text("ALTER TABLE treasury_entries DISABLE TRIGGER USER")
+            )
+            await connection.execute(
+                text("""
+                    DELETE FROM treasury_entries entry
+                    WHERE entry.source_type_id IN (3, 4)
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM settlement_payout_objects payout
+                          JOIN settlement_fee_rule_versions version
+                            ON version.fee_rule_version_id = payout.fee_rule_version_id
+                          JOIN settlement_fee_rules rule
+                            ON rule.fee_rule_id = version.fee_rule_id
+                          WHERE payout.payout_object_id = entry.source_id
+                            AND (
+                                (
+                                    entry.source_type_id = 4
+                                    AND rule.fixed_code = 'alliance_fee'
+                                )
+                                OR (
+                                    entry.source_type_id = 3
+                                    AND rule.fixed_code = 'clan_fund'
+                                )
+                            )
+                      )
+                """)
+            )
+            await connection.execute(
+                text("""
+                    UPDATE treasury_entries entry
+                    SET treasury_category_id = category.treasury_category_id
+                    FROM treasury_accounts account,
+                         treasury_categories category
+                    WHERE account.treasury_account_id = entry.treasury_account_id
+                      AND category.guild_id = account.guild_id
+                      AND category.account_scope_code = account.account_scope_code
+                      AND category.direction = 1
+                      AND category.category_name = CASE
+                          WHEN entry.source_type_id = 4 THEN '연합 수수료'
+                          ELSE '혈비'
+                      END
+                      AND entry.source_type_id IN (3, 4)
+                """)
+            )
+            await connection.execute(
+                text("""
+                    WITH running_balances AS (
+                        SELECT treasury_entry_id,
+                               SUM(direction * amount_adena) OVER (
+                                   PARTITION BY treasury_account_id
+                                   ORDER BY occurred_at, treasury_entry_id
+                                   ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+                               ) AS balance_after
+                        FROM treasury_entries
+                    )
+                    UPDATE treasury_entries entry
+                    SET balance_after = running.balance_after
+                    FROM running_balances running
+                    WHERE running.treasury_entry_id = entry.treasury_entry_id
+                """)
+            )
+            await connection.execute(
+                text("""
+                    UPDATE treasury_accounts account
+                    SET current_balance = COALESCE((
+                            SELECT SUM(entry.direction * entry.amount_adena)
+                            FROM treasury_entries entry
+                            WHERE entry.treasury_account_id =
+                                  account.treasury_account_id
+                        ), 0),
+                        updated_at = EXTRACT(EPOCH FROM NOW())::BIGINT
+                """)
+            )
+            await connection.execute(
+                text("ALTER TABLE treasury_entries ENABLE TRIGGER USER")
+            )
+            await connection.execute(
+                text("""
+                    INSERT INTO schema_migrations(version, applied_at)
+                    VALUES (15, EXTRACT(EPOCH FROM NOW())::BIGINT)
+                """)
+            )
+            changed = True
+
+        fixed_treasury_category_cleanup_applied = await connection.scalar(
+            text("SELECT 1 FROM schema_migrations WHERE version = 16")
+        )
+        if not fixed_treasury_category_cleanup_applied:
+            await connection.execute(
+                text("""
+                    DELETE FROM treasury_categories category
+                    WHERE category.category_name = '수수료 입금'
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM treasury_entries entry
+                          WHERE entry.treasury_category_id =
+                                category.treasury_category_id
+                      )
+                """)
+            )
+            await connection.execute(
+                text("""
+                    INSERT INTO schema_migrations(version, applied_at)
+                    VALUES (16, EXTRACT(EPOCH FROM NOW())::BIGINT)
                 """)
             )
             changed = True

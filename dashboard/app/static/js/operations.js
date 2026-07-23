@@ -188,6 +188,15 @@
     form.elements.rule_name.value = fee.rule_name;
     form.elements.percent.value = Number(fee.rate_ppm || 0) / 10000;
     form.elements.is_active.checked = Boolean(fee.is_active);
+    const isFixed = Boolean(fee.is_fixed);
+    form.elements.rule_name.readOnly = isFixed;
+    form.elements.is_active.disabled = isFixed;
+    const help = form.querySelector("[data-fee-rule-help]");
+    if (help) {
+      help.textContent = isFixed
+        ? "가계부 자동 반영 항목은 항상 사용되며 이름을 변경할 수 없습니다."
+        : "끄면 새 정산 계산에서 제외됩니다.";
+    }
     openModal("fee-edit-modal");
   };
 
