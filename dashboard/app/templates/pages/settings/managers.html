@@ -94,5 +94,3 @@
 <script id="page-users-data" type="application/json">{{ members | tojson }}</script>
 <script id="manager-assignments-data" type="application/json">{{ assigned_member_ids | tojson }}</script>
 {% endblock %}
-
-{% block scripts %}<script src="{{ url_for('static', path='/js/settings.js') }}" defer></script>{% endblock %}

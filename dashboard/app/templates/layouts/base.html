@@ -12,13 +12,16 @@
         document.documentElement.dataset.theme = storedTheme || (prefersDark ? "dark" : "light");
       })();
     </script>
-    <link rel="stylesheet" href="{{ url_for('static', path='/css/dashboard.css') }}?v=20260723.11">
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/dashboard.css') }}?v=20260723.12">
   </head>
   <body>
     {% block body %}{% endblock %}
     <script src="{{ url_for('static', path='/js/theme.js') }}" defer></script>
-    <script src="{{ url_for('static', path='/js/navigation.js') }}?v=20260723.2" defer></script>
     <script src="{{ url_for('static', path='/js/user-picker-modal.js') }}" defer></script>
+    <script src="{{ url_for('static', path='/js/operations.js') }}?v=20260723.6" defer></script>
+    <script src="{{ url_for('static', path='/js/settings.js') }}?v=20260723.2" defer></script>
+    <script src="{{ url_for('static', path='/js/treasury.js') }}?v=20260723.2" defer></script>
+    <script src="{{ url_for('static', path='/js/navigation.js') }}?v=20260723.3" defer></script>
     {% block scripts %}{% endblock %}
   </body>
 </html>

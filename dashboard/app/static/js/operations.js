@@ -288,5 +288,10 @@
     if (event.key === "Escape") closeModal(document.querySelector(".ops-modal.is-open"));
   });
 
-  document.querySelectorAll("[data-client-search-input]").forEach(applyClientSearch);
+  const initializeOperationsPage = () => {
+    document.querySelectorAll("[data-client-search-input]").forEach(applyClientSearch);
+  };
+
+  document.addEventListener("dashboard:page-loaded", initializeOperationsPage);
+  initializeOperationsPage();
 })();

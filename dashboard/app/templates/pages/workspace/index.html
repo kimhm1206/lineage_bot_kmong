@@ -185,9 +185,3 @@
   {% endif %}
 </section>
 {% endblock %}
-
-{% block scripts %}
-{% if treasury_form and treasury_form.can_edit %}
-<script src="{{ url_for('static', path='/js/treasury.js') }}" defer></script>
-{% endif %}
-{% endblock %}
