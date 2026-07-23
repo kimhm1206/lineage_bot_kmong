@@ -6071,6 +6071,10 @@ body.modal-open {
   text-align: center;
 }
 
+.ops-empty-state[hidden] {
+  display: none;
+}
+
 .ops-empty-state > span {
   display: grid;
   width: 48px;
