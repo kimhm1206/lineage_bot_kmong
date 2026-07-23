@@ -43,7 +43,7 @@
           </button>
         </span>
         {% elif settlement_level == 'clan' %}
-        <span class="entity-state-box entity-state-{{ entity.state }}"><strong>{{ '완료' if entity.pending_count == 0 else '미완료 ' ~ entity.pending_count ~ '건' }}</strong><small>총 {{ entity.total_label }}</small></span>
+        <span class="entity-state-box entity-state-{{ entity.state }}"><strong>미분배 {{ entity.pending_count }}건</strong><small>총 {{ entity.total_label }}</small></span>
         {% else %}
         <span class="entity-history-slot"></span>
         {% endif %}

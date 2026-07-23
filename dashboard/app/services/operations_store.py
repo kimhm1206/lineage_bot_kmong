@@ -306,6 +306,57 @@ def _finish_entity(entity: dict[str, Any]) -> None:
     entity["state"] = "complete" if entity["pending_count"] == 0 else "pending"
 
 
+async def _active_fee_entities(
+    session: AsyncSession,
+    *,
+    guild_id: int,
+    scope_code: int,
+    alliance_id: int | None,
+    eyebrow: str,
+) -> dict[str, dict[str, Any]]:
+    alliance_clause = (
+        "AND r.alliance_id IS NULL"
+        if alliance_id is None
+        else "AND r.alliance_id = :alliance_id"
+    )
+    rows = (
+        await session.execute(
+            text(f"""
+                SELECT r.fee_rule_id, latest.rule_name
+                FROM settlement_fee_rules r
+                JOIN LATERAL (
+                    SELECT v.rule_name
+                    FROM settlement_fee_rule_versions v
+                    WHERE v.fee_rule_id = r.fee_rule_id
+                    ORDER BY v.valid_from DESC, v.fee_rule_version_id DESC
+                    LIMIT 1
+                ) latest ON TRUE
+                WHERE r.guild_id = :guild_id
+                  AND r.scope_code = :scope_code
+                  AND r.is_active IS TRUE
+                  {alliance_clause}
+                ORDER BY latest.rule_name, r.fee_rule_id
+            """),
+            {
+                "guild_id": guild_id,
+                "scope_code": scope_code,
+                "alliance_id": alliance_id,
+            },
+        )
+    ).mappings().all()
+    return {
+        f"fee:{int(row['fee_rule_id'])}": {
+            "key": f"fee:{int(row['fee_rule_id'])}",
+            "entity_type": "fee",
+            "target_id": int(row["fee_rule_id"]),
+            "name": row["rule_name"] or eyebrow,
+            "eyebrow": eyebrow,
+            "details": [],
+        }
+        for row in rows
+    }
+
+
 async def alliance_settlement_entities(
     session: AsyncSession,
     *,
@@ -328,6 +379,13 @@ async def alliance_settlement_entities(
             {"guild_id": guild_id},
         )
     ).mappings().all()
+    fee_entities = await _active_fee_entities(
+        session,
+        guild_id=guild_id,
+        scope_code=1,
+        alliance_id=None,
+        eyebrow="연합 수수료",
+    )
     rows = [
         dict(row)
         for row in (
@@ -355,7 +413,8 @@ async def alliance_settlement_entities(
             )
         ).mappings().all()
     ]
-    entities: dict[str, dict[str, Any]] = {
+    entities: dict[str, dict[str, Any]] = dict(fee_entities)
+    entities.update({
         f"alliance:{int(alliance['alliance_id'])}": {
             "key": f"alliance:{int(alliance['alliance_id'])}",
             "entity_type": "alliance",
@@ -365,7 +424,7 @@ async def alliance_settlement_entities(
             "details": [],
         }
         for alliance in mapped_alliances
-    }
+    })
     for row in rows:
         if int(row["object_code"]) == 1:
             key = f"alliance:{int(row['recipient_alliance_id'])}"
@@ -408,7 +467,7 @@ async def alliance_settlement_entities(
             if lowered in entity["name"].casefold()
             or any(lowered in detail["item_name"].casefold() for detail in entity["details"])
         ]
-    entity_rows.sort(key=lambda item: (item["entity_type"] == "fee", item["state"] == "idle", item["name"]))
+    entity_rows.sort(key=lambda item: (item["entity_type"] != "fee", item["state"] == "idle", item["name"]))
     pending_total = sum(entity["pending_amount"] for entity in entity_rows)
     return {
         "entities": entity_rows,
@@ -546,6 +605,13 @@ async def clan_settlement_entities(
     query: str,
 ) -> dict[str, Any]:
     period_clause = "" if period_days == 0 else "AND d.occurred_at >= EXTRACT(EPOCH FROM NOW() - (:period_days * INTERVAL '1 day'))::BIGINT"
+    entities = await _active_fee_entities(
+        session,
+        guild_id=guild_id,
+        scope_code=2,
+        alliance_id=alliance_id,
+        eyebrow="내부 수수료",
+    )
     rows = [
         dict(row)
         for row in (
@@ -575,7 +641,6 @@ async def clan_settlement_entities(
             )
         ).mappings().all()
     ]
-    entities: dict[str, dict[str, Any]] = {}
     for row in rows:
         if int(row["object_code"]) == 2:
             key = f"member:{int(row['recipient_user_id'])}"
@@ -609,6 +674,7 @@ async def clan_settlement_entities(
     entity_rows = list(entities.values())
     for entity in entity_rows:
         _finish_entity(entity)
+        entity["state"] = "pending" if entity["pending_count"] else "idle"
     if query:
         lowered = query.casefold()
         entity_rows = [
@@ -617,7 +683,7 @@ async def clan_settlement_entities(
             if lowered in entity["name"].casefold()
             or any(lowered in detail["item_name"].casefold() for detail in entity["details"])
         ]
-    entity_rows.sort(key=lambda item: (item["entity_type"] == "fee", item["name"]))
+    entity_rows.sort(key=lambda item: (item["entity_type"] != "fee", item["name"]))
     return {
         "entities": entity_rows,
         "summary_cards": [
