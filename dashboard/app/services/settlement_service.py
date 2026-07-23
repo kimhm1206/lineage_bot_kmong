@@ -140,6 +140,7 @@ async def _catalog_version(session: AsyncSession, item_id: int, guild_id: int) -
                 FROM items
                 WHERE item_id = :item_id
                   AND guild_id = :guild_id
+                  AND status_code = 1
             """),
             {"item_id": item_id, "guild_id": guild_id},
         )
@@ -180,6 +181,7 @@ async def _drop_item_snapshot(session: AsyncSession, item_id: int, guild_id: int
             FROM items
             WHERE item_id = :item_id
               AND guild_id = :guild_id
+              AND status_code = 1
         """),
         {"item_id": item_id, "guild_id": guild_id},
     )
@@ -1081,12 +1083,44 @@ async def create_item(
 ) -> OperationResult:
     name = _clean_name(item_name, label="아이템 이름")
     price = _positive_int(default_price, label="기본 원화 시세", allow_zero=True)
-    duplicate = await session.scalar(
-        text("SELECT 1 FROM items WHERE guild_id = :guild_id AND LOWER(item_name) = LOWER(:name)"),
-        {"guild_id": guild_id, "name": name},
-    )
-    if duplicate:
+    existing = (
+        await session.execute(
+            text("""
+                SELECT item_id, status_code
+                FROM items
+                WHERE guild_id = :guild_id
+                  AND LOWER(item_name) = LOWER(:name)
+                FOR UPDATE
+            """),
+            {"guild_id": guild_id, "name": name},
+        )
+    ).mappings().one_or_none()
+    if existing is not None and int(existing["status_code"]) == 1:
         raise SettlementError("같은 이름의 아이템이 이미 있습니다.")
+    if existing is not None:
+        item_id = int(existing["item_id"])
+        await session.execute(
+            text("""
+                UPDATE items
+                SET item_name = :name,
+                    default_price = :price,
+                    status_code = 1,
+                    updated_at = NOW()
+                WHERE item_id = :item_id
+                  AND guild_id = :guild_id
+            """),
+            {"guild_id": guild_id, "item_id": item_id, "name": name, "price": price},
+        )
+        await _catalog_version(session, item_id, guild_id)
+        await _audit(
+            session,
+            guild_id=guild_id,
+            action_code="item_create",
+            target_id=item_id,
+            item_id=item_id,
+            amount_value=price,
+        )
+        return OperationResult("아이템을 다시 사용하도록 복구했습니다.", (item_id,))
     item_id = int(
         await session.scalar(
             text("""
@@ -1126,7 +1160,9 @@ async def update_item(
         text("""
             UPDATE items
             SET item_name = :name, default_price = :price, updated_at = NOW()
-            WHERE item_id = :item_id AND guild_id = :guild_id
+            WHERE item_id = :item_id
+              AND guild_id = :guild_id
+              AND status_code = 1
         """),
         {"guild_id": guild_id, "item_id": item_id, "name": name, "price": price},
     )
@@ -1138,43 +1174,21 @@ async def update_item(
 
 
 async def delete_item(session: AsyncSession, *, guild_id: int, item_id: int) -> OperationResult:
-    item = (
-        await session.execute(
-            text("""
-                SELECT item_id
-                FROM items
-                WHERE item_id = :item_id AND guild_id = :guild_id
-                FOR UPDATE
-            """),
-            {"item_id": item_id, "guild_id": guild_id},
-        )
-    ).scalar_one_or_none()
-    if item is None:
-        raise SettlementError("아이템을 찾을 수 없습니다.")
-    used_drop_count = int(
-        await session.scalar(
-            text("""
-                SELECT COUNT(*)
-                FROM catalog_item_versions v
-                JOIN settlement_drops d ON d.item_version_id = v.item_version_id
-                WHERE v.item_id = :item_id
-            """),
-            {"item_id": item_id},
-        )
-        or 0
-    )
-    if used_drop_count:
-        raise SettlementError("과거 드랍 기록에서 사용된 아이템은 삭제할 수 없습니다.")
-    await session.execute(
-        text("DELETE FROM catalog_item_versions WHERE item_id = :item_id"),
-        {"item_id": item_id},
-    )
-    await session.execute(
-        text("DELETE FROM items WHERE item_id = :item_id AND guild_id = :guild_id"),
+    updated = await session.execute(
+        text("""
+            UPDATE items
+            SET status_code = 0,
+                updated_at = NOW()
+            WHERE item_id = :item_id
+              AND guild_id = :guild_id
+              AND status_code = 1
+        """),
         {"item_id": item_id, "guild_id": guild_id},
     )
+    if updated.rowcount == 0:
+        raise SettlementError("아이템을 찾을 수 없습니다.")
     await _audit(session, guild_id=guild_id, action_code="item_delete", target_id=item_id, item_id=item_id)
-    return OperationResult("아이템을 삭제했습니다.", (item_id,))
+    return OperationResult("아이템 목록에서 삭제했습니다.", (item_id,))
 
 
 async def create_fee_rule(

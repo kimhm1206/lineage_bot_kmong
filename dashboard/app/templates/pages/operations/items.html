@@ -25,13 +25,9 @@
           <div class="item-list-price"><strong>{{ item.price_label }}</strong><small>등록 원화</small></div>
           <div class="item-list-actions">
             <button class="icon-button" type="button" title="수정" aria-label="{{ item.item_name }} 수정" aria-expanded="false" data-item-edit-toggle>{{ icon("settings") }}</button>
-            {% if item.is_used %}
-            <button class="icon-button danger-button is-disabled" type="button" title="과거 드랍에서 사용되어 삭제할 수 없습니다" aria-label="삭제 불가" disabled>{{ icon("trash") }}</button>
-            {% else %}
-            <form data-async-form data-confirm="{{ item.item_name }} 아이템을 삭제하시겠습니까?" method="post" action="/api/items/{{ item.item_id }}/delete">
+            <form data-async-form data-confirm="{{ item.item_name }} 아이템을 목록에서 삭제하시겠습니까? 과거 드랍 기록은 유지됩니다." method="post" action="/api/items/{{ item.item_id }}/delete">
               <input type="hidden" name="guild_id" value="{{ guild_id }}"><button class="icon-button danger-button" type="submit" title="삭제" aria-label="{{ item.item_name }} 삭제">{{ icon("trash") }}</button>
             </form>
-            {% endif %}
           </div>
         </div>
         <form class="item-row-editor" data-item-editor data-async-form method="post" action="/api/items/{{ item.item_id }}" hidden>

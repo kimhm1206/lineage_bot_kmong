@@ -595,6 +595,49 @@ async def apply_local_schema_cleanup() -> bool:
                 """)
             )
             changed = True
+
+        item_status_code_applied = await connection.scalar(
+            text("SELECT 1 FROM schema_migrations WHERE version = 12")
+        )
+        if not item_status_code_applied:
+            await connection.execute(
+                text("""
+                    ALTER TABLE items
+                    ADD COLUMN IF NOT EXISTS status_code SMALLINT NOT NULL DEFAULT 1
+                """)
+            )
+            await connection.execute(
+                text("""
+                    DO $$
+                    BEGIN
+                        IF NOT EXISTS (
+                            SELECT 1
+                            FROM pg_constraint
+                            WHERE conname = 'chk_items_status_code'
+                              AND conrelid = 'items'::regclass
+                        ) THEN
+                            ALTER TABLE items
+                            ADD CONSTRAINT chk_items_status_code
+                            CHECK (status_code IN (0, 1));
+                        END IF;
+                    END
+                    $$
+                """)
+            )
+            await connection.execute(text("DROP INDEX IF EXISTS idx_items_guild_name"))
+            await connection.execute(
+                text("""
+                    CREATE INDEX IF NOT EXISTS idx_items_guild_status_name
+                    ON items (guild_id, status_code, item_name)
+                """)
+            )
+            await connection.execute(
+                text("""
+                    INSERT INTO schema_migrations(version, applied_at)
+                    VALUES (12, EXTRACT(EPOCH FROM NOW())::BIGINT)
+                """)
+            )
+            changed = True
     return changed
 
 

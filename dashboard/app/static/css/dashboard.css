@@ -5005,7 +5005,6 @@ body.modal-open {
 
 .item-list-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
 .item-list-actions form { margin: 0; }
-.item-list-actions .icon-button.is-disabled { opacity: .28; cursor: not-allowed; }
 
 .item-row-editor {
   display: grid;

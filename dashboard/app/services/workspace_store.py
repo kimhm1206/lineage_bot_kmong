@@ -754,7 +754,7 @@ async def items_page(
 ) -> dict[str, Any]:
     search = " AND i.item_name ILIKE :query" if query else ""
     params = {"guild_id": guild_id, "query": f"%{query}%"}
-    scope = "WHERE i.guild_id = :guild_id"
+    scope = "WHERE i.guild_id = :guild_id AND i.status_code = 1"
     rows, pagination = await _fetch_page(
         session,
         count_sql=f"SELECT COUNT(*) FROM items i {scope} {search}",
