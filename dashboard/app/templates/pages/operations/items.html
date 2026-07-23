@@ -8,6 +8,7 @@
   {{ toolbar(guilds, guild_id, query, search_label='아이템 검색', search_placeholder='아이템 이름 검색', client_search=True) }}
   <section class="ops-management-panel">
     <header class="ops-section-heading item-management-heading"><div><h2>아이템 원화 시세 관리</h2><p>목록은 간결하게 확인하고 필요한 항목만 펼쳐 수정합니다.</p></div><span data-client-search-count data-count-suffix="개">{{ items|length }}개</span></header>
+    {% if can_manage_items %}
     <form class="item-quick-create" data-async-form method="post" action="/api/items">
       <input type="hidden" name="guild_id" value="{{ guild_id }}">
       <div class="item-create-copy"><strong>새 아이템</strong><small>이름과 원화 시세를 입력해 바로 추가합니다.</small></div>
@@ -15,27 +16,32 @@
       <label class="item-create-field"><span>원화 시세</span><span class="item-price-control"><input type="number" name="default_price" min="0" step="1" required placeholder="0"><em>원</em></span></label>
       <button class="primary-button" type="submit">{{ icon("plus-square") }} 추가</button>
     </form>
+    {% endif %}
     {% if items %}
     <div class="item-management-list">
-      <div class="item-list-header"><span>아이템</span><span>원화 시세</span><span>관리</span></div>
+      <div class="item-list-header{% if not can_manage_items %} is-readonly{% endif %}"><span>아이템</span><span>원화 시세</span>{% if can_manage_items %}<span>관리</span>{% endif %}</div>
       {% for item in items %}
       <article class="item-list-row" data-item-row data-client-search-item data-search-text="{{ item.item_name }}">
-        <div class="item-list-summary">
+        <div class="item-list-summary{% if not can_manage_items %} is-readonly{% endif %}">
           <div class="item-list-identity"><span class="item-list-icon">{{ icon("tag") }}</span><div><strong>{{ item.item_name }}</strong><small>최근 수정 {{ item.updated_at_label }}</small></div></div>
           <div class="item-list-price"><strong>{{ item.price_label }}</strong><small>등록 원화</small></div>
+          {% if can_manage_items %}
           <div class="item-list-actions">
             <button class="icon-button" type="button" title="수정" aria-label="{{ item.item_name }} 수정" aria-expanded="false" data-item-edit-toggle>{{ icon("settings") }}</button>
             <form data-async-form data-confirm="{{ item.item_name }} 아이템을 목록에서 삭제하시겠습니까? 과거 드랍 기록은 유지됩니다." method="post" action="/api/items/{{ item.item_id }}/delete">
               <input type="hidden" name="guild_id" value="{{ guild_id }}"><button class="icon-button danger-button" type="submit" title="삭제" aria-label="{{ item.item_name }} 삭제">{{ icon("trash") }}</button>
             </form>
           </div>
+          {% endif %}
         </div>
+        {% if can_manage_items %}
         <form class="item-row-editor" data-item-editor data-async-form method="post" action="/api/items/{{ item.item_id }}" hidden>
           <input type="hidden" name="guild_id" value="{{ guild_id }}">
           <label><span>아이템 이름</span><input type="text" name="item_name" value="{{ item.item_name }}" maxlength="100" required></label>
           <label><span>원화 시세</span><span class="item-price-control"><input type="number" name="default_price" value="{{ item.default_price or 0 }}" min="0" step="1" required><em>원</em></span></label>
           <div class="item-editor-actions"><button class="secondary-button" type="button" data-item-edit-cancel>취소</button><button class="primary-button" type="submit">{{ icon("save") }} 저장</button></div>
         </form>
+        {% endif %}
       </article>
       {% endfor %}
     </div>

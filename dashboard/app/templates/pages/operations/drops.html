@@ -11,7 +11,7 @@
     {'value': 'pending', 'label': '판매 대기'},
     {'value': 'sold', 'label': '판매 완료'}
   ] %}
-  {{ toolbar(guilds, guild_id, query, period_options, status_options=status_options, selected_status=selected_status, primary_label='드랍 등록', primary_modal='drop-create-modal', search_label='드랍 검색', search_placeholder='아이템 또는 출석 회차 검색') }}
+  {{ toolbar(guilds, guild_id, query, period_options, status_options=status_options, selected_status=selected_status, primary_label='드랍 등록' if can_manage_drops else '', primary_modal='drop-create-modal', search_label='드랍 검색', search_placeholder='아이템 또는 출석 회차 검색') }}
   {{ summary(summary_cards) }}
 
   <section class="ops-section-heading">
@@ -23,7 +23,7 @@
   <section class="drop-board">
     {% for drop in rows %}
     <article class="drop-record drop-record-{{ drop.sale_tone }}" data-drop-id="{{ drop.drop_id }}">
-      <div class="drop-record-main">
+      <div class="drop-record-main{% if not can_manage_drops %} is-readonly{% endif %}">
         <div class="drop-item-identity">
           <span class="drop-number">DROP #{{ drop.drop_id }}</span>
           <h3>{{ drop.item_name }}</h3>
@@ -39,6 +39,7 @@
           <span class="ops-status ops-status-{{ drop.sale_tone }}">{{ drop.sale_label }}</span>
           {% if drop.sale_status == 1 %}<small>{{ drop.buyer_alliance_name }}{% if drop.buyer_user_name %} · {{ drop.buyer_user_name }}{% endif %}</small>{% else %}<small>구매 혈맹과 아데나 시세 미확정</small>{% endif %}
         </div>
+        {% if can_manage_drops %}
         <div class="drop-actions">
           {% if drop.sale_status == 0 %}
           <button class="primary-button" type="button" data-sale-open
@@ -56,6 +57,7 @@
             <input type="hidden" name="guild_id" value="{{ guild_id }}"><button class="icon-button danger-button" type="submit" title="삭제">{{ icon("trash") }}</button>
           </form>
         </div>
+        {% endif %}
       </div>
       <details class="drop-details" data-detail-key="drop:{{ drop.drop_id }}">
         <summary><span>참여 혈맹과 분배 제외 확인</span>{{ icon("chevron-right") }}</summary>
@@ -77,6 +79,7 @@
   {% endif %}
 </div>
 
+{% if can_manage_drops %}
 {% call modal('drop-create-modal', '새 드랍 등록', '선택한 아이템의 현재 원화 시세가 이 드랍에 고정 저장됩니다.') %}
 <form class="ops-form" data-async-form method="post" action="/api/drops">
   <input type="hidden" name="guild_id" value="{{ guild_id }}">
@@ -115,4 +118,5 @@
 </form>
 {% endcall %}
 <script id="drop-buyer-users-data" type="application/json">{{ buyer_users | tojson }}</script>
+{% endif %}
 {% endblock %}

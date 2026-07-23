@@ -981,6 +981,10 @@ async def treasury_page(
     query: str,
     page: int,
     include_distribution_users: bool = False,
+    ledger_date: str = "",
+    direction_filter: int = 0,
+    category_filter_active: bool = False,
+    category_ids: Sequence[int] | None = None,
 ) -> dict[str, Any]:
     if account_scope_code not in {1, 2}:
         raise ValueError("지원하지 않는 가계부 범위입니다.")
@@ -989,6 +993,31 @@ async def treasury_page(
 
     period = _period_clause("e.occurred_at", period_days, unix=True)
     search = " AND (COALESCE(c.category_name, '') ILIKE :query OR COALESCE(e.memo, '') ILIKE :query)" if query else ""
+    date_filter = (
+        " AND DATE(TO_TIMESTAMP(e.occurred_at) AT TIME ZONE 'Asia/Seoul') = TO_DATE(:ledger_date, 'YYYY-MM-DD')"
+        if ledger_date
+        else ""
+    )
+    normalized_direction = direction_filter if direction_filter in {-1, 1} else 0
+    direction_clause = " AND e.direction = :direction_filter" if normalized_direction else ""
+    normalized_category_ids = sorted(
+        {
+            _int(category_id)
+            for category_id in (category_ids or [])
+            if _int(category_id) > 0
+        }
+    )
+    category_params = {
+        f"category_id_{index}": category_id
+        for index, category_id in enumerate(normalized_category_ids)
+    }
+    category_clause = (
+        " AND e.treasury_category_id IN ("
+        + ", ".join(f":{name}" for name in category_params)
+        + ")"
+        if category_params
+        else (" AND FALSE" if category_filter_active else "")
+    )
     scope_filter = (
         "a.account_scope_code = 1 AND a.alliance_id IS NULL"
         if account_scope_code == 1
@@ -1000,13 +1029,17 @@ async def treasury_page(
         "account_scope_code": account_scope_code,
         "period_days": period_days,
         "query": f"%{query}%",
+        "ledger_date": ledger_date,
+        "direction_filter": normalized_direction,
+        **category_params,
     }
     from_sql = f"""
         FROM treasury_entries e
         JOIN treasury_accounts a ON a.treasury_account_id = e.treasury_account_id
         LEFT JOIN treasury_categories c ON c.treasury_category_id = e.treasury_category_id
         LEFT JOIN treasury_source_types st ON st.source_type_id = e.source_type_id
-        WHERE a.guild_id = :guild_id AND {scope_filter} {period} {search}
+        WHERE a.guild_id = :guild_id AND {scope_filter}
+              {period} {search} {date_filter} {direction_clause} {category_clause}
     """
     rows, pagination = await _fetch_page(
         session,
@@ -1230,9 +1263,9 @@ async def treasury_page(
             {"label": "지급 대기", "value": _money(pending_distribution_amount), "meta": "공금 분배 미지급액"},
         ],
         "columns": [
-            {"key": "occurred_at_label", "label": "시각"},
-            {"key": "direction_label", "label": "구분", "status_key": "direction_tone"},
-            {"key": "category_name", "label": "항목", "emphasis": True},
+            {"key": "occurred_at_label", "label": "시각", "filter_kind": "date"},
+            {"key": "direction_label", "label": "구분", "status_key": "direction_tone", "filter_kind": "direction"},
+            {"key": "category_name", "label": "항목", "emphasis": True, "filter_kind": "category"},
             {"key": "memo", "label": "내용"},
             {"key": "amount_label", "label": "금액", "numeric": True},
             {"key": "balance_label", "label": "잔액", "numeric": True},
@@ -1246,6 +1279,22 @@ async def treasury_page(
         "treasury_distribution_users": eligible_users,
         "treasury_distribution_alliances": eligible_alliances,
         "treasury_distributions": distribution_rows,
+        "treasury_filters": {
+            "ledger_date": ledger_date,
+            "direction": normalized_direction,
+            "category_ids": normalized_category_ids,
+            "category_active": category_filter_active,
+            "has_filters": bool(
+                ledger_date
+                or normalized_direction
+                or category_filter_active
+            ),
+        },
+        "treasury_filter_categories": [
+            category
+            for direction_categories in categories.values()
+            for category in direction_categories
+        ],
     }
 
 

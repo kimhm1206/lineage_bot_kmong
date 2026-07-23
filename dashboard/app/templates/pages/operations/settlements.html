@@ -13,14 +13,6 @@
       <h2>{{ '혈맹별 정산' if settlement_level == 'alliance' else '인원별 정산' }}</h2>
       <p>{{ '연합 수수료도 혈맹과 동일한 정산 카드로 처리합니다.' if settlement_level == 'alliance' else '내부 수수료도 한 명의 지급 대상처럼 동일하게 처리합니다.' }}</p>
     </div>
-    {% if settlement_level == 'clan' %}
-    <button class="secondary-button settlement-history-open" type="button"
-            data-clan-history-open data-guild-id="{{ guild_id }}"
-            data-alliance-id="{{ alliance_id }}" data-period="{{ period }}">
-      {{ icon("clipboard-list") }}
-      기록 확인
-    </button>
-    {% endif %}
   </section>
 
   {% if entities %}
@@ -48,6 +40,18 @@
         <span class="entity-history-slot"></span>
         {% endif %}
         <span class="entity-summary-actions">
+          {% if settlement_level == 'clan' and entity.entity_type == 'member' %}
+          <button class="secondary-button" type="button"
+                  data-clan-history-open
+                  data-guild-id="{{ guild_id }}"
+                  data-alliance-id="{{ alliance_id }}"
+                  data-user-id="{{ entity.target_id }}"
+                  data-user-name="{{ entity.name }}"
+                  data-period="{{ period }}">
+            {{ icon("clipboard-list") }}
+            기록 확인
+          </button>
+          {% endif %}
           {% if can_manage_settlement and entity.pending_count > 0 %}
           <form data-async-form method="post" action="/api/payout-groups/{{ entity.entity_type }}/{{ entity.target_id }}/status">
             <input type="hidden" name="guild_id" value="{{ guild_id }}"><input type="hidden" name="alliance_id" value="{{ alliance_id if settlement_level == 'clan' else '' }}"><input type="hidden" name="status_code" value="1">
@@ -140,9 +144,13 @@
 </div>
 {% endcall %}
 {% elif settlement_level == 'clan' %}
-{% call modal('clan-settlement-history-modal', '혈맹원 분배 과거 기록', '완료 및 혈비 귀속 처리된 내역만 표시합니다.') %}
+{% call modal('clan-settlement-history-modal', '혈맹원 분배 기록', '선택한 혈맹원의 완료 및 혈비 귀속 내역만 표시합니다.') %}
 <div class="settlement-history-modal" data-clan-history-modal
      data-guild-id="{{ guild_id }}" data-alliance-id="{{ alliance_id }}" data-period="{{ period }}">
+  <div class="settlement-history-person">
+    <span>혈맹원</span>
+    <strong data-history-user-name>-</strong>
+  </div>
   <section class="settlement-history-summary">
     <article><span>완료</span><strong data-history-complete-count>0건</strong></article>
     <article><span>혈비 귀속</span><strong data-history-forfeited-count>0건</strong></article>
@@ -154,10 +162,6 @@
       <button type="button" data-history-status="complete">완료</button>
       <button type="button" data-history-status="forfeited">귀속</button>
     </div>
-    <label class="settlement-history-search">
-      {{ icon("search") }}
-      <input type="search" placeholder="유저, 수수료 또는 아이템 검색" data-history-search>
-    </label>
   </div>
   <div class="settlement-history-loading" data-history-loading>과거 기록을 불러오는 중입니다.</div>
   <div class="settlement-history-list" data-history-list hidden></div>

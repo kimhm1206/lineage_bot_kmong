@@ -18,8 +18,8 @@ from dashboard.app.security import (
     current_access_role,
     current_discord_user_id,
     current_guild_id,
-    current_user_alliance_id,
     require_alliance_access,
+    require_selected_guild,
     restrict_workspace_alliance,
 )
 from dashboard.app.services import home_store, operations_store, settlement_service, workspace_store
@@ -163,7 +163,7 @@ async def drops_page(
     page: int = 1,
     session: AsyncSession = Depends(get_session),
 ):
-    _require_alliance_management(request)
+    can_manage = can_manage_alliance_operations(request)
     context, workspace = await _context(
         request,
         session,
@@ -197,6 +197,7 @@ async def drops_page(
             "period": selected_period,
             "period_options": workspace_store.filter_options(workspace_store.PERIOD_OPTIONS, selected_period),
             "query": _query(q),
+            "can_manage_drops": can_manage,
         }
     )
     return templates.TemplateResponse(request, "pages/operations/drops.html", context)
@@ -210,7 +211,7 @@ async def alliance_settlements_page(
     q: str = "",
     session: AsyncSession = Depends(get_session),
 ):
-    _require_alliance_management(request)
+    can_manage = can_manage_alliance_operations(request)
     context, workspace = await _context(
         request,
         session,
@@ -239,7 +240,7 @@ async def alliance_settlements_page(
             "period_options": workspace_store.filter_options(workspace_store.PERIOD_OPTIONS, selected_period),
             "query": _query(q),
             "settlement_level": "alliance",
-            "can_manage_settlement": True,
+            "can_manage_settlement": can_manage,
         }
     )
     return templates.TemplateResponse(request, "pages/operations/settlements.html", context)
@@ -297,7 +298,7 @@ async def items_page(
     q: str = "",
     session: AsyncSession = Depends(get_session),
 ):
-    _require_alliance_management(request)
+    can_manage = can_manage_alliance_operations(request)
     context, workspace = await _context(
         request,
         session,
@@ -314,7 +315,7 @@ async def items_page(
         else {"items": [], "summary_cards": []}
     )
     context.update(page_data)
-    context["query"] = _query(q)
+    context.update({"query": _query(q), "can_manage_items": can_manage})
     return templates.TemplateResponse(request, "pages/operations/items.html", context)
 
 
@@ -412,18 +413,13 @@ async def bidding_page(
         page_description="혈맹별 아이템 구매 횟수와 날짜별 구매 기록을 관리합니다.",
         page_badge="ALLIANCE MANAGER",
     )
-    can_select = bool(context["can_select_alliance"])
-    visible_alliance_id = (
-        None
-        if can_select
-        else await current_user_alliance_id(request, session, workspace["guild_id"])
-    )
+    can_manage = can_manage_alliance_operations(request)
     page_data = (
         await operations_store.bid_management_page(
             session,
             guild_id=int(workspace["guild_id"]),
             query="",
-            visible_alliance_id=visible_alliance_id,
+            visible_alliance_id=None,
         )
         if workspace["guild_id"] is not None
         else {"item_rows": [], "alliances": [], "summary_cards": []}
@@ -432,7 +428,7 @@ async def bidding_page(
     context.update(
         {
             "query": _query(q),
-            "can_manage_bidding": can_select or can_manage_alliance_operations(request),
+            "can_manage_bidding": can_manage,
         }
     )
     return templates.TemplateResponse(request, "pages/operations/bidding.html", context)
@@ -794,61 +790,16 @@ async def bid_purchase_history(
     guild_id: int,
     session: AsyncSession = Depends(get_session),
 ):
-    can_select = await can_select_alliances(request, session, guild_id)
-    visible_alliance_id = (
-        None
-        if can_select
-        else await current_user_alliance_id(request, session, guild_id)
-    )
-    if visible_alliance_id is None and not can_select:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="본인 혈맹의 구매 기록만 확인할 수 있습니다.",
-        )
+    require_selected_guild(request, guild_id)
     return {
         "ok": True,
         **await operations_store.bid_item_purchase_history(
             session,
             guild_id=guild_id,
             item_id=item_id,
-            visible_alliance_id=visible_alliance_id,
+            visible_alliance_id=None,
         ),
     }
-
-
-@router.get("/api/fee-rules/{fee_rule_id}/history")
-async def fee_rule_history(
-    fee_rule_id: int,
-    request: Request,
-    guild_id: int,
-    page: int = 1,
-    session: AsyncSession = Depends(get_session),
-):
-    rule_scope = await settlement_service.fee_rule_access_scope(
-        session,
-        guild_id=guild_id,
-        fee_rule_id=fee_rule_id,
-    )
-    if rule_scope is None:
-        raise HTTPException(status_code=404, detail="수수료 규칙을 찾을 수 없습니다.")
-    if rule_scope["scope_code"] == 1:
-        _require_alliance_management(request)
-    else:
-        await require_alliance_access(
-            request,
-            session,
-            guild_id=guild_id,
-            alliance_id=rule_scope["alliance_id"],
-        )
-    history = await operations_store.fee_rule_history_page(
-        session,
-        guild_id=guild_id,
-        fee_rule_id=fee_rule_id,
-        page=max(page, 1),
-    )
-    if history is None:
-        raise HTTPException(status_code=404, detail="수수료 규칙을 찾을 수 없습니다.")
-    return {"ok": True, **history}
 
 
 @router.get("/api/clan-settlement-history")
@@ -856,8 +807,8 @@ async def clan_settlement_history(
     request: Request,
     guild_id: int,
     alliance_id: int,
+    user_id: int,
     period: int | None = None,
-    q: str = "",
     history_status: str = "all",
     page: int = 1,
     session: AsyncSession = Depends(get_session),
@@ -875,8 +826,8 @@ async def clan_settlement_history(
             session,
             guild_id=guild_id,
             alliance_id=alliance_id,
+            user_id=user_id,
             period_days=workspace_store.normalize_period(period),
-            query=_query(q),
             status_filter=selected_status,
             page=max(page, 1),
         ),
@@ -891,19 +842,18 @@ async def alliance_settlement_history(
     page: int = 1,
     session: AsyncSession = Depends(get_session),
 ):
+    require_selected_guild(request, guild_id)
+    page_data = await operations_store.alliance_settlement_history_page(
+        session,
+        guild_id=guild_id,
+        alliance_id=alliance_id,
+        page=max(page, 1),
+    )
     if not can_manage_alliance_operations(request):
-        await require_alliance_access(
-            request,
-            session,
-            guild_id=guild_id,
-            alliance_id=alliance_id,
-        )
+        for record in page_data["history"]:
+            record["can_cancel"] = False
+            record["progress_label"] = "완료 기록"
     return {
         "ok": True,
-        **await operations_store.alliance_settlement_history_page(
-            session,
-            guild_id=guild_id,
-            alliance_id=alliance_id,
-            page=max(page, 1),
-        ),
+        **page_data,
     }

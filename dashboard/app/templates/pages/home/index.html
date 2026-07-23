@@ -8,7 +8,7 @@
   <div class="panel-header panel-header-inline">
     <div>
       <span class="panel-kicker">Personal overview</span>
-      <h2>{{ dashboard_user.user_name if dashboard_user else '내 현황' }}</h2>
+      <h2>{{ dashboard_user.user_name if dashboard_user else '홈' }}</h2>
     </div>
     <div class="home-personal-actions">
       <a class="text-button" href="/my/distributions">
@@ -28,58 +28,26 @@
   </div>
 </section>
 
-<section class="section-heading">
-  <div>
-    <span class="panel-kicker">User-assigned workspaces</span>
-    <h2>담당 업무 선택</h2>
-    <p>연합 관리자와 각혈 관리자는 상하 관계 없이 각자의 업무 공간을 운영합니다.</p>
-  </div>
-</section>
-
-<section class="workspace-grid">
-  {% for workspace in workspaces %}
-  <article class="workspace-card workspace-card-{{ workspace.tone }}" id="{{ workspace.id }}">
-    <div class="workspace-card-head">
-      <div class="workspace-icon">
-        {{ icon("network" if workspace.tone == "alliance" else "landmark") }}
-      </div>
-      <span class="workspace-role">{{ workspace.role }}</span>
-    </div>
-    <span class="workspace-eyebrow">{{ workspace.eyebrow }}</span>
-    <h3>{{ workspace.title }}</h3>
-    <p>{{ workspace.description }}</p>
-
-    <div class="workspace-flow" aria-label="{{ workspace.title }} 업무 흐름">
-      {% for step in workspace.flow %}
-      <span>{{ step }}</span>
-      {% if not loop.last %}{{ icon("chevron-right") }}{% endif %}
+<section class="home-quick-navigation" aria-label="메뉴 바로가기">
+  {% for group in navigation %}
+  {% set shortcuts = group.nav_items | rejectattr('id', 'equalto', 'home.personal') | list %}
+  {% if shortcuts %}
+  <div class="home-quick-group">
+    <header>
+      <span class="home-quick-group-icon">{{ icon(group.icon) }}</span>
+      <strong>{{ group.label }}</strong>
+    </header>
+    <div class="home-quick-grid">
+      {% for item in shortcuts %}
+      <a class="home-quick-link" href="{{ item.href }}">
+        <span class="home-quick-link-icon">{{ icon(item.icon) }}</span>
+        <span><strong>{{ item.label }}</strong><small>{{ item.description }}</small></span>
+        {{ icon("chevron-right") }}
+      </a>
       {% endfor %}
     </div>
-
-    <div class="workspace-links">
-      {% for item in workspace.links %}<span>{{ item }}</span>{% endfor %}
-    </div>
-
-    <a class="workspace-primary" href="{{ workspace.href }}">
-      {{ workspace.primary }}
-      {{ icon("chevron-right") }}
-    </a>
-  </article>
-  {% endfor %}
-</section>
-
-<section class="common-grid">
-  {% for module in common_modules %}
-  <article class="common-card">
-    <span class="common-icon">{{ icon(module.icon) }}</span>
-    <div>
-      <h3>{{ module.title }}</h3>
-      <p>{{ module.description }}</p>
-    </div>
-    <a class="icon-button" href="{{ module.href }}" aria-label="{{ module.title }} 이동">
-      {{ icon("chevron-right") }}
-    </a>
-  </article>
+  </div>
+  {% endif %}
   {% endfor %}
 </section>
 {% endblock %}

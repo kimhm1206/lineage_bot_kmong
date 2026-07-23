@@ -29,7 +29,7 @@ NAV_GROUPS: tuple[NavGroup, ...] = (
         label="홈",
         icon="layout-dashboard",
         items=(
-            NavItem("home.personal", "내 현황", "/", "user", "분배금과 최근 활동"),
+            NavItem("home.personal", "홈", "/", "layout-dashboard", "분배금과 최근 활동"),
             NavItem("home.distributions", "내 분배금", "/my/distributions", "wallet", "수령과 귀속 상태"),
         ),
         description="나의 분배금과 최근 활동",
@@ -115,11 +115,15 @@ def get_navigation(
     for group in NAV_GROUPS:
         if group.developer_only and access_role != "developer":
             continue
-        if group.id == "alliance-operations" and not can_manage_alliance:
-            continue
         items = []
         group_is_active = False
         for item in group.items:
+            if (
+                group.id == "alliance-operations"
+                and item.id == "alliance.settings"
+                and not can_manage_alliance
+            ):
+                continue
             if (
                 group.id == "clan-operations"
                 and item.id == "clan.staff"

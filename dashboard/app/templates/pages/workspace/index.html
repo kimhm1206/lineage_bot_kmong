@@ -8,6 +8,12 @@
 {% if error %}<div class="notice-banner notice-error">{{ icon("alert") }}<span>{{ error }}</span></div>{% endif %}
 
 <form class="workspace-filter-bar" method="get" action="{{ request.url.path }}">
+  {% if treasury_filters %}
+  {% if treasury_filters.ledger_date %}<input type="hidden" name="ledger_date" value="{{ treasury_filters.ledger_date }}">{% endif %}
+  {% if treasury_filters.direction %}<input type="hidden" name="treasury_direction" value="{{ treasury_filters.direction }}">{% endif %}
+  {% if treasury_filters.category_active %}<input type="hidden" name="treasury_category_active" value="1">{% endif %}
+  {% for category_id in treasury_filters.category_ids %}<input type="hidden" name="treasury_category_id" value="{{ category_id }}">{% endfor %}
+  {% endif %}
   {% if needs_alliance and can_select_alliance %}
   <label class="workspace-filter-field">
     <span>혈맹</span>
@@ -278,15 +284,28 @@
     <span class="workspace-result-count">{{ result_label }}</span>
   </div>
 
-  {% if rows and columns %}
+  {% if columns %}
   <div class="workspace-table-wrap">
     <table class="workspace-table">
       <thead>
         <tr>
-          {% for column in columns %}<th{% if column.numeric %} class="is-numeric"{% endif %}>{{ column.label }}</th>{% endfor %}
+          {% for column in columns %}
+          <th{% if column.numeric %} class="is-numeric"{% endif %}>
+            {% if treasury_filters and column.filter_kind %}
+            <button class="treasury-column-filter-trigger{% if (column.filter_kind == 'date' and treasury_filters.ledger_date) or (column.filter_kind == 'direction' and treasury_filters.direction) or (column.filter_kind == 'category' and treasury_filters.category_active) %} is-active{% endif %}"
+                    type="button" popovertarget="treasury-filter-{{ column.filter_kind }}">
+              {{ column.label }}
+              {{ icon("chevron-down") }}
+            </button>
+            {% else %}
+            {{ column.label }}
+            {% endif %}
+          </th>
+          {% endfor %}
         </tr>
       </thead>
       <tbody>
+        {% if rows %}
         {% for row in rows %}
         <tr>
           {% for column in columns %}
@@ -302,9 +321,82 @@
           {% endfor %}
         </tr>
         {% endfor %}
+        {% else %}
+        <tr>
+          <td class="workspace-table-empty" colspan="{{ columns|length }}">
+            선택한 조건에 해당하는 기록이 없습니다.
+          </td>
+        </tr>
+        {% endif %}
       </tbody>
     </table>
   </div>
+
+  {% if treasury_filters %}
+  <div class="treasury-column-popover" id="treasury-filter-date" popover>
+    <form method="get" action="{{ request.url.path }}">
+      <header><strong>시각 필터</strong><small>선택한 날짜의 기록만 표시합니다.</small></header>
+      <input type="hidden" name="period" value="{{ period }}">
+      {% if query %}<input type="hidden" name="q" value="{{ query }}">{% endif %}
+      {% if alliance_id %}<input type="hidden" name="alliance_id" value="{{ alliance_id }}">{% endif %}
+      {% if treasury_filters.direction %}<input type="hidden" name="treasury_direction" value="{{ treasury_filters.direction }}">{% endif %}
+      {% if treasury_filters.category_active %}<input type="hidden" name="treasury_category_active" value="1">{% endif %}
+      {% for category_id in treasury_filters.category_ids %}<input type="hidden" name="treasury_category_id" value="{{ category_id }}">{% endfor %}
+      <label><span>날짜</span><input type="date" name="ledger_date" value="{{ treasury_filters.ledger_date }}"></label>
+      <footer>
+        <a class="text-button" href="{{ request.url.remove_query_params('ledger_date').remove_query_params('page') }}">날짜 해제</a>
+        <button class="primary-button" type="submit">적용</button>
+      </footer>
+    </form>
+  </div>
+
+  <div class="treasury-column-popover" id="treasury-filter-direction" popover>
+    <form method="get" action="{{ request.url.path }}">
+      <header><strong>구분 필터</strong><small>입금 또는 출금 내역을 선택합니다.</small></header>
+      <input type="hidden" name="period" value="{{ period }}">
+      {% if query %}<input type="hidden" name="q" value="{{ query }}">{% endif %}
+      {% if alliance_id %}<input type="hidden" name="alliance_id" value="{{ alliance_id }}">{% endif %}
+      {% if treasury_filters.ledger_date %}<input type="hidden" name="ledger_date" value="{{ treasury_filters.ledger_date }}">{% endif %}
+      {% if treasury_filters.category_active %}<input type="hidden" name="treasury_category_active" value="1">{% endif %}
+      {% for category_id in treasury_filters.category_ids %}<input type="hidden" name="treasury_category_id" value="{{ category_id }}">{% endfor %}
+      <div class="treasury-filter-options">
+        <button class="{% if not treasury_filters.direction %}is-selected{% endif %}" type="submit" name="treasury_direction" value="0">전체</button>
+        <button class="{% if treasury_filters.direction == 1 %}is-selected{% endif %}" type="submit" name="treasury_direction" value="1">입금</button>
+        <button class="{% if treasury_filters.direction == -1 %}is-selected{% endif %}" type="submit" name="treasury_direction" value="-1">출금</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="treasury-column-popover treasury-category-popover" id="treasury-filter-category" popover>
+    <form method="get" action="{{ request.url.path }}" data-treasury-category-filter>
+      <header><strong>항목 필터</strong><small>확인할 가계부 항목을 선택합니다.</small></header>
+      <input type="hidden" name="period" value="{{ period }}">
+      {% if query %}<input type="hidden" name="q" value="{{ query }}">{% endif %}
+      {% if alliance_id %}<input type="hidden" name="alliance_id" value="{{ alliance_id }}">{% endif %}
+      {% if treasury_filters.ledger_date %}<input type="hidden" name="ledger_date" value="{{ treasury_filters.ledger_date }}">{% endif %}
+      {% if treasury_filters.direction %}<input type="hidden" name="treasury_direction" value="{{ treasury_filters.direction }}">{% endif %}
+      <input type="hidden" name="treasury_category_active" value="1">
+      <div class="treasury-category-actions">
+        <button type="button" data-treasury-category-all>전체 선택</button>
+        <button type="button" data-treasury-category-clear>전체 해제</button>
+      </div>
+      <div class="treasury-category-checks">
+        {% for category in treasury_filter_categories %}
+        <label>
+          <input type="checkbox" name="treasury_category_id" value="{{ category.treasury_category_id }}"
+                 {% if category.treasury_category_id in treasury_filters.category_ids %}checked{% endif %}>
+          <span>{{ category.category_name }}</span>
+          <small>{{ '입금' if category.direction == 1 else '출금' }}</small>
+        </label>
+        {% endfor %}
+      </div>
+      <footer>
+        <a class="text-button" href="{{ request.url.remove_query_params('treasury_category_id').remove_query_params('treasury_category_active').remove_query_params('page') }}">필터 해제</a>
+        <button class="primary-button" type="submit">적용</button>
+      </footer>
+    </form>
+  </div>
+  {% endif %}
   {% else %}
   <div class="workspace-empty-state">
     <span class="workspace-empty-icon">{{ icon("database") }}</span>

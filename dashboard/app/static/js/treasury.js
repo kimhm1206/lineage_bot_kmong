@@ -1,5 +1,50 @@
 (() => {
   function initializeTreasuryPage() {
+    document.querySelectorAll(".treasury-column-popover").forEach((popover) => {
+      if (popover.dataset.positionBound) return;
+      popover.dataset.positionBound = "true";
+      popover.addEventListener("beforetoggle", (event) => {
+        if (event.newState !== "open") return;
+        const trigger = document.querySelector(
+          `[popovertarget="${CSS.escape(popover.id)}"]`,
+        );
+        if (!trigger) return;
+        const triggerRect = trigger.getBoundingClientRect();
+        const width = Math.min(330, window.innerWidth - 24);
+        const left = Math.min(
+          Math.max(triggerRect.left, 12),
+          window.innerWidth - width - 12,
+        );
+        popover.style.left = `${left}px`;
+        popover.style.top = `${Math.max(
+          12,
+          Math.min(triggerRect.bottom + 8, window.innerHeight - 220),
+        )}px`;
+      });
+    });
+
+    const categoryFilter = document.querySelector("[data-treasury-category-filter]");
+    if (categoryFilter && !categoryFilter.dataset.filterBound) {
+      categoryFilter.dataset.filterBound = "true";
+      const categoryInputs = [
+        ...categoryFilter.querySelectorAll('input[name="treasury_category_id"]'),
+      ];
+      categoryFilter
+        .querySelector("[data-treasury-category-all]")
+        ?.addEventListener("click", () => {
+          categoryInputs.forEach((input) => {
+            input.checked = true;
+          });
+        });
+      categoryFilter
+        .querySelector("[data-treasury-category-clear]")
+        ?.addEventListener("click", () => {
+          categoryInputs.forEach((input) => {
+            input.checked = false;
+          });
+        });
+    }
+
     const form = document.querySelector("[data-treasury-entry-form]");
     if (form && !form.dataset.treasuryBound) {
       form.dataset.treasuryBound = "true";

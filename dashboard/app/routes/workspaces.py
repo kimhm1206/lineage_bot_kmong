@@ -7,7 +7,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -563,6 +563,9 @@ async def clan_settlements(
 async def clan_treasury(
     request: Request, guild_id: int | None = None, alliance_id: int | None = None,
     period: int | None = None, q: str = "", page: int = 1,
+    ledger_date: str = "", treasury_direction: int = 0,
+    treasury_category_active: int = 0,
+    treasury_category_id: list[int] = Query(default=[]),
     session: AsyncSession = Depends(get_session),
 ):
     can_edit = can_manage_clan_treasury(request)
@@ -579,6 +582,12 @@ async def clan_treasury(
         builder_kwargs={
             "account_scope_code": 2,
             "include_distribution_users": can_edit,
+            "ledger_date": _date_query(ledger_date),
+            "direction_filter": (
+                treasury_direction if treasury_direction in {-1, 1} else 0
+            ),
+            "category_filter_active": treasury_category_active == 1,
+            "category_ids": treasury_category_id,
         },
         treasury_form_action="/clan/treasury/entries",
         can_edit_treasury=can_edit,
