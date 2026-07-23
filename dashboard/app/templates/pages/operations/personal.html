@@ -8,7 +8,7 @@
   <section class="personal-context-bar">
     <form method="get" action="/my/distributions">
       <label class="ops-control"><span>서버</span><select name="guild_id" onchange="this.form.submit()">{% for guild in guilds %}<option value="{{ guild.guild_id }}" {% if guild.guild_id == guild_id %}selected{% endif %}>{{ guild.name }}</option>{% endfor %}</select></label>
-      <label class="ops-control personal-user-control"><span>유저 <small>로그인 연결 전 테스트 선택</small></span><select name="user_id" onchange="this.form.submit()">{% for user in users %}<option value="{{ user.user_id }}" {% if user.user_id == user_id %}selected{% endif %}>{{ user.user_name }} · {{ user.alliance_name }}</option>{% endfor %}</select></label>
+      {% if can_select_personal_user %}<label class="ops-control personal-user-control"><span>유저</span><select name="user_id" onchange="this.form.submit()">{% for user in users %}<option value="{{ user.user_id }}" {% if user.user_id == user_id %}selected{% endif %}>{{ user.user_name }} · {{ user.alliance_name }}</option>{% endfor %}</select></label>{% endif %}
       <label class="ops-control ops-control-compact"><span>기간</span><select name="period" onchange="this.form.submit()">{% for option in period_options %}<option value="{{ option.value }}" {% if option.selected %}selected{% endif %}>{{ option.label }}</option>{% endfor %}</select></label>
     </form>
     {% if selected_user %}<div class="personal-identity"><span>{{ icon("user") }}</span><div><strong>{{ selected_user.user_name }}</strong><small>{{ selected_user.alliance_name }}</small></div></div>{% endif %}
@@ -25,7 +25,7 @@
     <div class="personal-distribution-grid">
       {% for detail in details %}
       <article class="personal-distribution-card status-{{ detail.status_tone }}" data-personal-status="{{ detail.status_tone }}">
-        <div><small>#{{ detail.attendance_id }} · {{ detail.occurred_at_label }}</small><h3>{{ detail.item_name }}</h3></div>
+        <div><small>{% if detail.attendance_id %}출석 #{{ detail.attendance_id }}{% else %}혈비 가계부{% endif %} · {{ detail.occurred_at_label }}</small><h3>{{ detail.item_name }}</h3></div>
         <strong>{{ detail.amount_label }} <small>아데나</small></strong>
         <span class="ops-status ops-status-{{ detail.status_tone }}">{{ detail.status_label }}</span>
       </article>

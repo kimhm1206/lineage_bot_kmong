@@ -4,7 +4,7 @@ import asyncio
 from typing import Any
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,10 +12,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from dashboard.app.config import BASE_DIR
 from dashboard.app.database import get_session
 from dashboard.app.security import (
+    allowed_guild_ids,
+    can_manage_alliance_operations,
+    can_manage_clan_configuration,
     can_select_alliances,
+    current_access_role,
     current_user_alliance_id,
     require_alliance_access,
     require_developer,
+    require_selected_guild,
 )
 from dashboard.app.services import settings_store
 from dashboard.app.services.discord_api import DiscordApiError, discord_api
@@ -76,10 +81,17 @@ def _redirect(
 
 
 async def _guild_context(
+    request: Request,
     session: AsyncSession,
     requested_guild_id: int | None,
 ) -> dict[str, Any]:
     stored_guilds = await settings_store.list_guilds(session)
+    allowed = allowed_guild_ids(request)
+    if current_access_role(request) != "developer" and allowed is not None:
+        stored_guilds = [
+            row for row in stored_guilds
+            if int(row["guild_id"]) in allowed
+        ]
 
     selected = requested_guild_id
     known_ids = {row["guild_id"] for row in stored_guilds}
@@ -107,6 +119,49 @@ async def _guild_context(
         "discord_configured": discord_api.configured,
         "discord_error": "" if discord_api.configured else "dashboard/.env에 Discord 봇 토큰을 설정해 주세요.",
     }
+
+
+def _require_alliance_configuration(request: Request, guild_id: int) -> None:
+    require_selected_guild(request, guild_id)
+    if not can_manage_alliance_operations(request):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="연합 운영 담당자만 설정할 수 있습니다.",
+        )
+
+
+async def _require_owner_configuration(
+    request: Request,
+    session: AsyncSession,
+    guild_id: int,
+) -> None:
+    require_selected_guild(request, guild_id)
+    if not await can_select_alliances(request, session, guild_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="서버 오너 또는 개발자만 설정할 수 있습니다.",
+        )
+
+
+async def _require_clan_configuration(
+    request: Request,
+    session: AsyncSession,
+    *,
+    guild_id: int,
+    alliance_id: int,
+) -> None:
+    require_selected_guild(request, guild_id)
+    if not can_manage_clan_configuration(request):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="각혈 관리자만 설정할 수 있습니다.",
+        )
+    await require_alliance_access(
+        request,
+        session,
+        guild_id=guild_id,
+        alliance_id=alliance_id,
+    )
 
 
 async def _discord_resources(guild_id: int | None, *resource_names: str) -> tuple[dict[str, Any], str]:
@@ -182,7 +237,7 @@ async def server_settings(
     session: AsyncSession = Depends(get_session),
     _: None = Depends(require_developer),
 ):
-    guild_data = await _guild_context(session, guild_id)
+    guild_data = await _guild_context(request, session, guild_id)
     context = build_template_context(
         request,
         active_nav="developer.server",
@@ -229,7 +284,9 @@ async def attendance_settings(
     refresh: bool = False,
     session: AsyncSession = Depends(get_session),
 ):
-    guild_data = await _guild_context(session, guild_id)
+    guild_data = await _guild_context(request, session, guild_id)
+    if guild_data["guild_id"] is not None:
+        _require_alliance_configuration(request, int(guild_data["guild_id"]))
     if refresh and guild_data["guild_id"]:
         discord_api.clear_cache(f"channels:{guild_data['guild_id']}")
     selected = guild_data["selected_guild"] or {}
@@ -264,6 +321,7 @@ async def save_attendance(request: Request, session: AsyncSession = Depends(get_
     form = await request.form()
     try:
         guild_id = _int_value(form.get("guild_id"), minimum=1)
+        _require_alliance_configuration(request, guild_id)
         admin_channel_id = _optional_snowflake(form.get("admin_channel_id"))
         voice_channel_id = _optional_snowflake(form.get("voice_channel_id"))
         log_channel_id = _optional_snowflake(form.get("log_channel_id"))
@@ -303,7 +361,13 @@ async def alliance_settings(
     refresh: bool = False,
     session: AsyncSession = Depends(get_session),
 ):
-    guild_data = await _guild_context(session, guild_id)
+    guild_data = await _guild_context(request, session, guild_id)
+    if guild_data["guild_id"] is not None:
+        await _require_owner_configuration(
+            request,
+            session,
+            int(guild_data["guild_id"]),
+        )
     if refresh and guild_data["guild_id"]:
         discord_api.clear_cache(f"roles:{guild_data['guild_id']}")
     alliances = await settings_store.list_guild_alliances(session, guild_data["guild_id"]) if guild_data["guild_id"] else []
@@ -339,6 +403,7 @@ async def save_alliance_mapping(request: Request, session: AsyncSession = Depend
     form = await request.form()
     try:
         guild_id = _int_value(form.get("guild_id"), minimum=1)
+        await _require_owner_configuration(request, session, guild_id)
         role_id = _int_value(form.get("role_id"), minimum=1)
         alliance_name = str(form.get("alliance_name", "")).strip()
         if not alliance_name or len(alliance_name) > 100:
@@ -367,6 +432,7 @@ async def remove_alliance_mapping(mapping_id: int, request: Request, session: As
     guild_id = _optional_snowflake(form.get("guild_id"))
     if guild_id is None:
         return _redirect("/settings/alliances", error="서버를 선택해 주세요.")
+    await _require_owner_configuration(request, session, guild_id)
     await settings_store.delete_role_mapping(session, guild_id=guild_id, mapping_id=mapping_id)
     return _redirect("/settings/alliances", guild_id=guild_id, notice="역할 연결을 해제했습니다.")
 
@@ -377,7 +443,13 @@ async def manager_settings(
     guild_id: int | None = None,
     session: AsyncSession = Depends(get_session),
 ):
-    guild_data = await _guild_context(session, guild_id)
+    guild_data = await _guild_context(request, session, guild_id)
+    if guild_data["guild_id"] is not None:
+        await _require_owner_configuration(
+            request,
+            session,
+            int(guild_data["guild_id"]),
+        )
     assignments = await settings_store.list_assignments(session, guild_data["guild_id"]) if guild_data["guild_id"] else []
     alliances = await settings_store.list_guild_alliances(session, guild_data["guild_id"]) if guild_data["guild_id"] else []
     mappings = await settings_store.list_role_mappings(session, guild_data["guild_id"]) if guild_data["guild_id"] else []
@@ -456,6 +528,7 @@ async def save_manager(request: Request, session: AsyncSession = Depends(get_ses
     form = await request.form()
     try:
         guild_id = _int_value(form.get("guild_id"), minimum=1)
+        await _require_owner_configuration(request, session, guild_id)
         discord_user_id = _int_value(form.get("discord_user_id"), minimum=1)
         scope_code = _int_value(form.get("scope_code"), minimum=1, maximum=2)
         alliance_id = _optional_snowflake(form.get("alliance_id")) if scope_code == 2 else None
@@ -505,8 +578,10 @@ async def remove_assignment(assignment_id: int, request: Request, session: Async
         return_path = "/settings/managers"
     if guild_id is None:
         return _redirect(return_path, error="서버를 선택해 주세요.")
-    if return_path == "/settings/clan" and alliance_id is not None:
-        await require_alliance_access(
+    if return_path == "/settings/managers":
+        await _require_owner_configuration(request, session, guild_id)
+    elif alliance_id is not None:
+        await _require_clan_configuration(
             request,
             session,
             guild_id=guild_id,
@@ -523,7 +598,7 @@ async def clan_settings(
     alliance_id: int | None = None,
     session: AsyncSession = Depends(get_session),
 ):
-    guild_data = await _guild_context(session, guild_id)
+    guild_data = await _guild_context(request, session, guild_id)
     alliances = await settings_store.list_guild_alliances(session, guild_data["guild_id"]) if guild_data["guild_id"] else []
     can_select_alliance = await can_select_alliances(request, session, guild_data["guild_id"])
     if not can_select_alliance:
@@ -533,6 +608,18 @@ async def clan_settings(
     valid_alliance_ids = {row["alliance_id"] for row in alliances}
     if alliance_id not in valid_alliance_ids:
         alliance_id = alliances[0]["alliance_id"] if alliances else None
+    if guild_data["guild_id"] is not None and alliance_id is not None:
+        await _require_clan_configuration(
+            request,
+            session,
+            guild_id=int(guild_data["guild_id"]),
+            alliance_id=int(alliance_id),
+        )
+    elif not can_manage_clan_configuration(request):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="각혈 관리자만 설정할 수 있습니다.",
+        )
     assignments = await settings_store.list_assignments(session, guild_data["guild_id"]) if guild_data["guild_id"] else []
     mappings = await settings_store.list_role_mappings(session, guild_data["guild_id"]) if guild_data["guild_id"] else []
     resources, api_error = await _discord_resources(guild_data["guild_id"], "members")
@@ -587,7 +674,7 @@ async def save_accountant(request: Request, session: AsyncSession = Depends(get_
         guild_id = _int_value(form.get("guild_id"), minimum=1)
         alliance_id = _int_value(form.get("alliance_id"), minimum=1)
         discord_user_id = _int_value(form.get("discord_user_id"), minimum=1)
-        await require_alliance_access(
+        await _require_clan_configuration(
             request,
             session,
             guild_id=guild_id,
@@ -637,7 +724,7 @@ async def save_clan_policy(request: Request, session: AsyncSession = Depends(get
     try:
         guild_id = _int_value(form.get("guild_id"), minimum=1)
         alliance_id = _int_value(form.get("alliance_id"), minimum=1)
-        await require_alliance_access(
+        await _require_clan_configuration(
             request,
             session,
             guild_id=guild_id,

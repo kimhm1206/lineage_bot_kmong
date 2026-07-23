@@ -48,7 +48,7 @@
         <span class="entity-history-slot"></span>
         {% endif %}
         <span class="entity-summary-actions">
-          {% if entity.pending_count > 0 %}
+          {% if can_manage_settlement and entity.pending_count > 0 %}
           <form data-async-form method="post" action="/api/payout-groups/{{ entity.entity_type }}/{{ entity.target_id }}/status">
             <input type="hidden" name="guild_id" value="{{ guild_id }}"><input type="hidden" name="alliance_id" value="{{ alliance_id if settlement_level == 'clan' else '' }}"><input type="hidden" name="status_code" value="1">
             <button class="primary-button" type="submit">전체 완료</button>
@@ -75,10 +75,10 @@
             <div class="detail-amount"><strong>{{ detail.amount_label }}</strong><span>아데나</span></div>
             <span class="ops-status ops-status-{{ detail.status_tone }}">{{ detail.status_label }}</span>
             <div class="detail-actions">
-              {% if detail.status_code == 0 %}
+              {% if can_manage_settlement and detail.status_code == 0 %}
               <form data-async-form method="post" action="{{ detail.status_action }}"><input type="hidden" name="status_code" value="1"><button class="secondary-button" type="submit">완료</button></form>
               {% if settlement_level == 'clan' and entity.entity_type == 'member' and detail.allows_forfeit %}<form data-async-form data-confirm="이 분배금을 혈비로 귀속하시겠습니까?" method="post" action="{{ detail.status_action }}"><input type="hidden" name="status_code" value="2"><button class="secondary-button warning-button" type="submit">귀속</button></form>{% endif %}
-              {% elif detail.status_code == 1 and entity.entity_type != 'fee' %}
+              {% elif can_manage_settlement and detail.status_code == 1 and entity.entity_type != 'fee' %}
               {% if detail.source_type == 'drop' %}<form data-async-form method="post" action="{{ detail.status_action }}"><input type="hidden" name="status_code" value="0"><button class="text-button" type="submit">완료 취소</button></form>{% endif %}
               {% endif %}
             </div>

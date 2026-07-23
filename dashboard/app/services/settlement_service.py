@@ -1037,6 +1037,126 @@ async def set_payout_status(
     return OperationResult(f"정산 상태를 {labels[status_code]}로 변경했습니다.", (payout_object_id,))
 
 
+async def payout_access_scope(
+    session: AsyncSession,
+    *,
+    payout_object_id: int,
+) -> dict[str, int] | None:
+    row = (
+        await session.execute(
+            text("""
+                SELECT d.guild_id,
+                       CASE
+                           WHEN payout.object_code = 1
+                             OR (
+                                 payout.object_code = 3
+                                 AND rule.scope_code = 1
+                             )
+                           THEN 1
+                           ELSE 2
+                       END AS scope_code,
+                       COALESCE(
+                           payout.recipient_alliance_id,
+                           parent.recipient_alliance_id,
+                           rule.alliance_id
+                       ) AS alliance_id
+                FROM settlement_payout_objects payout
+                JOIN settlement_drops d ON d.drop_id = payout.drop_id
+                LEFT JOIN settlement_payout_objects parent
+                  ON parent.payout_object_id =
+                     payout.parent_payout_object_id
+                LEFT JOIN settlement_fee_rule_versions version
+                  ON version.fee_rule_version_id =
+                     payout.fee_rule_version_id
+                LEFT JOIN settlement_fee_rules rule
+                  ON rule.fee_rule_id = version.fee_rule_id
+                WHERE payout.payout_object_id = :payout_object_id
+            """),
+            {"payout_object_id": payout_object_id},
+        )
+    ).mappings().one_or_none()
+    if row is None:
+        return None
+    return {
+        "guild_id": int(row["guild_id"]),
+        "scope_code": int(row["scope_code"]),
+        "alliance_id": (
+            int(row["alliance_id"])
+            if row["alliance_id"] is not None
+            else 0
+        ),
+    }
+
+
+async def treasury_recipient_access_scope(
+    session: AsyncSession,
+    *,
+    recipient_id: int,
+) -> dict[str, int] | None:
+    row = (
+        await session.execute(
+            text("""
+                SELECT account.guild_id,
+                       account.account_scope_code AS scope_code,
+                       COALESCE(
+                           account.alliance_id,
+                           recipient.alliance_id
+                       ) AS alliance_id
+                FROM treasury_distribution_recipients recipient
+                JOIN treasury_distributions distribution
+                  ON distribution.treasury_distribution_id =
+                     recipient.treasury_distribution_id
+                JOIN treasury_accounts account
+                  ON account.treasury_account_id =
+                     distribution.treasury_account_id
+                WHERE recipient.treasury_distribution_recipient_id =
+                      :recipient_id
+            """),
+            {"recipient_id": recipient_id},
+        )
+    ).mappings().one_or_none()
+    if row is None:
+        return None
+    return {
+        "guild_id": int(row["guild_id"]),
+        "scope_code": int(row["scope_code"]),
+        "alliance_id": (
+            int(row["alliance_id"])
+            if row["alliance_id"] is not None
+            else 0
+        ),
+    }
+
+
+async def fee_rule_access_scope(
+    session: AsyncSession,
+    *,
+    guild_id: int,
+    fee_rule_id: int,
+) -> dict[str, int] | None:
+    row = (
+        await session.execute(
+            text("""
+                SELECT scope_code, alliance_id
+                FROM settlement_fee_rules
+                WHERE guild_id = :guild_id
+                  AND fee_rule_id = :fee_rule_id
+            """),
+            {"guild_id": guild_id, "fee_rule_id": fee_rule_id},
+        )
+    ).mappings().one_or_none()
+    if row is None:
+        return None
+    return {
+        "scope_code": int(row["scope_code"]),
+        "alliance_id": (
+            int(row["alliance_id"])
+            if row["alliance_id"] is not None
+            else 0
+        ),
+    }
+
+
 async def set_treasury_distribution_recipient_status(
     session: AsyncSession,
     *,
@@ -1105,6 +1225,31 @@ async def set_treasury_distribution_recipient_status(
                 f"혈비 잔액 분배 귀속 · "
                 f"{row['recipient_name'] or '알 수 없는 유저'}"
             ),
+        )
+    elif (
+        status_code == STATUS_COMPLETE
+        and int(row["account_scope_code"]) == 1
+        and row["alliance_id"] is not None
+    ):
+        source_type_id = await session.scalar(
+            text("""
+                SELECT source_type_id
+                FROM treasury_source_types
+                WHERE source_code = 'alliance_distribution_receipt'
+            """)
+        )
+        if source_type_id is None:
+            raise SettlementError("연합비 분배 수령 원본 유형을 찾을 수 없습니다.")
+        await _treasury_credit(
+            session,
+            guild_id=int(row["guild_id"]),
+            alliance_id=int(row["alliance_id"]),
+            scope_code=2,
+            source_type_id=int(source_type_id),
+            source_id=recipient_id,
+            amount=int(row["per_recipient_amount"]),
+            category_name="연합비 분배 수령",
+            memo="연합비 잔액 분배 수령",
         )
     await session.execute(
         text("""

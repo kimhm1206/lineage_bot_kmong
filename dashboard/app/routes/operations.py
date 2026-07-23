@@ -11,13 +11,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from dashboard.app.config import BASE_DIR
 from dashboard.app.database import get_session
 from dashboard.app.security import (
+    allowed_guild_ids,
     can_manage_alliance_operations,
+    can_manage_clan_treasury,
     can_select_alliances,
+    current_access_role,
+    current_discord_user_id,
     current_user_alliance_id,
     require_alliance_access,
     restrict_workspace_alliance,
 )
-from dashboard.app.services import operations_store, settlement_service, workspace_store
+from dashboard.app.services import home_store, operations_store, settlement_service, workspace_store
 from dashboard.app.ui.context import build_template_context
 
 
@@ -83,7 +87,9 @@ async def _context(
     page_badge: str,
     clan_scoped: bool = False,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    workspace = await workspace_store.resolve_workspace(session, guild_id, alliance_id)
+    workspace = await workspace_store.resolve_workspace(
+        session, guild_id, alliance_id, allowed_guild_ids(request)
+    )
     can_select = await can_select_alliances(request, session, workspace["guild_id"])
     if clan_scoped:
         can_select = await restrict_workspace_alliance(request, session, workspace)
@@ -118,6 +124,34 @@ async def _require_bid_management(
         )
 
 
+def _require_alliance_management(request: Request) -> None:
+    if not can_manage_alliance_operations(request):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="연합 운영 담당자만 사용할 수 있습니다.",
+        )
+
+
+async def _require_clan_management(
+    request: Request,
+    session: AsyncSession,
+    *,
+    guild_id: int,
+    alliance_id: int,
+) -> None:
+    if not can_manage_clan_treasury(request):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="혈맹 운영 담당자만 사용할 수 있습니다.",
+        )
+    await require_alliance_access(
+        request,
+        session,
+        guild_id=guild_id,
+        alliance_id=alliance_id,
+    )
+
+
 @router.get("/alliance/drops")
 async def drops_page(
     request: Request,
@@ -128,6 +162,7 @@ async def drops_page(
     page: int = 1,
     session: AsyncSession = Depends(get_session),
 ):
+    _require_alliance_management(request)
     context, workspace = await _context(
         request,
         session,
@@ -174,6 +209,7 @@ async def alliance_settlements_page(
     q: str = "",
     session: AsyncSession = Depends(get_session),
 ):
+    _require_alliance_management(request)
     context, workspace = await _context(
         request,
         session,
@@ -202,6 +238,7 @@ async def alliance_settlements_page(
             "period_options": workspace_store.filter_options(workspace_store.PERIOD_OPTIONS, selected_period),
             "query": _query(q),
             "settlement_level": "alliance",
+            "can_manage_settlement": True,
         }
     )
     return templates.TemplateResponse(request, "pages/operations/settlements.html", context)
@@ -246,6 +283,7 @@ async def clan_settlements_page(
             "period_options": workspace_store.filter_options(workspace_store.PERIOD_OPTIONS, selected_period),
             "query": _query(q),
             "settlement_level": "clan",
+            "can_manage_settlement": can_manage_clan_treasury(request),
         }
     )
     return templates.TemplateResponse(request, "pages/operations/settlements.html", context)
@@ -258,6 +296,7 @@ async def items_page(
     q: str = "",
     session: AsyncSession = Depends(get_session),
 ):
+    _require_alliance_management(request)
     context, workspace = await _context(
         request,
         session,
@@ -285,6 +324,7 @@ async def alliance_fee_page(
     q: str = "",
     session: AsyncSession = Depends(get_session),
 ):
+    _require_alliance_management(request)
     context, workspace = await _context(
         request,
         session,
@@ -315,6 +355,11 @@ async def clan_fee_page(
     q: str = "",
     session: AsyncSession = Depends(get_session),
 ):
+    if not can_manage_clan_treasury(request):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="혈맹 운영 담당자만 사용할 수 있습니다.",
+        )
     context, workspace = await _context(
         request,
         session,
@@ -404,12 +449,21 @@ async def personal_distribution_page(
         page_badge="USER",
     )
     selected_period = workspace_store.normalize_period(period)
+    can_select_personal_user = current_access_role(request) in {"developer", "owner"}
+    if workspace["guild_id"] is not None and not can_select_personal_user:
+        signed_in_user = await home_store.current_user(
+            session,
+            guild_id=int(workspace["guild_id"]),
+            discord_user_id=current_discord_user_id(request) or 0,
+        )
+        user_id = int(signed_in_user["user_id"]) if signed_in_user else None
     page_data = (
         await operations_store.personal_distribution_page(
             session,
             guild_id=int(workspace["guild_id"]),
             user_id=user_id,
             period_days=selected_period,
+            fallback_to_first=can_select_personal_user,
         )
         if workspace["guild_id"] is not None
         else {"users": [], "user_id": None, "selected_user": None, "details": [], "summary_cards": []}
@@ -419,6 +473,7 @@ async def personal_distribution_page(
         {
             "period": selected_period,
             "period_options": workspace_store.filter_options(workspace_store.PERIOD_OPTIONS, selected_period),
+            "can_select_personal_user": can_select_personal_user,
         }
     )
     return templates.TemplateResponse(request, "pages/operations/personal.html", context)
@@ -426,6 +481,7 @@ async def personal_distribution_page(
 
 @router.post("/api/drops")
 async def create_drop(request: Request, session: AsyncSession = Depends(get_session)):
+    _require_alliance_management(request)
     form = await request.form()
     return await _result(
         session,
@@ -441,6 +497,7 @@ async def create_drop(request: Request, session: AsyncSession = Depends(get_sess
 
 @router.post("/api/drops/{drop_id}")
 async def update_drop(drop_id: int, request: Request, session: AsyncSession = Depends(get_session)):
+    _require_alliance_management(request)
     form = await request.form()
     return await _result(
         session,
@@ -457,6 +514,7 @@ async def update_drop(drop_id: int, request: Request, session: AsyncSession = De
 
 @router.post("/api/drops/{drop_id}/delete")
 async def delete_drop(drop_id: int, request: Request, session: AsyncSession = Depends(get_session)):
+    _require_alliance_management(request)
     form = await request.form()
     return await _result(
         session,
@@ -466,6 +524,7 @@ async def delete_drop(drop_id: int, request: Request, session: AsyncSession = De
 
 @router.post("/api/drops/{drop_id}/sale")
 async def complete_sale(drop_id: int, request: Request, session: AsyncSession = Depends(get_session)):
+    _require_alliance_management(request)
     form = await request.form()
     buyer_user_id = _int(form.get("buyer_user_id"), required=False)
     return await _result(
@@ -483,6 +542,7 @@ async def complete_sale(drop_id: int, request: Request, session: AsyncSession = 
 
 @router.post("/api/drops/{drop_id}/reopen")
 async def reopen_sale(drop_id: int, request: Request, session: AsyncSession = Depends(get_session)):
+    _require_alliance_management(request)
     form = await request.form()
     return await _result(
         session,
@@ -493,6 +553,21 @@ async def reopen_sale(drop_id: int, request: Request, session: AsyncSession = De
 @router.post("/api/payouts/{payout_object_id}/status")
 async def set_payout_status(payout_object_id: int, request: Request, session: AsyncSession = Depends(get_session)):
     form = await request.form()
+    payout_scope = await settlement_service.payout_access_scope(
+        session,
+        payout_object_id=payout_object_id,
+    )
+    if payout_scope is None:
+        raise HTTPException(status_code=404, detail="정산 대상을 찾을 수 없습니다.")
+    if payout_scope["scope_code"] == 1:
+        _require_alliance_management(request)
+    else:
+        await _require_clan_management(
+            request,
+            session,
+            guild_id=payout_scope["guild_id"],
+            alliance_id=payout_scope["alliance_id"],
+        )
     return await _result(
         session,
         settlement_service.set_payout_status(
@@ -510,6 +585,21 @@ async def set_treasury_payout_status(
     session: AsyncSession = Depends(get_session),
 ):
     form = await request.form()
+    payout_scope = await settlement_service.treasury_recipient_access_scope(
+        session,
+        recipient_id=recipient_id,
+    )
+    if payout_scope is None:
+        raise HTTPException(status_code=404, detail="공금 분배 대상을 찾을 수 없습니다.")
+    if payout_scope["scope_code"] == 1:
+        _require_alliance_management(request)
+    else:
+        await _require_clan_management(
+            request,
+            session,
+            guild_id=payout_scope["guild_id"],
+            alliance_id=payout_scope["alliance_id"],
+        )
     return await _result(
         session,
         settlement_service.set_treasury_distribution_recipient_status(
@@ -528,14 +618,27 @@ async def set_payout_group_status(
     session: AsyncSession = Depends(get_session),
 ):
     form = await request.form()
+    guild_id = int(_int(form.get("guild_id")))
+    alliance_id = _int(form.get("alliance_id"), required=False)
+    if group_type == "alliance" or (group_type == "fee" and alliance_id is None):
+        _require_alliance_management(request)
+    else:
+        if alliance_id is None:
+            raise HTTPException(status_code=422, detail="혈맹을 확인해 주세요.")
+        await _require_clan_management(
+            request,
+            session,
+            guild_id=guild_id,
+            alliance_id=int(alliance_id),
+        )
     return await _result(
         session,
         settlement_service.set_payout_group_status(
             session,
-            guild_id=int(_int(form.get("guild_id"))),
+            guild_id=guild_id,
             group_type=group_type,
             target_id=target_id,
-            alliance_id=_int(form.get("alliance_id"), required=False),
+            alliance_id=alliance_id,
             status_code=_status(form.get("status_code")),
         ),
     )
@@ -543,6 +646,7 @@ async def set_payout_group_status(
 
 @router.post("/api/items")
 async def create_item(request: Request, session: AsyncSession = Depends(get_session)):
+    _require_alliance_management(request)
     form = await request.form()
     return await _result(
         session,
@@ -557,6 +661,7 @@ async def create_item(request: Request, session: AsyncSession = Depends(get_sess
 
 @router.post("/api/items/{item_id}")
 async def update_item(item_id: int, request: Request, session: AsyncSession = Depends(get_session)):
+    _require_alliance_management(request)
     form = await request.form()
     return await _result(
         session,
@@ -572,6 +677,7 @@ async def update_item(item_id: int, request: Request, session: AsyncSession = De
 
 @router.post("/api/items/{item_id}/delete")
 async def delete_item(item_id: int, request: Request, session: AsyncSession = Depends(get_session)):
+    _require_alliance_management(request)
     form = await request.form()
     return await _result(
         session,
@@ -586,13 +692,27 @@ async def delete_item(item_id: int, request: Request, session: AsyncSession = De
 @router.post("/api/fee-rules")
 async def create_fee_rule(request: Request, session: AsyncSession = Depends(get_session)):
     form = await request.form()
+    guild_id = int(_int(form.get("guild_id")))
+    alliance_id = _int(form.get("alliance_id"), required=False)
+    scope_code = int(str(form.get("scope_code") or "1"))
+    if scope_code == 1:
+        _require_alliance_management(request)
+    else:
+        if alliance_id is None:
+            raise HTTPException(status_code=422, detail="혈맹을 확인해 주세요.")
+        await _require_clan_management(
+            request,
+            session,
+            guild_id=guild_id,
+            alliance_id=int(alliance_id),
+        )
     return await _result(
         session,
         settlement_service.create_fee_rule(
             session,
-            guild_id=int(_int(form.get("guild_id"))),
-            alliance_id=_int(form.get("alliance_id"), required=False),
-            scope_code=int(str(form.get("scope_code") or "1")),
+            guild_id=guild_id,
+            alliance_id=alliance_id,
+            scope_code=scope_code,
             rule_name=str(form.get("rule_name") or ""),
             percent=form.get("percent"),
         ),
@@ -602,11 +722,28 @@ async def create_fee_rule(request: Request, session: AsyncSession = Depends(get_
 @router.post("/api/fee-rules/{fee_rule_id}")
 async def update_fee_rule(fee_rule_id: int, request: Request, session: AsyncSession = Depends(get_session)):
     form = await request.form()
+    guild_id = int(_int(form.get("guild_id")))
+    rule_scope = await settlement_service.fee_rule_access_scope(
+        session,
+        guild_id=guild_id,
+        fee_rule_id=fee_rule_id,
+    )
+    if rule_scope is None:
+        raise HTTPException(status_code=404, detail="수수료 규칙을 찾을 수 없습니다.")
+    if rule_scope["scope_code"] == 1:
+        _require_alliance_management(request)
+    else:
+        await _require_clan_management(
+            request,
+            session,
+            guild_id=guild_id,
+            alliance_id=rule_scope["alliance_id"],
+        )
     return await _result(
         session,
         settlement_service.update_fee_rule(
             session,
-            guild_id=int(_int(form.get("guild_id"))),
+            guild_id=guild_id,
             fee_rule_id=fee_rule_id,
             rule_name=str(form.get("rule_name") or ""),
             percent=form.get("percent"),

@@ -60,14 +60,14 @@
 </section>
 
 {% if treasury_form and treasury_form.can_edit %}
-<section class="treasury-distribution-toolbar">
+  <section class="treasury-distribution-toolbar">
   <div>
-    <strong>{{ treasury_account_label }} 분배</strong>
-    <p>수수료 정산과 미수령 귀속은 가계부에 자동 입금됩니다. 현재 잔액에서 분배할 금액과 제외자만 선택하세요.</p>
+    <strong>{{ "혈비 대상 분배" if treasury_scope_code == 1 else "혈비 잔액 분배" }}</strong>
+    <p>수수료 정산과 수동 귀속 처리액은 가계부에 반영됩니다. 현재 잔액에서 분배할 금액과 제외 대상만 선택하세요.</p>
   </div>
   <button class="primary-button" type="button" data-modal-open="treasury-distribution-modal">
     {{ icon("users-round") }}
-    잔액 분배
+    {{ "혈비 대상 분배" if treasury_scope_code == 1 else "잔액 분배" }}
   </button>
 </section>
 
@@ -76,10 +76,10 @@
   <section class="ops-modal-dialog treasury-distribution-dialog" role="dialog" aria-modal="true" aria-labelledby="treasury-distribution-title">
     <header class="ops-modal-header">
       <div>
-        <h2 id="treasury-distribution-title">{{ treasury_account_label }} 분배</h2>
+        <h2 id="treasury-distribution-title">{{ "혈비 대상 분배" if treasury_scope_code == 1 else "혈비 잔액 분배" }}</h2>
         <p>
           {% if treasury_scope_code == 1 %}
-          역할 매핑된 혈맹을 대상으로 균등 분배합니다.
+          역할 매핑된 혈맹의 혈비로 균등 분배합니다. 각혈 분배 완료 시 해당 혈맹 가계부에 입금됩니다.
           {% else %}
           선택한 혈맹의 출석 이력이 있는 혈맹원을 대상으로 균등 분배합니다.
           {% endif %}

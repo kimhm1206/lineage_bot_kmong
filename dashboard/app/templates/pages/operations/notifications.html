@@ -1,0 +1,106 @@
+{% extends "layouts/app_shell.html" %}
+{% from "components/icons.html" import icon %}
+
+{% block title %}{{ page_title }} · {{ app_name }}{% endblock %}
+{% block content %}
+<div class="report-page" data-report-page>
+  <section class="report-status-strip">
+    <div><span class="status-indicator {{ 'is-online' if scheduler_ready else '' }}"></span><strong>{{ '예약 워커 동작 중' if scheduler_ready else '예약 워커 확인 필요' }}</strong></div>
+    <span>등록 {{ reports | length }}개</span>
+    <span>사용 중 {{ active_count }}개</span>
+    {% if channel_error %}<em>{{ channel_error }}</em>{% endif %}
+    <label class="report-guild-control report-guild-inline">
+      <span>서버</span>
+      <select onchange="location.href='/operations/notifications?guild_id='+this.value">
+        {% for guild in guilds %}
+        <option value="{{ guild.guild_id }}" {% if guild.guild_id == guild_id %}selected{% endif %}>{{ guild.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  </section>
+
+  <section class="report-builder">
+    <form id="report-form" class="report-form" autocomplete="off">
+      <input type="hidden" name="guild_id" value="{{ guild_id }}">
+      <input type="hidden" name="report_setting_id" value="">
+
+      <header class="report-section-title">
+        <div><span>01</span><h2>기본 정보</h2></div>
+        <button class="text-button" type="button" data-report-reset>{{ icon("refresh") }} 새 알림</button>
+      </header>
+      <div class="report-field-grid">
+        <label><span>알림 이름</span><input name="report_name" maxlength="100" placeholder="예: 일일 혈맹 출석 TOP10" required></label>
+        <label><span>발송 채널</span><select name="channel_id" required><option value="">채널 선택</option>{% for channel in channels %}<option value="{{ channel.id }}"># {{ channel.name }}</option>{% endfor %}</select></label>
+      </div>
+
+      <header class="report-section-title"><div><span>02</span><h2>예약</h2></div></header>
+      <div class="report-field-grid report-field-grid-three">
+        <label><span>발송 주기</span><select name="frequency" required><option value="">선택</option><option value="daily">매일</option><option value="every_3_days">3일마다</option><option value="weekly">매주</option><option value="monthly">매월</option></select></label>
+        <label><span>발송 시간</span><input name="run_time" type="time" required></label>
+        <label><span>조회 기간</span><select name="period_type" required><option value="">선택</option><option value="today">오늘</option><option value="yesterday">어제</option><option value="recent_3_days">최근 3일</option><option value="recent_7_days">최근 7일</option><option value="this_week">이번 주</option><option value="this_month">이번 달</option></select></label>
+      </div>
+
+      <header class="report-section-title"><div><span>03</span><h2>집계</h2></div></header>
+      <div class="report-field-grid report-field-grid-three">
+        <label><span>묶음</span><select name="group_by" required><option value="">선택</option><option value="alliance">혈맹별</option><option value="none">전체</option></select></label>
+        <label><span>랭킹 대상</span><select name="rank_target" required><option value="">선택</option><option value="user">유저</option><option value="alliance">혈맹</option></select></label>
+        <label><span>집계값</span><select name="metric" required><option value="">선택</option><option value="attendance_count">출석 횟수</option><option value="unique_user_count">참여 인원</option></select></label>
+        <label><span>표시 개수</span><input name="limit" type="number" min="1" max="30" placeholder="10" required></label>
+        <label><span>출력 방식</span><select name="output" required><option value="">선택</option><option value="grouped_ranking">그룹별 랭킹</option><option value="ranking">단일 랭킹</option></select></label>
+      </div>
+
+      <header class="report-section-title"><div><span>04</span><h2>메시지</h2></div></header>
+      <div class="report-field-grid">
+        <label class="report-field-wide"><span>제목</span><input name="title" maxlength="200" placeholder="금일 혈맹별 출석 랭킹 TOP10" required></label>
+        <label><span>그룹 제목</span><input name="group_header" placeholder="{group_name}" maxlength="200"></label>
+        <label><span>행 템플릿</span><input name="row_template" placeholder="{rank}. {label} - {value}회" maxlength="300"></label>
+        <label><span>빈 결과 문구</span><input name="empty_text" placeholder="출석 기록 없음" maxlength="200"></label>
+      </div>
+
+      <div class="report-form-actions">
+        <button class="secondary-button" type="button" data-report-preview>{{ icon("eye") }} 미리보기</button>
+        <button class="primary-button" type="submit">{{ icon("save") }} <span data-report-submit-label>알림 저장</span></button>
+      </div>
+      <p class="report-form-message" data-report-message aria-live="polite"></p>
+    </form>
+
+    <aside class="report-preview">
+      <header><div><span class="status-indicator is-online"></span><strong>Discord 미리보기</strong></div><small>현재 입력값 기준</small></header>
+      <pre data-report-preview-output>설정을 입력한 뒤 미리보기를 눌러주세요.</pre>
+    </aside>
+  </section>
+
+  <section class="report-list-section">
+    <header>
+      <div><span class="panel-kicker">Saved schedules</span><h2>등록된 알림</h2></div>
+      <strong>{{ reports | length }}개</strong>
+    </header>
+    {% if reports %}
+    <div class="report-list">
+      {% for report in reports %}
+      <article class="report-list-item" data-report-id="{{ report.report_setting_id }}">
+        <span class="report-state-line {{ 'is-on' if report.status == 'on' }}"></span>
+        <div class="report-list-copy">
+          <div><h3>{{ report.report_name }}</h3><span class="ops-status ops-status-{{ report.status_tone }}">{{ report.status_label }}</span></div>
+          <p>#{{ report.channel_name }} · {{ report.schedule_label }} · {{ report.period_label }} · {{ report.target_label }}</p>
+          <small>다음 발송 {{ report.next_run_at or '예약 대기' }}{% if report.last_sent_at %} · 최근 발송 {{ report.last_sent_at }}{% endif %}</small>
+        </div>
+        <div class="report-list-actions">
+          <button class="secondary-button" type="button" data-report-edit="{{ report.report_setting_id }}">{{ icon("settings") }} 수정</button>
+          <button class="secondary-button" type="button" data-report-status="{{ report.report_setting_id }}" data-next-status="{{ 'off' if report.status == 'on' else 'on' }}">{{ '중지' if report.status == 'on' else '켜기' }}</button>
+          <button class="icon-button danger-button" type="button" data-report-delete="{{ report.report_setting_id }}" aria-label="삭제">{{ icon("trash") }}</button>
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="ops-empty-state"><span>{{ icon("bell") }}</span><strong>등록된 알림이 없습니다.</strong><p>위 설계 패널에서 첫 통계 알림을 만들어 주세요.</p></div>
+    {% endif %}
+  </section>
+</div>
+<script id="report-settings-data" type="application/json">{{ reports_json | tojson }}</script>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', path='/js/reports.js') }}?v=20260723.2" defer></script>
+{% endblock %}

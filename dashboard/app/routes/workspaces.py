@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from dashboard.app.config import BASE_DIR
 from dashboard.app.database import get_session
 from dashboard.app.security import (
+    allowed_guild_ids,
     can_manage_alliance_operations,
     can_manage_alliance_treasury,
     can_manage_clan_treasury,
@@ -99,7 +100,9 @@ async def _render_workspace(
     treasury_form_action: str = "",
     can_edit_treasury: bool = False,
 ):
-    workspace = await workspace_store.resolve_workspace(session, guild_id, alliance_id)
+    workspace = await workspace_store.resolve_workspace(
+        session, guild_id, alliance_id, allowed_guild_ids(request)
+    )
     can_select_alliance = await can_select_alliances(request, session, workspace["guild_id"])
     if needs_alliance:
         can_select_alliance = await restrict_workspace_alliance(request, session, workspace)
@@ -182,7 +185,9 @@ async def _attendance_context(
     query: str,
     clan_scoped: bool = False,
 ) -> tuple[dict[str, Any], dict[str, Any], int, str]:
-    workspace = await workspace_store.resolve_workspace(session, guild_id, alliance_id)
+    workspace = await workspace_store.resolve_workspace(
+        session, guild_id, alliance_id, allowed_guild_ids(request)
+    )
     can_select_alliance = await can_select_alliances(request, session, workspace["guild_id"])
     if clan_scoped:
         can_select_alliance = await restrict_workspace_alliance(request, session, workspace)
@@ -646,7 +651,7 @@ async def clan_forfeits(
         request, session,
         active_nav="clan.forfeits",
         page_title="귀속 관리",
-        page_description="기한 내 수령하지 않아 혈비로 귀속된 분배 기록을 조회합니다.",
+        page_description="관리자가 수동으로 혈비 귀속 처리한 분배 기록을 조회합니다.",
         page_kicker="Member forfeitures",
         page_badge="CLAN MANAGER",
         builder=workspace_store.forfeits_page,
@@ -954,29 +959,19 @@ async def clan_attendance(
     return templates.TemplateResponse(request, "pages/attendance/clan.html", context)
 
 
-@router.get("/operations/notifications")
-async def operation_notifications(
-    request: Request, guild_id: int | None = None, q: str = "", page: int = 1,
-    session: AsyncSession = Depends(get_session),
-):
-    return await _render_workspace(
-        request, session,
-        active_nav="operations.notifications",
-        page_title="알림 관리",
-        page_description="등록된 통계 알림의 채널, 스케줄과 다음 발송 시각을 확인합니다.",
-        page_kicker="Scheduled reports",
-        page_badge="OWNER",
-        builder=workspace_store.reports_page,
-        guild_id=guild_id, alliance_id=None, period=None, query=q, page=page,
-        supports_period=False,
-    )
-
-
 @router.get("/operations/audit")
 async def operation_audit(
     request: Request, guild_id: int | None = None, period: int | None = None,
     q: str = "", page: int = 1, session: AsyncSession = Depends(get_session),
 ):
+    if not (
+        can_manage_alliance_operations(request)
+        or can_manage_clan_treasury(request)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="운영 담당자만 작업 로그를 확인할 수 있습니다.",
+        )
     return await _render_workspace(
         request, session,
         active_nav="operations.audit",

@@ -8,12 +8,17 @@
   <div class="panel-header panel-header-inline">
     <div>
       <span class="panel-kicker">Personal overview</span>
-      <h2>내 현황</h2>
+      <h2>{{ dashboard_user.user_name if dashboard_user else '내 현황' }}</h2>
     </div>
-    <a class="text-button" href="/my/distributions">
+    <div class="home-personal-actions">
+      {% if guilds | length > 1 %}
+      <label><span>서버</span><select onchange="location.href='/?guild_id='+this.value">{% for guild in guilds %}<option value="{{ guild.guild_id }}" {% if guild.guild_id == guild_id %}selected{% endif %}>{{ guild.name }}</option>{% endfor %}</select></label>
+      {% endif %}
+      <a class="text-button" href="/my/distributions{% if guild_id %}?guild_id={{ guild_id }}{% endif %}">
       내 분배금 보기
       {{ icon("chevron-right") }}
-    </a>
+      </a>
+    </div>
   </div>
   <div class="compact-stat-grid compact-stat-grid-wide">
     {% for card in personal_cards %}

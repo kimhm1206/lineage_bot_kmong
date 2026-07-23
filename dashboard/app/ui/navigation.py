@@ -103,14 +103,47 @@ NAV_GROUPS: tuple[NavGroup, ...] = (
 )
 
 
-def get_navigation(active_item_id: str, *, developer_access: bool = False) -> list[dict[str, object]]:
+def get_navigation(
+    active_item_id: str,
+    *,
+    access_role: str = "user",
+    can_manage_alliance: bool = False,
+    can_manage_clan: bool = False,
+) -> list[dict[str, object]]:
     groups: list[dict[str, object]] = []
     for group in NAV_GROUPS:
-        if group.developer_only and not developer_access:
+        if group.developer_only and access_role != "developer":
+            continue
+        if group.id == "alliance-operations" and not can_manage_alliance:
             continue
         items = []
         group_is_active = False
         for item in group.items:
+            if (
+                group.id == "clan-operations"
+                and item.id in {"clan.settings", "clan.staff"}
+                and not can_manage_clan
+            ):
+                continue
+            if (
+                group.id == "attendance"
+                and item.id == "attendance.settings"
+                and not can_manage_alliance
+            ):
+                continue
+            if group.id == "operations":
+                allowed = (
+                    item.id == "operations.notifications"
+                    and can_manage_alliance
+                ) or (
+                    item.id == "operations.audit"
+                    and (can_manage_alliance or can_manage_clan)
+                ) or (
+                    item.id in {"operations.alliances", "operations.delegation"}
+                    and access_role in {"developer", "owner"}
+                )
+                if not allowed:
+                    continue
             is_active = item.id == active_item_id
             group_is_active = group_is_active or is_active
             items.append(
@@ -123,6 +156,8 @@ def get_navigation(active_item_id: str, *, developer_access: bool = False) -> li
                     "is_active": is_active,
                 }
             )
+        if not items:
+            continue
         groups.append(
             {
                 "id": group.id,

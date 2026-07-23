@@ -9,7 +9,6 @@ from dashboard.app.config import get_settings
 
 DEVELOPER_ENVIRONMENTS = {"local", "development", "test"}
 ALLIANCE_OVERVIEW_ROLES = {"developer", "owner"}
-ALLIANCE_OPERATION_ROLES = {"developer", "owner", "alliance_manager"}
 
 
 def current_access_role(request: Request) -> str:
@@ -38,12 +37,43 @@ def current_discord_user_id(request: Request) -> int | None:
     return None
 
 
+def allowed_guild_ids(request: Request) -> tuple[int, ...] | None:
+    values = getattr(request.state, "allowed_guild_ids", None)
+    if values is None:
+        return None
+    return tuple(int(value) for value in values)
+
+
+def current_access_scopes(request: Request) -> frozenset[int]:
+    values = getattr(request.state, "access_scopes", ())
+    return frozenset(int(value) for value in values)
+
+
+def has_assignment_scope(request: Request, *scope_codes: int) -> bool:
+    return bool(current_access_scopes(request).intersection(scope_codes))
+
+
+def require_selected_guild(request: Request, guild_id: int) -> None:
+    allowed = allowed_guild_ids(request)
+    selected = getattr(request.state, "selected_guild_id", None)
+    if allowed is not None and guild_id not in allowed:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="접근할 수 없는 서버입니다.",
+        )
+    if selected is not None and int(selected) != guild_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="선택한 서버의 설정만 변경할 수 있습니다.",
+        )
+
+
 async def can_select_alliances(
     request: Request,
     session: AsyncSession,
     guild_id: int | None,
 ) -> bool:
-    if current_access_role(request) in ALLIANCE_OVERVIEW_ROLES:
+    if current_access_role(request) == "developer":
         return True
     discord_user_id = current_discord_user_id(request)
     if guild_id is None or discord_user_id is None:
@@ -142,7 +172,10 @@ async def require_alliance_access(
 
 
 def can_manage_alliance_operations(request: Request) -> bool:
-    return current_access_role(request) in ALLIANCE_OPERATION_ROLES
+    return (
+        current_access_role(request) in {"developer", "owner"}
+        or has_assignment_scope(request, 1)
+    )
 
 
 def can_manage_alliance_treasury(request: Request) -> bool:
@@ -150,7 +183,17 @@ def can_manage_alliance_treasury(request: Request) -> bool:
 
 
 def can_manage_clan_treasury(request: Request) -> bool:
-    return current_access_role(request) in {"developer", "owner", "clan_manager", "clan_accountant"}
+    return (
+        current_access_role(request) in {"developer", "owner"}
+        or has_assignment_scope(request, 2, 3)
+    )
+
+
+def can_manage_clan_configuration(request: Request) -> bool:
+    return (
+        current_access_role(request) in {"developer", "owner"}
+        or has_assignment_scope(request, 2)
+    )
 
 
 async def require_developer(request: Request) -> None:

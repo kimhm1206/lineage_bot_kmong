@@ -1,0 +1,17 @@
+{% extends "layouts/base.html" %}
+{% from "components/icons.html" import icon %}
+
+{% block title %}로그인 확인 · Lineage Dashboard{% endblock %}
+{% block body %}
+<main class="auth-shell auth-shell-compact">
+  <section class="auth-panel">
+    <div class="auth-card auth-failed-card">
+      <span class="auth-failed-icon">{{ icon("alert") }}</span>
+      <p>ACCESS CHECK</p>
+      <h1>로그인을 완료하지 못했습니다.</h1>
+      <span>{{ reason }}</span>
+      <a class="discord-login-button" href="/login">로그인 화면으로 돌아가기</a>
+    </div>
+  </section>
+</main>
+{% endblock %}

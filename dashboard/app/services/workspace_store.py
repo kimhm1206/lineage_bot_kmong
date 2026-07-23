@@ -121,8 +121,12 @@ async def resolve_workspace(
     session: AsyncSession,
     requested_guild_id: int | None,
     requested_alliance_id: int | None,
+    allowed_guild_ids: Sequence[int] | None = None,
 ) -> dict[str, Any]:
     guild_rows = await settings_store.list_guilds(session)
+    if allowed_guild_ids is not None:
+        allowed = {int(value) for value in allowed_guild_ids}
+        guild_rows = [row for row in guild_rows if int(row["guild_id"]) in allowed]
     enabled = [row for row in guild_rows if row["is_enabled"]]
     visible_guilds = enabled or guild_rows
     known_guild_ids = {row["guild_id"] for row in visible_guilds}

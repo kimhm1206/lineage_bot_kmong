@@ -14,8 +14,18 @@
       <span data-theme-label>Dark</span>
     </button>
     <div class="profile-chip">
+      {% if current_discord_user and current_discord_user.avatar_url %}
+      <img src="{{ current_discord_user.avatar_url }}" alt="">
+      {% else %}
       <span class="profile-dot"></span>
-      <strong>{{ current_access_role_label }}</strong>
+      {% endif %}
+      <span>
+        <strong>{{ current_discord_user.display_name if current_discord_user else current_access_role_label }}</strong>
+        <small>{{ current_access_role_label }}</small>
+      </span>
     </div>
+    <a class="icon-button topbar-logout" href="/logout" aria-label="로그아웃" title="로그아웃">
+      {{ icon("log-out") }}
+    </a>
   </div>
 </header>

@@ -20,6 +20,13 @@ class Settings(BaseSettings):
     discord_bot_token: str = ""
     discord_api_base: str = "https://discord.com/api/v10"
     discord_cache_ttl_seconds: int = 300
+    discord_client_id: str = ""
+    discord_client_secret: str = ""
+    discord_redirect_uri: str = "http://127.0.0.1:8000/auth/discord/callback"
+    session_secret: str = "lineage-dashboard-local-session"
+    session_https_only: bool = False
+    auth_local_bypass: bool = True
+    global_developer_discord_id: int = 238978205078388747
 
     model_config = SettingsConfigDict(
         env_file=BASE_DIR / ".env",

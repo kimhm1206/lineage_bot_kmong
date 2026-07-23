@@ -121,6 +121,43 @@ async def ensure_settings_schema() -> None:
             PRIMARY KEY (guild_id, alliance_id)
         )
         """,
+        """
+        CREATE TABLE IF NOT EXISTS scheduled_report_settings (
+            report_setting_id BIGSERIAL PRIMARY KEY,
+            guild_id BIGINT NOT NULL REFERENCES guilds(guild_id) ON DELETE CASCADE,
+            created_by_discord_id BIGINT NOT NULL,
+            updated_by_discord_id BIGINT,
+            report_name TEXT,
+            frequency TEXT NOT NULL,
+            period_type TEXT NOT NULL,
+            subject_type TEXT NOT NULL,
+            result_type TEXT NOT NULL,
+            run_time TEXT NOT NULL,
+            channel_id BIGINT NOT NULL,
+            channel_name TEXT NOT NULL,
+            schedule_json JSONB NOT NULL,
+            query_json JSONB NOT NULL,
+            render_json JSONB NOT NULL,
+            status TEXT NOT NULL DEFAULT 'on'
+                CHECK (status IN ('on', 'off', 'delete')),
+            last_sent_at TEXT,
+            next_run_at TEXT,
+            memo TEXT,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS ix_scheduled_report_settings_active
+        ON scheduled_report_settings (status, next_run_at, guild_id)
+        WHERE status <> 'delete'
+        """,
+        """
+        INSERT INTO treasury_source_types(source_type_id, source_code)
+        SELECT COALESCE(MAX(source_type_id), 0) + 1,
+               'alliance_distribution_receipt'
+        FROM treasury_source_types
+        ON CONFLICT (source_code) DO NOTHING
+        """,
     )
     async with engine.begin() as connection:
         for statement in statements:
@@ -1354,6 +1391,27 @@ async def apply_local_schema_cleanup() -> bool:
                 text("""
                     INSERT INTO schema_migrations(version, applied_at)
                     VALUES (18, EXTRACT(EPOCH FROM NOW())::BIGINT)
+                """)
+            )
+            changed = True
+
+        alliance_distribution_receipt_applied = await connection.scalar(
+            text("SELECT 1 FROM schema_migrations WHERE version = 19")
+        )
+        if not alliance_distribution_receipt_applied:
+            await connection.execute(
+                text("""
+                    INSERT INTO treasury_source_types(source_type_id, source_code)
+                    SELECT COALESCE(MAX(source_type_id), 0) + 1,
+                           'alliance_distribution_receipt'
+                    FROM treasury_source_types
+                    ON CONFLICT (source_code) DO NOTHING
+                """)
+            )
+            await connection.execute(
+                text("""
+                    INSERT INTO schema_migrations(version, applied_at)
+                    VALUES (19, EXTRACT(EPOCH FROM NOW())::BIGINT)
                 """)
             )
             changed = True

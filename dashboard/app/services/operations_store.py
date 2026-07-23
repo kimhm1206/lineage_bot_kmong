@@ -591,21 +591,63 @@ async def alliance_settlement_history_page(
             "pagination": _pagination(0, 1, 30),
             "summary": {"complete_count": 0, "total_amount_label": "0"},
         }
+    history_sql = """
+        WITH history AS (
+            SELECT 'drop'::TEXT AS source_type,
+                   po.payout_object_id, po.amount_adena,
+                   d.attendance_id, item.item_name,
+                   d.occurred_at, po.completed_at,
+                   COUNT(child.payout_object_id) FILTER (
+                       WHERE child.status_code <> 0
+                   ) AS started_child_count
+            FROM settlement_payout_objects po
+            JOIN settlement_drops d ON d.drop_id = po.drop_id
+            JOIN settlement_drop_sales sale
+              ON sale.drop_id = d.drop_id AND sale.status_code = 1
+            JOIN catalog_item_versions item
+              ON item.item_version_id = d.item_version_id
+            LEFT JOIN settlement_payout_objects child
+              ON child.parent_payout_object_id = po.payout_object_id
+            WHERE d.guild_id = :guild_id
+              AND po.object_code = 1
+              AND po.recipient_alliance_id = :alliance_id
+              AND po.status_code = 1
+            GROUP BY po.payout_object_id, d.attendance_id,
+                     d.occurred_at, item.item_name
+
+            UNION ALL
+
+            SELECT 'treasury'::TEXT AS source_type,
+                   NULL::BIGINT AS payout_object_id,
+                   distribution.per_recipient_amount AS amount_adena,
+                   NULL::BIGINT AS attendance_id,
+                   '연합비 잔액 분배'::TEXT AS item_name,
+                   distribution.created_at AS occurred_at,
+                   recipient.completed_at,
+                   1::BIGINT AS started_child_count
+            FROM treasury_distribution_recipients recipient
+            JOIN treasury_distributions distribution
+              ON distribution.treasury_distribution_id =
+                 recipient.treasury_distribution_id
+            JOIN treasury_accounts account
+              ON account.treasury_account_id =
+                 distribution.treasury_account_id
+            WHERE account.guild_id = :guild_id
+              AND account.account_scope_code = 1
+              AND recipient.alliance_id = :alliance_id
+              AND recipient.status_code = 1
+        )
+    """
     total_row = (
         await session.execute(
-            text("""
+            text(
+                history_sql
+                + """
                 SELECT COUNT(*) AS complete_count,
-                       COALESCE(SUM(po.amount_adena), 0) AS total_amount
-                FROM settlement_payout_objects po
-                JOIN settlement_drops d ON d.drop_id = po.drop_id
-                JOIN settlement_drop_sales sale
-                  ON sale.drop_id = d.drop_id
-                 AND sale.status_code = 1
-                WHERE d.guild_id = :guild_id
-                  AND po.object_code = 1
-                  AND po.recipient_alliance_id = :alliance_id
-                  AND po.status_code = 1
-            """),
+                       COALESCE(SUM(amount_adena), 0) AS total_amount
+                FROM history
+                """
+            ),
             params,
         )
     ).mappings().one()
@@ -615,38 +657,26 @@ async def alliance_settlement_history_page(
         dict(row)
         for row in (
             await session.execute(
-                text("""
-                    SELECT po.payout_object_id, po.amount_adena,
-                           d.attendance_id, item.item_name,
+                text(
+                    history_sql
+                    + """
+                    SELECT source_type, payout_object_id, amount_adena,
+                           attendance_id, item_name,
                            TO_CHAR(
-                               TO_TIMESTAMP(d.occurred_at),
+                               TO_TIMESTAMP(occurred_at),
                                'YYYY-MM-DD HH24:MI'
                            ) AS occurred_at_label,
                            TO_CHAR(
-                               TO_TIMESTAMP(po.completed_at),
+                               TO_TIMESTAMP(completed_at),
                                'YYYY-MM-DD HH24:MI'
                            ) AS completed_at_label,
-                           COUNT(child.payout_object_id) FILTER (
-                               WHERE child.status_code <> 0
-                           ) AS started_child_count
-                    FROM settlement_payout_objects po
-                    JOIN settlement_drops d ON d.drop_id = po.drop_id
-                    JOIN settlement_drop_sales sale
-                      ON sale.drop_id = d.drop_id
-                     AND sale.status_code = 1
-                    JOIN catalog_item_versions item
-                      ON item.item_version_id = d.item_version_id
-                    LEFT JOIN settlement_payout_objects child
-                      ON child.parent_payout_object_id = po.payout_object_id
-                    WHERE d.guild_id = :guild_id
-                      AND po.object_code = 1
-                      AND po.recipient_alliance_id = :alliance_id
-                      AND po.status_code = 1
-                    GROUP BY po.payout_object_id, d.attendance_id,
-                             d.occurred_at, item.item_name
-                    ORDER BY po.completed_at DESC, po.payout_object_id DESC
+                           started_child_count
+                    FROM history
+                    ORDER BY completed_at DESC NULLS LAST,
+                             payout_object_id DESC NULLS LAST
                     LIMIT :limit OFFSET :offset
-                """),
+                    """
+                ),
                 {
                     **params,
                     "limit": pagination["page_size"],
@@ -656,16 +686,34 @@ async def alliance_settlement_history_page(
         ).mappings().all()
     ]
     for row in rows:
-        row["payout_object_id"] = int(row["payout_object_id"])
-        row["attendance_id"] = int(row["attendance_id"])
+        row["payout_object_id"] = (
+            int(row["payout_object_id"])
+            if row["payout_object_id"] is not None
+            else None
+        )
+        row["attendance_id"] = (
+            int(row["attendance_id"])
+            if row["attendance_id"] is not None
+            else None
+        )
         row["amount_adena"] = int(row["amount_adena"])
         row["amount_label"] = _money(row["amount_adena"])
         row["started_child_count"] = int(row["started_child_count"] or 0)
-        row["can_cancel"] = row["started_child_count"] == 0
+        row["can_cancel"] = (
+            row["source_type"] == "drop"
+            and row["started_child_count"] == 0
+        )
+        row["context_label"] = (
+            f"출석 #{row['attendance_id']}"
+            if row["attendance_id"] is not None
+            else "연합비 가계부"
+        )
         row["progress_label"] = (
             "완료 취소 가능"
             if row["can_cancel"]
             else "혈맹 분배 진행됨"
+            if row["source_type"] == "drop"
+            else "혈비 가계부 반영"
         )
     return {
         "alliance_name": str(alliance_name),
@@ -852,17 +900,17 @@ async def clan_settlement_history_page(
     period_clause = (
         ""
         if period_days == 0
-        else "AND d.occurred_at >= EXTRACT(EPOCH FROM NOW() - (:period_days * INTERVAL '1 day'))::BIGINT"
+        else "AND history.occurred_at >= EXTRACT(EPOCH FROM NOW() - (:period_days * INTERVAL '1 day'))::BIGINT"
     )
     status_clause = {
-        "complete": "AND po.status_code = 1",
-        "forfeited": "AND po.status_code = 2",
-    }.get(status_filter, "AND po.status_code IN (1, 2)")
+        "complete": "AND history.status_code = 1",
+        "forfeited": "AND history.status_code = 2",
+    }.get(status_filter, "AND history.status_code IN (1, 2)")
     search_clause = """
         AND (
-            COALESCE(u.game_nickname, u.discord_nickname, fv.rule_name, '') ILIKE :query
-            OR v.item_name ILIKE :query
-            OR CAST(d.attendance_id AS TEXT) ILIKE :query
+            history.target_name ILIKE :query
+            OR history.item_name ILIKE :query
+            OR CAST(history.attendance_id AS TEXT) ILIKE :query
         )
     """ if query else ""
     params = {
@@ -871,24 +919,81 @@ async def clan_settlement_history_page(
         "period_days": period_days,
         "query": f"%{query}%",
     }
+    history_cte = """
+        WITH history AS (
+            SELECT 'drop'::TEXT AS source_type,
+                   po.payout_object_id,
+                   po.object_code,
+                   po.amount_adena,
+                   po.status_code,
+                   d.attendance_id,
+                   v.item_name,
+                   COALESCE(
+                       u.game_nickname,
+                       u.discord_nickname,
+                       fv.rule_name,
+                       '알 수 없는 대상'
+                   ) AS target_name,
+                   CASE
+                       WHEN po.object_code = 2 THEN '혈맹원'
+                       ELSE '내부 수수료'
+                   END AS target_type,
+                   d.occurred_at,
+                   po.completed_at
+            FROM settlement_payout_objects po
+            JOIN settlement_drops d ON d.drop_id = po.drop_id
+            JOIN settlement_drop_sales sale
+              ON sale.drop_id = d.drop_id AND sale.status_code = 1
+            JOIN catalog_item_versions v
+              ON v.item_version_id = d.item_version_id
+            JOIN settlement_payout_objects parent
+              ON parent.payout_object_id = po.parent_payout_object_id
+            LEFT JOIN users u ON u.user_id = po.recipient_user_id
+            LEFT JOIN settlement_fee_rule_versions fv
+              ON fv.fee_rule_version_id = po.fee_rule_version_id
+            WHERE d.guild_id = :guild_id
+              AND parent.recipient_alliance_id = :alliance_id
+              AND po.object_code IN (2, 3)
+              AND po.status_code IN (1, 2)
+
+            UNION ALL
+
+            SELECT 'treasury'::TEXT AS source_type,
+                   NULL::BIGINT AS payout_object_id,
+                   2::SMALLINT AS object_code,
+                   distribution.per_recipient_amount AS amount_adena,
+                   recipient.status_code,
+                   NULL::BIGINT AS attendance_id,
+                   '혈비 잔액 분배'::TEXT AS item_name,
+                   COALESCE(user_row.game_nickname, user_row.discord_nickname)
+                       AS target_name,
+                   '혈맹원'::TEXT AS target_type,
+                   distribution.created_at AS occurred_at,
+                   recipient.completed_at
+            FROM treasury_distribution_recipients recipient
+            JOIN treasury_distributions distribution
+              ON distribution.treasury_distribution_id =
+                 recipient.treasury_distribution_id
+            JOIN treasury_accounts account
+              ON account.treasury_account_id =
+                 distribution.treasury_account_id
+            JOIN users user_row ON user_row.user_id = recipient.user_id
+            WHERE account.guild_id = :guild_id
+              AND account.account_scope_code = 2
+              AND account.alliance_id = :alliance_id
+              AND recipient.status_code IN (1, 2)
+        )
+    """
     from_sql = f"""
-        FROM settlement_payout_objects po
-        JOIN settlement_drops d ON d.drop_id = po.drop_id
-        JOIN settlement_drop_sales s ON s.drop_id = d.drop_id AND s.status_code = 1
-        JOIN catalog_item_versions v ON v.item_version_id = d.item_version_id
-        JOIN settlement_payout_objects parent ON parent.payout_object_id = po.parent_payout_object_id
-        LEFT JOIN users u ON u.user_id = po.recipient_user_id
-        LEFT JOIN settlement_fee_rule_versions fv ON fv.fee_rule_version_id = po.fee_rule_version_id
-        WHERE d.guild_id = :guild_id
-          AND parent.recipient_alliance_id = :alliance_id
-          AND po.object_code IN (2, 3)
+        FROM history
+        WHERE TRUE
           {period_clause}
           {status_clause}
           {search_clause}
     """
     total = int(
         await session.scalar(
-            text(f"SELECT COUNT(*) {from_sql}"),
+            text(f"{history_cte} SELECT COUNT(*) {from_sql}"),
             params,
         )
         or 0
@@ -899,18 +1004,21 @@ async def clan_settlement_history_page(
         for row in (
             await session.execute(
                 text(f"""
-                    SELECT po.payout_object_id, po.object_code, po.amount_adena,
-                           po.status_code, d.attendance_id, v.item_name,
-                           COALESCE(
-                               u.game_nickname,
-                               u.discord_nickname,
-                               fv.rule_name,
-                               '알 수 없는 대상'
-                           ) AS target_name,
-                           TO_CHAR(TO_TIMESTAMP(d.occurred_at), 'MM/DD HH24:MI') AS occurred_at_label,
-                           TO_CHAR(TO_TIMESTAMP(po.completed_at), 'YYYY-MM-DD HH24:MI') AS completed_at_label
+                    {history_cte}
+                    SELECT source_type, payout_object_id, object_code,
+                           amount_adena, status_code, attendance_id,
+                           item_name, target_name, target_type,
+                           TO_CHAR(
+                               TO_TIMESTAMP(occurred_at),
+                               'MM/DD HH24:MI'
+                           ) AS occurred_at_label,
+                           TO_CHAR(
+                               TO_TIMESTAMP(completed_at),
+                               'YYYY-MM-DD HH24:MI'
+                           ) AS completed_at_label
                     {from_sql}
-                    ORDER BY po.completed_at DESC, po.payout_object_id DESC
+                    ORDER BY completed_at DESC NULLS LAST,
+                             payout_object_id DESC NULLS LAST
                     LIMIT :limit OFFSET :offset
                 """),
                 {
@@ -923,28 +1031,35 @@ async def clan_settlement_history_page(
     ]
     for row in rows:
         status_code = int(row["status_code"])
-        row["payout_object_id"] = int(row["payout_object_id"])
-        row["attendance_id"] = int(row["attendance_id"])
+        row["payout_object_id"] = (
+            int(row["payout_object_id"])
+            if row["payout_object_id"] is not None
+            else None
+        )
+        row["attendance_id"] = (
+            int(row["attendance_id"])
+            if row["attendance_id"] is not None
+            else None
+        )
         row["amount_adena"] = int(row["amount_adena"])
         row["amount_label"] = _money(row["amount_adena"])
         row["status_label"] = STATUS_LABELS[status_code]
         row["status_tone"] = STATUS_TONES[status_code]
-        row["target_type"] = "혈맹원" if int(row["object_code"]) == 2 else "내부 수수료"
+        row["context_label"] = (
+            f"출석 #{row['attendance_id']}"
+            if row["attendance_id"] is not None
+            else "혈비 가계부"
+        )
     summary = (
         await session.execute(
             text(f"""
+                {history_cte}
                 SELECT
-                    COUNT(*) FILTER (WHERE po.status_code = 1) AS complete_count,
-                    COUNT(*) FILTER (WHERE po.status_code = 2) AS forfeited_count,
-                    COALESCE(SUM(po.amount_adena) FILTER (WHERE po.status_code IN (1, 2)), 0) AS total_amount
-                FROM settlement_payout_objects po
-                JOIN settlement_drops d ON d.drop_id = po.drop_id
-                JOIN settlement_drop_sales s ON s.drop_id = d.drop_id AND s.status_code = 1
-                JOIN settlement_payout_objects parent ON parent.payout_object_id = po.parent_payout_object_id
-                WHERE d.guild_id = :guild_id
-                  AND parent.recipient_alliance_id = :alliance_id
-                  AND po.object_code IN (2, 3)
-                  AND po.status_code IN (1, 2)
+                    COUNT(*) FILTER (WHERE history.status_code = 1) AS complete_count,
+                    COUNT(*) FILTER (WHERE history.status_code = 2) AS forfeited_count,
+                    COALESCE(SUM(history.amount_adena), 0) AS total_amount
+                FROM history
+                WHERE history.status_code IN (1, 2)
                   {period_clause}
             """),
             params,
@@ -1202,6 +1317,7 @@ async def personal_distribution_page(
     guild_id: int,
     user_id: int | None,
     period_days: int,
+    fallback_to_first: bool = True,
 ) -> dict[str, Any]:
     users = [
         dict(row)
@@ -1224,27 +1340,71 @@ async def personal_distribution_page(
         ).mappings().all()
     ]
     valid_ids = {int(row["user_id"]) for row in users}
-    if user_id not in valid_ids:
+    if user_id not in valid_ids and fallback_to_first:
         user_id = int(users[0]["user_id"]) if users else None
+    elif user_id not in valid_ids:
+        user_id = None
     selected_user = next((row for row in users if int(row["user_id"]) == user_id), None)
     if user_id is None:
         return {"users": users, "user_id": None, "selected_user": None, "details": [], "summary_cards": []}
-    period_clause = "" if period_days == 0 else "AND d.occurred_at >= EXTRACT(EPOCH FROM NOW() - (:period_days * INTERVAL '1 day'))::BIGINT"
+    period_clause = (
+        ""
+        if period_days == 0
+        else "AND history.occurred_at >= EXTRACT(EPOCH FROM NOW() - (:period_days * INTERVAL '1 day'))::BIGINT"
+    )
     details = [
         dict(row)
         for row in (
             await session.execute(
                 text(f"""
-                    SELECT po.payout_object_id, po.amount_adena, po.status_code,
-                           d.attendance_id, v.item_name,
-                           TO_CHAR(TO_TIMESTAMP(d.occurred_at), 'YYYY-MM-DD HH24:MI') AS occurred_at_label
-                    FROM settlement_payout_objects po
-                    JOIN settlement_drops d ON d.drop_id = po.drop_id
-                    JOIN settlement_drop_sales s ON s.drop_id = d.drop_id AND s.status_code = 1
-                    JOIN catalog_item_versions v ON v.item_version_id = d.item_version_id
-                    WHERE d.guild_id = :guild_id AND po.object_code = 2
-                      AND po.recipient_user_id = :user_id {period_clause}
-                    ORDER BY d.occurred_at DESC, po.payout_object_id DESC
+                    WITH history AS (
+                        SELECT 'drop'::TEXT AS source_type,
+                               po.payout_object_id,
+                               po.amount_adena,
+                               po.status_code,
+                               d.attendance_id,
+                               v.item_name,
+                               d.occurred_at
+                        FROM settlement_payout_objects po
+                        JOIN settlement_drops d ON d.drop_id = po.drop_id
+                        JOIN settlement_drop_sales sale
+                          ON sale.drop_id = d.drop_id AND sale.status_code = 1
+                        JOIN catalog_item_versions v
+                          ON v.item_version_id = d.item_version_id
+                        WHERE d.guild_id = :guild_id
+                          AND po.object_code = 2
+                          AND po.recipient_user_id = :user_id
+
+                        UNION ALL
+
+                        SELECT 'treasury'::TEXT AS source_type,
+                               NULL::BIGINT AS payout_object_id,
+                               distribution.per_recipient_amount AS amount_adena,
+                               recipient.status_code,
+                               NULL::BIGINT AS attendance_id,
+                               '혈비 잔액 분배'::TEXT AS item_name,
+                               distribution.created_at AS occurred_at
+                        FROM treasury_distribution_recipients recipient
+                        JOIN treasury_distributions distribution
+                          ON distribution.treasury_distribution_id =
+                             recipient.treasury_distribution_id
+                        JOIN treasury_accounts account
+                          ON account.treasury_account_id =
+                             distribution.treasury_account_id
+                        WHERE account.guild_id = :guild_id
+                          AND account.account_scope_code = 2
+                          AND recipient.user_id = :user_id
+                    )
+                    SELECT source_type, payout_object_id, amount_adena,
+                           status_code, attendance_id, item_name,
+                           TO_CHAR(
+                               TO_TIMESTAMP(occurred_at),
+                               'YYYY-MM-DD HH24:MI'
+                           ) AS occurred_at_label
+                    FROM history
+                    WHERE TRUE {period_clause}
+                    ORDER BY occurred_at DESC,
+                             payout_object_id DESC NULLS LAST
                 """),
                 {"guild_id": guild_id, "user_id": user_id, "period_days": period_days},
             )
@@ -1255,6 +1415,11 @@ async def personal_distribution_page(
         row["amount_label"] = _money(row["amount_adena"])
         row["status_label"] = STATUS_LABELS[status]
         row["status_tone"] = STATUS_TONES[status]
+        row["attendance_id"] = (
+            int(row["attendance_id"])
+            if row["attendance_id"] is not None
+            else None
+        )
     pending = sum(int(row["amount_adena"]) for row in details if int(row["status_code"]) == 0)
     complete = sum(int(row["amount_adena"]) for row in details if int(row["status_code"]) == 1)
     forfeited = sum(int(row["amount_adena"]) for row in details if int(row["status_code"]) == 2)

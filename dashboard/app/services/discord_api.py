@@ -127,6 +127,26 @@ class DiscordRestClient:
             self._cache[cache_key] = _CacheEntry(monotonic() + self._ttl, members)
         return members
 
+    async def send_message(self, channel_id: int, content: str) -> dict[str, Any]:
+        if not self._token:
+            raise DiscordApiError("dashboard/.env에 DISCORD_BOT_TOKEN을 설정해 주세요.")
+        try:
+            response = await self._http_client().post(
+                f"/channels/{channel_id}/messages",
+                json={"content": content},
+            )
+        except httpx.HTTPError as exc:
+            raise DiscordApiError("Discord 메시지를 전송하지 못했습니다.") from exc
+        if response.status_code == 401:
+            raise DiscordApiError("Discord 봇 토큰이 유효하지 않습니다.")
+        if response.status_code == 403:
+            raise DiscordApiError("선택한 채널에 메시지를 보낼 권한이 없습니다.")
+        if response.status_code == 429:
+            raise DiscordApiError("Discord 요청이 많습니다. 잠시 후 다시 시도해 주세요.")
+        if response.is_error:
+            raise DiscordApiError(f"Discord 메시지 전송 실패 ({response.status_code})")
+        return response.json()
+
     @staticmethod
     def member_display_name(member: dict[str, Any]) -> str:
         user = member.get("user", {})

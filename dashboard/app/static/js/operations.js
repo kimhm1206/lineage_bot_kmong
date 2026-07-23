@@ -334,7 +334,7 @@
     const itemName = document.createElement("strong");
     itemName.textContent = record.item_name || "이름 없는 아이템";
     const attendance = document.createElement("small");
-    attendance.textContent = `출석 #${record.attendance_id || "-"} · ${record.occurred_at_label || "-"}`;
+    attendance.textContent = `${record.context_label || `출석 #${record.attendance_id || "-"}`} · ${record.occurred_at_label || "-"}`;
     item.append(itemName, attendance);
 
     const amount = document.createElement("div");
@@ -462,7 +462,7 @@
     const itemName = document.createElement("strong");
     itemName.textContent = record.item_name || "이름 없는 아이템";
     const attendance = document.createElement("span");
-    attendance.textContent = `출석 #${record.attendance_id || "-"} · ${record.occurred_at_label || "-"}`;
+    attendance.textContent = `${record.context_label || `출석 #${record.attendance_id || "-"}`} · ${record.occurred_at_label || "-"}`;
     const completedAt = document.createElement("small");
     completedAt.textContent = `완료 ${record.completed_at_label || "-"}`;
     recordCopy.append(itemName, attendance, completedAt);
