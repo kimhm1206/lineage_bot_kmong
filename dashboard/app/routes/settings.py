@@ -121,19 +121,58 @@ async def _discord_resources(guild_id: int | None, *resource_names: str) -> tupl
         return resources, str(exc)
 
 
-def _member_rows(members: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[int, str]]:
+def _role_alliance_map(mappings: list[dict[str, Any]]) -> dict[int, int]:
+    return {
+        int(mapping["role_id"]): int(mapping["alliance_id"])
+        for mapping in mappings
+        if mapping.get("role_id") is not None and mapping.get("alliance_id") is not None
+    }
+
+
+def _member_rows(
+    members: list[dict[str, Any]],
+    *,
+    role_alliance_map: dict[int, int] | None = None,
+) -> tuple[list[dict[str, Any]], dict[int, str]]:
     rows = []
     names: dict[int, str] = {}
+    role_alliance_map = role_alliance_map or {}
     for member in members:
         user = member.get("user", {})
         if user.get("bot"):
             continue
         discord_id = int(user["id"])
         display_name = member.get("nick") or user.get("global_name") or user.get("username") or str(discord_id)
-        rows.append({"discord_id": discord_id, "display_name": display_name, "username": user.get("username", "")})
+        alliance_ids = sorted(
+            {
+                role_alliance_map[int(role_id)]
+                for role_id in member.get("roles", [])
+                if int(role_id) in role_alliance_map
+            }
+        )
+        rows.append(
+            {
+                "discord_id": discord_id,
+                "display_name": display_name,
+                "username": user.get("username", ""),
+                "alliance_ids": alliance_ids,
+            }
+        )
         names[discord_id] = display_name
     rows.sort(key=lambda row: (row["display_name"].casefold(), row["discord_id"]))
     return rows, names
+
+
+def _member_has_alliance_role(
+    member: dict[str, Any],
+    *,
+    alliance_id: int,
+    role_alliance_map: dict[int, int],
+) -> bool:
+    return any(
+        role_alliance_map.get(int(role_id)) == alliance_id
+        for role_id in member.get("roles", [])
+    )
 
 
 @router.get("/server")
@@ -341,8 +380,12 @@ async def manager_settings(
     guild_data = await _guild_context(session, guild_id)
     assignments = await settings_store.list_assignments(session, guild_data["guild_id"]) if guild_data["guild_id"] else []
     alliances = await settings_store.list_guild_alliances(session, guild_data["guild_id"]) if guild_data["guild_id"] else []
+    mappings = await settings_store.list_role_mappings(session, guild_data["guild_id"]) if guild_data["guild_id"] else []
     resources, api_error = await _discord_resources(guild_data["guild_id"], "members")
-    members, member_names = _member_rows(resources["members"])
+    members, member_names = _member_rows(
+        resources["members"],
+        role_alliance_map=_role_alliance_map(mappings),
+    )
     for row in assignments:
         row["display_name"] = member_names.get(row["discord_user_id"], str(row["discord_user_id"]))
     alliance_managers = [
@@ -420,8 +463,24 @@ async def save_manager(request: Request, session: AsyncSession = Depends(get_ses
             raise ValueError
         if discord_api.configured:
             members = await discord_api.members(guild_id)
-            if not any(int(row.get("user", {}).get("id", 0)) == discord_user_id for row in members):
+            selected_member = next(
+                (
+                    row
+                    for row in members
+                    if int(row.get("user", {}).get("id", 0)) == discord_user_id
+                ),
+                None,
+            )
+            if selected_member is None:
                 raise ValueError
+            if scope_code == 2:
+                mappings = await settings_store.list_role_mappings(session, guild_id)
+                if not _member_has_alliance_role(
+                    selected_member,
+                    alliance_id=alliance_id,
+                    role_alliance_map=_role_alliance_map(mappings),
+                ):
+                    raise ValueError
         await settings_store.add_assignment(
             session,
             guild_id=guild_id,
@@ -475,8 +534,12 @@ async def clan_settings(
     if alliance_id not in valid_alliance_ids:
         alliance_id = alliances[0]["alliance_id"] if alliances else None
     assignments = await settings_store.list_assignments(session, guild_data["guild_id"]) if guild_data["guild_id"] else []
+    mappings = await settings_store.list_role_mappings(session, guild_data["guild_id"]) if guild_data["guild_id"] else []
     resources, api_error = await _discord_resources(guild_data["guild_id"], "members")
-    members, member_names = _member_rows(resources["members"])
+    members, member_names = _member_rows(
+        resources["members"],
+        role_alliance_map=_role_alliance_map(mappings),
+    )
     accountants = [
         {
             **row,
@@ -532,7 +595,22 @@ async def save_accountant(request: Request, session: AsyncSession = Depends(get_
         )
         if discord_api.configured:
             members = await discord_api.members(guild_id)
-            if not any(int(row.get("user", {}).get("id", 0)) == discord_user_id for row in members):
+            selected_member = next(
+                (
+                    row
+                    for row in members
+                    if int(row.get("user", {}).get("id", 0)) == discord_user_id
+                ),
+                None,
+            )
+            if selected_member is None:
+                raise ValueError
+            mappings = await settings_store.list_role_mappings(session, guild_id)
+            if not _member_has_alliance_role(
+                selected_member,
+                alliance_id=alliance_id,
+                role_alliance_map=_role_alliance_map(mappings),
+            ):
                 raise ValueError
         await settings_store.add_assignment(
             session,

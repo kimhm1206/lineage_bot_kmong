@@ -1,6 +1,7 @@
 {% extends "layouts/app_shell.html" %}
 {% from "components/icons.html" import icon %}
 {% from "components/operations.html" import toolbar, summary, pagination_controls, empty, modal with context %}
+{% from "components/user_picker_field.html" import user_picker_field %}
 
 {% block title %}{{ page_title }} · {{ app_name }}{% endblock %}
 {% block content %}
@@ -106,11 +107,12 @@
   <div class="sale-preview-strip"><div class="sale-preview-copy"><span data-sale-item>아이템</span><small data-sale-cash-label>0원</small></div><strong data-sale-adena>0 아데나</strong></div>
   <div class="ops-form-grid ops-form-grid-two">
     <label class="ops-field"><span>구매 혈맹</span><select name="buyer_alliance_id" required data-buyer-alliance><option value="">혈맹 선택</option>{% for alliance in alliance_options %}<option value="{{ alliance.alliance_id }}">{{ alliance.alliance_name }}</option>{% endfor %}</select></label>
-    <label class="ops-field"><span>구매자 <small>선택</small></span><select name="buyer_user_id" data-buyer-user><option value="">구매자 미지정</option>{% for user in buyer_users %}<option value="{{ user.user_id }}" data-alliance-id="{{ user.alliance_id }}">{{ user.user_name }}</option>{% endfor %}</select></label>
+    {{ user_picker_field(label="구매자 (선택)", input_name="buyer_user_id", empty_name="구매자 미지정", empty_meta="구매 혈맹원 중 선택", clearable=true) }}
     <label class="ops-field ops-field-span-two"><span>아데나 시세 <small>1만 아데나 기준 원화</small></span><input type="number" name="adena_market_rate" min="1" step="1" required data-sale-rate placeholder="1500"></label>
   </div>
   <div class="ops-inline-note">{{ icon("info") }} 저장된 원화 ÷ 아데나 시세로 환산하며 모든 계산은 정수 내림 처리됩니다.</div>
   <footer class="ops-form-actions"><button class="secondary-button" type="button" data-modal-close>취소</button><button class="primary-button" type="submit">판매 완료 및 분배 계산</button></footer>
 </form>
 {% endcall %}
+<script id="drop-buyer-users-data" type="application/json">{{ buyer_users | tojson }}</script>
 {% endblock %}

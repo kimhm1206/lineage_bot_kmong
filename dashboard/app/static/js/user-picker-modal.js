@@ -16,6 +16,9 @@
       this.selectedIds = new Set();
       this.excludedIds = new Set();
       this.multiple = false;
+      this.idKey = "discord_id";
+      this.allianceId = "";
+      this.allianceName = "";
       this.resolve = null;
       this.previouslyFocused = null;
 
@@ -35,13 +38,17 @@
       if (this.resolve) this.cancel();
       this.users = Array.isArray(options.users) ? options.users : [];
       this.multiple = Boolean(options.multiple);
+      this.idKey = String(options.idKey || "discord_id");
+      this.allianceId = options.allianceId ? String(options.allianceId) : "";
+      this.allianceName = String(options.allianceName || "");
       this.excludedIds = new Set((options.excludedIds || []).map(String));
       const selectedIds = (options.selectedIds || [])
         .map(String)
         .filter((id) => !this.excludedIds.has(id));
       this.selectedIds = new Set(this.multiple ? selectedIds : selectedIds.slice(0, 1));
       this.title.textContent = options.title || (this.multiple ? "유저 여러 명 선택" : "유저 선택");
-      this.modeLabel.textContent = this.multiple ? "여러 명 선택 가능" : "한 명 선택";
+      const mode = this.multiple ? "여러 명 선택 가능" : "한 명 선택";
+      this.modeLabel.textContent = this.allianceName ? `${this.allianceName} · ${mode}` : mode;
       this.search.value = "";
       this.previouslyFocused = document.activeElement;
       this.root.classList.remove("is-hidden");
@@ -70,13 +77,26 @@
     }
 
     confirm() {
-      const selectedUsers = this.users.filter((user) => this.selectedIds.has(String(user.discord_id)));
+      const selectedUsers = this.users.filter((user) => this.selectedIds.has(this.userId(user)));
       if (!selectedUsers.length) return;
       this.close(selectedUsers);
     }
 
+    userId(user) {
+      return String(user?.[this.idKey] ?? "");
+    }
+
+    belongsToAlliance(user) {
+      if (!this.allianceId) return true;
+      const allianceIds = Array.isArray(user.alliance_ids)
+        ? user.alliance_ids
+        : [user.alliance_id];
+      return allianceIds.some((id) => String(id || "") === this.allianceId);
+    }
+
     toggle(user) {
-      const id = String(user.discord_id);
+      const id = this.userId(user);
+      if (!id) return;
       if (this.excludedIds.has(id)) return;
       if (!this.multiple) {
         this.selectedIds.clear();
@@ -95,11 +115,13 @@
 
     matches(user, query) {
       if (!query) return true;
-      return this.normalized(`${user.display_name} ${user.username || ""} ${user.discord_id}`).includes(query);
+      return this.normalized(
+        `${user.display_name} ${user.username || ""} ${user.discord_id || ""} ${user.user_id || ""}`,
+      ).includes(query);
     }
 
     createUserRow(user) {
-      const id = String(user.discord_id);
+      const id = this.userId(user);
       const isSelected = this.selectedIds.has(id);
       const isExcluded = this.excludedIds.has(id);
       const button = document.createElement("button");
@@ -115,7 +137,8 @@
       const name = document.createElement("strong");
       name.textContent = user.display_name;
       const detail = document.createElement("small");
-      detail.textContent = user.username ? `${user.username} · ${user.discord_id}` : String(user.discord_id);
+      const identity = user.discord_id || user.user_id || id;
+      detail.textContent = user.username ? `${user.username} · ${identity}` : String(identity);
       copy.append(name, detail);
 
       const state = document.createElement("span");
@@ -128,14 +151,19 @@
 
     render() {
       const query = this.normalized(this.search.value);
-      const matched = this.users.filter((user) => this.matches(user, query));
+      const eligible = this.users.filter((user) => this.belongsToAlliance(user));
+      const matched = eligible.filter((user) => this.matches(user, query));
       const visible = matched.slice(0, 100);
       this.results.replaceChildren();
 
       if (!visible.length) {
         const empty = document.createElement("div");
         empty.className = "user-picker-empty";
-        empty.textContent = query ? "검색 결과가 없습니다." : "선택할 수 있는 서버 유저가 없습니다.";
+        empty.textContent = query
+          ? "검색 결과가 없습니다."
+          : this.allianceId
+            ? "선택한 혈맹에 등록된 유저가 없습니다."
+            : "선택할 수 있는 서버 유저가 없습니다.";
         this.results.append(empty);
       } else {
         visible.forEach((user) => this.results.append(this.createUserRow(user)));

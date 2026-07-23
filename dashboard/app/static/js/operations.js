@@ -135,16 +135,54 @@
     if (isOpen) window.setTimeout(() => editor.elements.item_name?.focus(), 20);
   };
 
-  const filterBuyerUsers = (form) => {
-    const allianceId = form.querySelector("[data-buyer-alliance]")?.value || "";
-    const userSelect = form.querySelector("[data-buyer-user]");
-    if (!userSelect) return;
-    [...userSelect.options].forEach((option, index) => {
-      if (index === 0) return;
-      option.hidden = option.dataset.allianceId !== allianceId;
-      option.disabled = option.hidden;
+  const saleBuyerUsers = () => {
+    const data = document.querySelector("#drop-buyer-users-data");
+    if (!data) return [];
+    try {
+      return JSON.parse(data.textContent || "[]");
+    } catch {
+      return [];
+    }
+  };
+
+  const setSaleBuyer = (form, user = null) => {
+    const field = form.querySelector('[name="buyer_user_id"]')?.closest("[data-user-picker-field]");
+    if (!field) return;
+    const hiddenInput = field.querySelector("[data-user-id]");
+    const name = field.querySelector("[data-user-picker-name]");
+    const meta = field.querySelector("[data-user-picker-meta]");
+    const openButton = field.querySelector("[data-user-picker-open]");
+    const clearButton = field.querySelector("[data-user-picker-clear]");
+    hiddenInput.value = user ? String(user.user_id) : "";
+    name.textContent = user?.display_name || "구매자 미지정";
+    meta.textContent = user
+      ? user.username || String(user.discord_id || user.user_id)
+      : "구매 혈맹원 중 선택";
+    openButton.classList.toggle("has-selection", Boolean(user));
+    if (clearButton) clearButton.disabled = !user;
+  };
+
+  const openSaleBuyerPicker = async (button) => {
+    const form = button.closest("[data-sale-form]");
+    if (!form || !window.dashboardUserPicker) return;
+    const allianceSelect = form.querySelector("[data-buyer-alliance]");
+    const allianceId = allianceSelect?.value || "";
+    if (!allianceId) {
+      showToast("구매 혈맹을 먼저 선택해 주세요.", "error");
+      allianceSelect?.focus();
+      return;
+    }
+    const hiddenInput = form.querySelector('[name="buyer_user_id"]');
+    const result = await window.dashboardUserPicker.open({
+      users: saleBuyerUsers(),
+      idKey: "user_id",
+      multiple: false,
+      title: "구매자 선택",
+      allianceId,
+      allianceName: allianceSelect.selectedOptions[0]?.textContent?.trim() || "",
+      selectedIds: hiddenInput?.value ? [hiddenInput.value] : [],
     });
-    if (userSelect.selectedOptions[0]?.disabled) userSelect.value = "";
+    if (result?.length) setSaleBuyer(form, result[0]);
   };
 
   const updateSalePreview = (form) => {
@@ -178,8 +216,10 @@
     form.elements.adena_market_rate.value = Number(drop.adena_market_rate || 0) > 1 ? drop.adena_market_rate : "";
     modal.querySelector("[data-sale-item]").textContent = `${drop.item_name} · 출석 #${drop.attendance_id}`;
     modal.querySelector("[data-sale-cash-label]").textContent = `${Number(drop.cash_price_krw || 0).toLocaleString("ko-KR")}원`;
-    filterBuyerUsers(form);
-    form.elements.buyer_user_id.value = drop.buyer_user_id ? String(drop.buyer_user_id) : "";
+    const buyer = saleBuyerUsers().find(
+      (user) => String(user.user_id) === String(drop.buyer_user_id || ""),
+    );
+    setSaleBuyer(form, buyer || null);
     updateSalePreview(form);
     openModal("drop-sale-modal");
   };
@@ -566,6 +606,10 @@
     if (dropEdit) populateDropEdit(dropEdit);
     const saleOpen = event.target.closest("[data-sale-open]");
     if (saleOpen) populateSale(saleOpen);
+    const saleBuyerOpen = event.target.closest("[data-sale-form] [data-user-picker-open]");
+    if (saleBuyerOpen) openSaleBuyerPicker(saleBuyerOpen);
+    const saleBuyerClear = event.target.closest("[data-sale-form] [data-user-picker-clear]");
+    if (saleBuyerClear) setSaleBuyer(saleBuyerClear.closest("[data-sale-form]"));
     const itemEditToggle = event.target.closest("[data-item-edit-toggle]");
     if (itemEditToggle) {
       const row = itemEditToggle.closest("[data-item-row]");
@@ -619,7 +663,7 @@
 
   document.addEventListener("change", (event) => {
     const buyerAlliance = event.target.closest("[data-buyer-alliance]");
-    if (buyerAlliance) filterBuyerUsers(buyerAlliance.form);
+    if (buyerAlliance) setSaleBuyer(buyerAlliance.form);
   });
 
   document.addEventListener("input", (event) => {

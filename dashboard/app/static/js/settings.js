@@ -23,6 +23,16 @@
       }
     }
 
+    function selectedAlliance(form) {
+      const checked = form.querySelector('input[name="alliance_id"]:checked');
+      const hidden = form.querySelector('input[type="hidden"][name="alliance_id"]');
+      const allianceId = checked?.value || hidden?.value || "";
+      const allianceName = checked
+        ? checked.closest("label")?.querySelector("span")?.textContent?.trim() || ""
+        : form.dataset.allianceName || "";
+      return { allianceId, allianceName };
+    }
+
     function setupUserField(form) {
       const field = form.querySelector("[data-user-picker-field]");
       const openButton = field?.querySelector("[data-user-picker-open]");
@@ -42,12 +52,16 @@
 
       openButton.addEventListener("click", async () => {
         if (!window.dashboardUserPicker) return;
+        const { allianceId, allianceName } = selectedAlliance(form);
+        const clanScoped = form.dataset.pickerScope === "clan" || form.dataset.pickerScope === "static";
         const result = await window.dashboardUserPicker.open({
           users,
           multiple: false,
           title: form.dataset.pickerScope === "static" ? "혈맹 경리 선택" : "운영 담당자 선택",
           selectedIds: hiddenInput.value ? [hiddenInput.value] : [],
           excludedIds: excludedIdsFor(form),
+          allianceId: clanScoped ? allianceId : "",
+          allianceName: clanScoped ? allianceName : "",
         });
         if (!result?.length) return;
         const selected = result[0];

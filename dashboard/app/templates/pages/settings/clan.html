@@ -29,7 +29,9 @@
       </article>
       {% else %}<div class="empty-state">지정된 혈맹 경리가 없습니다.</div>{% endfor %}
     </div>
-    <form class="inline-assign-form" method="post" action="/settings/clan/accountants" data-manager-form data-picker-scope="static" data-excluded-ids="{{ accountant_ids | tojson | forceescape }}">
+    <form class="inline-assign-form" method="post" action="/settings/clan/accountants" data-manager-form data-picker-scope="static"
+          data-alliance-name="{{ (selected_alliance.display_name or selected_alliance.alliance_name) if selected_alliance else '' }}"
+          data-excluded-ids="{{ accountant_ids | tojson | forceescape }}">
       <input type="hidden" name="guild_id" value="{{ guild_id or '' }}"><input type="hidden" name="alliance_id" value="{{ alliance_id or '' }}">
       {{ user_picker_field(label="경리 추가") }}
       <button class="primary-button" type="submit" {% if not alliance_id or not members %}disabled{% endif %}>{{ icon("plus-square") }} 추가</button>

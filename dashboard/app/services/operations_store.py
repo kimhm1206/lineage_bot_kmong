@@ -245,14 +245,15 @@ async def drop_management_page(
         for row in (
             await session.execute(
                 text("""
-                    SELECT DISTINCT u.user_id, u.alliance_id,
-                           COALESCE(u.game_nickname, u.discord_nickname) AS user_name
+                    SELECT DISTINCT u.user_id, u.discord_id, u.alliance_id,
+                           COALESCE(u.game_nickname, u.discord_nickname) AS display_name,
+                           u.discord_nickname AS username
                     FROM users u
                     JOIN attendance_entries e ON e.user_id = u.user_id
                     JOIN attendance_sessions s ON s.attendance_id = e.attendance_id
                     WHERE s.guild_id = :guild_id AND u.is_active IS TRUE
                       AND u.alliance_id IS NOT NULL
-                    ORDER BY user_name
+                    ORDER BY display_name
                 """),
                 {"guild_id": guild_id},
             )

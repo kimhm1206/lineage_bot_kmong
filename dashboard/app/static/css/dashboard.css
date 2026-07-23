@@ -2149,8 +2149,17 @@ a {
   min-width: 0;
 }
 
+.user-picker-control {
+  display: flex;
+  min-width: 0;
+  align-items: stretch;
+  gap: 7px;
+}
+
 .user-picker-launch {
   display: grid;
+  min-width: 0;
+  flex: 1 1 auto;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
@@ -2163,6 +2172,33 @@ a {
   color: var(--text-strong);
   cursor: pointer;
   text-align: left;
+}
+
+.user-picker-clear {
+  display: grid;
+  width: 42px;
+  flex: 0 0 42px;
+  place-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.user-picker-clear:hover:not(:disabled) {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.user-picker-clear:disabled {
+  cursor: default;
+  opacity: .35;
+}
+
+.user-picker-clear .icon {
+  width: 16px;
+  height: 16px;
 }
 
 .user-picker-launch:hover,
