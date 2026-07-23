@@ -465,28 +465,14 @@ a {
   color: var(--accent);
 }
 
-.topbar-context div {
-  min-width: 0;
-}
-
-.topbar-context span,
 .topbar-context strong {
   display: block;
+  min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.topbar-context span {
-  color: var(--muted);
-  font-size: 10px;
-  font-weight: 900;
-}
-
-.topbar-context strong {
-  margin-top: 2px;
   color: var(--text-strong);
   font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .topbar-actions {
