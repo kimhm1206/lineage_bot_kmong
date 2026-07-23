@@ -816,6 +816,41 @@ async def bid_purchase_history(
     }
 
 
+@router.get("/api/fee-rules/{fee_rule_id}/history")
+async def fee_rule_history(
+    fee_rule_id: int,
+    request: Request,
+    guild_id: int,
+    page: int = 1,
+    session: AsyncSession = Depends(get_session),
+):
+    rule_scope = await settlement_service.fee_rule_access_scope(
+        session,
+        guild_id=guild_id,
+        fee_rule_id=fee_rule_id,
+    )
+    if rule_scope is None:
+        raise HTTPException(status_code=404, detail="수수료 규칙을 찾을 수 없습니다.")
+    if rule_scope["scope_code"] == 1:
+        _require_alliance_management(request)
+    else:
+        await require_alliance_access(
+            request,
+            session,
+            guild_id=guild_id,
+            alliance_id=rule_scope["alliance_id"],
+        )
+    history = await operations_store.fee_rule_history_page(
+        session,
+        guild_id=guild_id,
+        fee_rule_id=fee_rule_id,
+        page=max(page, 1),
+    )
+    if history is None:
+        raise HTTPException(status_code=404, detail="수수료 규칙을 찾을 수 없습니다.")
+    return {"ok": True, **history}
+
+
 @router.get("/api/clan-settlement-history")
 async def clan_settlement_history(
     request: Request,

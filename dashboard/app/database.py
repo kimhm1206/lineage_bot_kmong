@@ -1415,6 +1415,27 @@ async def apply_local_schema_cleanup() -> bool:
                 """)
             )
             changed = True
+
+        fee_history_index_applied = await connection.scalar(
+            text("SELECT 1 FROM schema_migrations WHERE version = 20")
+        )
+        if not fee_history_index_applied:
+            await connection.execute(
+                text("""
+                    CREATE INDEX IF NOT EXISTS idx_payout_fee_history
+                    ON settlement_payout_objects (
+                        fee_rule_version_id, status_code, payout_object_id DESC
+                    )
+                    WHERE object_code = 3
+                """)
+            )
+            await connection.execute(
+                text("""
+                    INSERT INTO schema_migrations(version, applied_at)
+                    VALUES (20, EXTRACT(EPOCH FROM NOW())::BIGINT)
+                """)
+            )
+            changed = True
     return changed
 
 

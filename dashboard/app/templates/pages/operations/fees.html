@@ -19,7 +19,22 @@
       </div>
       <div class="fee-rule-rate"><span>현재 비율</span><strong>{{ fee.rate_label }}</strong></div>
       <span class="ops-status ops-status-{{ 'complete' if fee.is_active else 'muted' }}">{{ '고정' if fee.is_fixed else ('사용 중' if fee.is_active else '중지') }}</span>
-      {% if can_edit_fee_rules %}<button class="icon-button" type="button" title="수정" data-fee-edit data-fee='{{ fee | tojson | forceescape }}'>{{ icon("settings") }}</button>{% endif %}
+      <div class="fee-rule-actions">
+        {% if fee.is_fixed %}
+        <a class="secondary-button fee-history-button" href="{{ '/alliance/treasury' if scope_code == 1 else '/clan/treasury?alliance_id=' ~ alliance_id }}">
+          {{ icon("clipboard-list") }} 기록 확인
+        </a>
+        {% else %}
+        <button class="secondary-button fee-history-button" type="button"
+                data-fee-history-open
+                data-fee-rule-id="{{ fee.fee_rule_id }}"
+                data-fee-rule-name="{{ fee.rule_name }}"
+                data-guild-id="{{ guild_id }}">
+          {{ icon("clipboard-list") }} 기록 확인
+        </button>
+        {% endif %}
+        {% if can_edit_fee_rules %}<button class="icon-button" type="button" title="수정" data-fee-edit data-fee='{{ fee | tojson | forceescape }}'>{{ icon("settings") }}</button>{% endif %}
+      </div>
     </article>
     {% endfor %}
   </section>
@@ -45,4 +60,30 @@
 </form>
 {% endcall %}
 {% endif %}
+
+{% call modal('fee-history-modal', '수수료 기록', '아이템별 수수료 정산 내역을 확인합니다.') %}
+<section class="fee-history-content" data-fee-history-modal>
+  <header class="fee-history-overview">
+    <div>
+      <span>수수료</span>
+      <strong data-fee-history-name>-</strong>
+      <small data-fee-history-rate>-</small>
+    </div>
+    <div>
+      <span>미정산</span>
+      <strong data-fee-history-pending-amount>0</strong>
+      <small data-fee-history-pending-count>0건</small>
+    </div>
+    <div>
+      <span>정산 완료</span>
+      <strong data-fee-history-complete-amount>0</strong>
+      <small data-fee-history-complete-count>0건</small>
+    </div>
+  </header>
+  <div class="settlement-history-loading" data-fee-history-loading>기록을 불러오는 중입니다.</div>
+  <div class="fee-history-list" data-fee-history-list hidden></div>
+  <div class="alliance-history-empty" data-fee-history-empty hidden>아직 생성된 수수료 기록이 없습니다.</div>
+  <button class="secondary-button settlement-history-more" type="button" data-fee-history-more hidden>기록 더 보기</button>
+</section>
+{% endcall %}
 {% endblock %}

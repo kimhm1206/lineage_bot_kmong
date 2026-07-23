@@ -1149,6 +1149,140 @@ async def fee_management_page(
     return {"fee_rules": rows}
 
 
+async def fee_rule_history_page(
+    session: AsyncSession,
+    *,
+    guild_id: int,
+    fee_rule_id: int,
+    page: int,
+) -> dict[str, Any] | None:
+    rule = (
+        await session.execute(
+            text("""
+                SELECT r.fee_rule_id, r.scope_code, r.alliance_id, r.fixed_code,
+                       latest.rule_name, latest.rate_ppm
+                FROM settlement_fee_rules r
+                JOIN LATERAL (
+                    SELECT v.rule_name, v.rate_ppm
+                    FROM settlement_fee_rule_versions v
+                    WHERE v.fee_rule_id = r.fee_rule_id
+                    ORDER BY v.valid_from DESC, v.fee_rule_version_id DESC
+                    LIMIT 1
+                ) latest ON TRUE
+                WHERE r.guild_id = :guild_id
+                  AND r.fee_rule_id = :fee_rule_id
+            """),
+            {"guild_id": guild_id, "fee_rule_id": fee_rule_id},
+        )
+    ).mappings().one_or_none()
+    if rule is None:
+        return None
+
+    history_from = """
+        FROM settlement_payout_objects payout
+        JOIN settlement_fee_rule_versions version
+          ON version.fee_rule_version_id = payout.fee_rule_version_id
+        JOIN settlement_drops drop_row ON drop_row.drop_id = payout.drop_id
+        JOIN settlement_drop_sales sale
+          ON sale.drop_id = drop_row.drop_id AND sale.status_code = 1
+        JOIN catalog_item_versions item
+          ON item.item_version_id = drop_row.item_version_id
+        LEFT JOIN settlement_payout_objects parent
+          ON parent.payout_object_id = payout.parent_payout_object_id
+        LEFT JOIN alliances alliance
+          ON alliance.alliance_id = parent.recipient_alliance_id
+        WHERE drop_row.guild_id = :guild_id
+          AND version.fee_rule_id = :fee_rule_id
+          AND payout.object_code = 3
+    """
+    params = {"guild_id": guild_id, "fee_rule_id": fee_rule_id}
+    summary = (
+        await session.execute(
+            text(f"""
+                SELECT COUNT(*) AS total_count,
+                       COUNT(*) FILTER (WHERE payout.status_code = 0) AS pending_count,
+                       COUNT(*) FILTER (WHERE payout.status_code = 1) AS complete_count,
+                       COALESCE(SUM(payout.amount_adena), 0) AS total_amount,
+                       COALESCE(SUM(payout.amount_adena)
+                           FILTER (WHERE payout.status_code = 0), 0) AS pending_amount,
+                       COALESCE(SUM(payout.amount_adena)
+                           FILTER (WHERE payout.status_code = 1), 0) AS complete_amount
+                {history_from}
+            """),
+            params,
+        )
+    ).mappings().one()
+    total = int(summary["total_count"] or 0)
+    pagination = _pagination(total, page, 30)
+    rows = [
+        dict(row)
+        for row in (
+            await session.execute(
+                text(f"""
+                    SELECT payout.payout_object_id, payout.amount_adena,
+                           payout.status_code, drop_row.attendance_id,
+                           item.item_name, version.rule_name,
+                           COALESCE(
+                               alliance.display_name,
+                               alliance.alliance_name
+                           ) AS alliance_name,
+                           TO_CHAR(
+                               TO_TIMESTAMP(drop_row.occurred_at),
+                               'YYYY-MM-DD HH24:MI'
+                           ) AS occurred_at_label,
+                           TO_CHAR(
+                               TO_TIMESTAMP(payout.completed_at),
+                               'YYYY-MM-DD HH24:MI'
+                           ) AS completed_at_label
+                    {history_from}
+                    ORDER BY drop_row.occurred_at DESC,
+                             payout.payout_object_id DESC
+                    LIMIT :limit OFFSET :offset
+                """),
+                {
+                    **params,
+                    "limit": pagination["page_size"],
+                    "offset": pagination["offset"],
+                },
+            )
+        ).mappings().all()
+    ]
+    for row in rows:
+        status_code = int(row["status_code"])
+        row["payout_object_id"] = int(row["payout_object_id"])
+        row["attendance_id"] = int(row["attendance_id"])
+        row["amount_adena"] = int(row["amount_adena"])
+        row["amount_label"] = _money(row["amount_adena"])
+        row["status_label"] = STATUS_LABELS[status_code]
+        row["status_tone"] = STATUS_TONES[status_code]
+        row["alliance_name"] = str(row["alliance_name"] or "")
+
+    return {
+        "fee_rule": {
+            "fee_rule_id": int(rule["fee_rule_id"]),
+            "scope_code": int(rule["scope_code"]),
+            "alliance_id": (
+                int(rule["alliance_id"])
+                if rule["alliance_id"] is not None
+                else None
+            ),
+            "rule_name": str(rule["rule_name"]),
+            "rate_label": _percent(rule["rate_ppm"]),
+            "is_fixed": bool(rule["fixed_code"]),
+        },
+        "history": rows,
+        "pagination": pagination,
+        "summary": {
+            "total_count": total,
+            "pending_count": int(summary["pending_count"] or 0),
+            "complete_count": int(summary["complete_count"] or 0),
+            "total_amount_label": _money(summary["total_amount"]),
+            "pending_amount_label": _money(summary["pending_amount"]),
+            "complete_amount_label": _money(summary["complete_amount"]),
+        },
+    }
+
+
 async def bid_management_page(
     session: AsyncSession,
     *,
