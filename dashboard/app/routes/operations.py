@@ -509,6 +509,19 @@ async def update_item(item_id: int, request: Request, session: AsyncSession = De
     )
 
 
+@router.post("/api/items/{item_id}/delete")
+async def delete_item(item_id: int, request: Request, session: AsyncSession = Depends(get_session)):
+    form = await request.form()
+    return await _result(
+        session,
+        settlement_service.delete_item(
+            session,
+            guild_id=int(_int(form.get("guild_id"))),
+            item_id=item_id,
+        ),
+    )
+
+
 @router.post("/api/fee-rules")
 async def create_fee_rule(request: Request, session: AsyncSession = Depends(get_session)):
     form = await request.form()

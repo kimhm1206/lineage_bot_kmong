@@ -493,6 +493,12 @@ async def item_management_page(session: AsyncSession, *, guild_id: int, query: s
             await session.execute(
                 text(f"""
                     SELECT item_id, guild_id, item_name, default_price,
+                           EXISTS (
+                               SELECT 1
+                               FROM catalog_item_versions v
+                               JOIN settlement_drops d ON d.item_version_id = v.item_version_id
+                               WHERE v.item_id = items.item_id
+                           ) AS is_used,
                            TO_CHAR(updated_at, 'YYYY-MM-DD HH24:MI') AS updated_at_label
                     FROM items
                     WHERE guild_id = :guild_id {search}
@@ -506,6 +512,7 @@ async def item_management_page(session: AsyncSession, *, guild_id: int, query: s
         row["item_id"] = int(row["item_id"])
         row["guild_id"] = int(row["guild_id"]) if row["guild_id"] is not None else None
         row["default_price"] = int(row["default_price"]) if row["default_price"] is not None else None
+        row["is_used"] = bool(row["is_used"])
         row["price_label"] = f"{_money(row['default_price'])}원" if row["default_price"] is not None else "미설정"
     return {
         "items": rows,

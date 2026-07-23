@@ -62,7 +62,7 @@
     const confirmation = form.dataset.confirm;
     if (confirmation && !window.confirm(confirmation)) return;
     const submitter = form.querySelector("button[type=submit]");
-    const originalText = submitter?.textContent;
+    const originalHtml = submitter?.innerHTML;
     if (submitter) {
       submitter.disabled = true;
       submitter.textContent = "처리 중";
@@ -83,9 +83,20 @@
     } finally {
       if (submitter) {
         submitter.disabled = false;
-        submitter.textContent = originalText;
+        submitter.innerHTML = originalHtml;
       }
     }
+  };
+
+  const setItemEditor = (row, isOpen) => {
+    if (!row) return;
+    const editor = row.querySelector("[data-item-editor]");
+    const toggle = row.querySelector("[data-item-edit-toggle]");
+    if (!editor || !toggle) return;
+    editor.hidden = !isOpen;
+    row.classList.toggle("is-editing", isOpen);
+    toggle.setAttribute("aria-expanded", String(isOpen));
+    if (isOpen) window.setTimeout(() => editor.elements.item_name?.focus(), 20);
   };
 
   const filterBuyerUsers = (form) => {
@@ -193,6 +204,17 @@
     if (dropEdit) populateDropEdit(dropEdit);
     const saleOpen = event.target.closest("[data-sale-open]");
     if (saleOpen) populateSale(saleOpen);
+    const itemEditToggle = event.target.closest("[data-item-edit-toggle]");
+    if (itemEditToggle) {
+      const row = itemEditToggle.closest("[data-item-row]");
+      const nextState = row?.querySelector("[data-item-editor]")?.hidden ?? false;
+      document.querySelectorAll("[data-item-row].is-editing").forEach((openRow) => {
+        if (openRow !== row) setItemEditor(openRow, false);
+      });
+      setItemEditor(row, nextState);
+    }
+    const itemEditCancel = event.target.closest("[data-item-edit-cancel]");
+    if (itemEditCancel) setItemEditor(itemEditCancel.closest("[data-item-row]"), false);
     const feeEdit = event.target.closest("[data-fee-edit]");
     if (feeEdit) populateFeeEdit(feeEdit);
     const bidEdit = event.target.closest("[data-bid-edit]");

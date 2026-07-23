@@ -1136,6 +1136,47 @@ async def update_item(
     await _audit(session, guild_id=guild_id, action_code="item_update", target_id=item_id, item_id=item_id, amount_value=price)
     return OperationResult("아이템 정보를 수정했습니다.", (item_id,))
 
+
+async def delete_item(session: AsyncSession, *, guild_id: int, item_id: int) -> OperationResult:
+    item = (
+        await session.execute(
+            text("""
+                SELECT item_id
+                FROM items
+                WHERE item_id = :item_id AND guild_id = :guild_id
+                FOR UPDATE
+            """),
+            {"item_id": item_id, "guild_id": guild_id},
+        )
+    ).scalar_one_or_none()
+    if item is None:
+        raise SettlementError("아이템을 찾을 수 없습니다.")
+    used_drop_count = int(
+        await session.scalar(
+            text("""
+                SELECT COUNT(*)
+                FROM catalog_item_versions v
+                JOIN settlement_drops d ON d.item_version_id = v.item_version_id
+                WHERE v.item_id = :item_id
+            """),
+            {"item_id": item_id},
+        )
+        or 0
+    )
+    if used_drop_count:
+        raise SettlementError("과거 드랍 기록에서 사용된 아이템은 삭제할 수 없습니다.")
+    await session.execute(
+        text("DELETE FROM catalog_item_versions WHERE item_id = :item_id"),
+        {"item_id": item_id},
+    )
+    await session.execute(
+        text("DELETE FROM items WHERE item_id = :item_id AND guild_id = :guild_id"),
+        {"item_id": item_id, "guild_id": guild_id},
+    )
+    await _audit(session, guild_id=guild_id, action_code="item_delete", target_id=item_id, item_id=item_id)
+    return OperationResult("아이템을 삭제했습니다.", (item_id,))
+
+
 async def create_fee_rule(
     session: AsyncSession,
     *,

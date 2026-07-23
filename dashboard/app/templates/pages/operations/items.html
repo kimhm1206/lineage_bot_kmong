@@ -7,27 +7,44 @@
 <div data-live-page>
   {{ toolbar(guilds, guild_id, query, search_label='아이템 검색', search_placeholder='아이템 이름 검색') }}
   <section class="ops-management-panel">
-    <header class="ops-section-heading"><div><h2>아이템 원화 시세 관리</h2><p>아이템 이름과 드랍 등록에 사용할 원화 시세를 바로 관리합니다.</p></div><span>{{ items|length }}개</span></header>
+    <header class="ops-section-heading item-management-heading"><div><h2>아이템 원화 시세 관리</h2><p>목록은 간결하게 확인하고 필요한 항목만 펼쳐 수정합니다.</p></div><span>{{ items|length }}개</span></header>
     <form class="item-quick-create" data-async-form method="post" action="/api/items">
       <input type="hidden" name="guild_id" value="{{ guild_id }}">
-      <label class="ops-field"><span>아이템</span><input type="text" name="item_name" maxlength="100" required placeholder="아이템 이름"></label>
-      <label class="ops-field"><span>원화 시세</span><input type="number" name="default_price" min="0" step="1" required placeholder="0"></label>
+      <div class="item-create-copy"><strong>새 아이템</strong><small>이름과 원화 시세를 입력해 바로 추가합니다.</small></div>
+      <label class="item-create-field"><span>아이템 이름</span><input type="text" name="item_name" maxlength="100" required placeholder="예: 블러드 투 소울"></label>
+      <label class="item-create-field"><span>원화 시세</span><span class="item-price-control"><input type="number" name="default_price" min="0" step="1" required placeholder="0"><em>원</em></span></label>
       <button class="primary-button" type="submit">{{ icon("plus-square") }} 추가</button>
     </form>
     {% if items %}
-    <div class="compact-management-table">
-      <div class="management-table-head"><span>아이템</span><span>원화 시세</span><span>관리</span></div>
+    <div class="item-management-list">
+      <div class="item-list-header"><span>아이템</span><span>원화 시세</span><span>관리</span></div>
       {% for item in items %}
-      <form class="management-row item-management-row" data-async-form method="post" action="/api/items/{{ item.item_id }}">
-        <input type="hidden" name="guild_id" value="{{ guild_id }}">
-        <input class="management-input" type="text" name="item_name" value="{{ item.item_name }}" maxlength="100" required aria-label="아이템 이름">
-        <label class="management-price-input"><input class="management-input" type="number" name="default_price" value="{{ item.default_price or 0 }}" min="0" step="1" required aria-label="원화 시세"><span>원</span></label>
-        <button class="icon-button" type="submit" title="수정 저장" aria-label="수정 저장">{{ icon("save") }}</button>
-      </form>
+      <article class="item-list-row" data-item-row>
+        <div class="item-list-summary">
+          <div class="item-list-identity"><span class="item-list-icon">{{ icon("tag") }}</span><div><strong>{{ item.item_name }}</strong><small>최근 수정 {{ item.updated_at_label }}</small></div></div>
+          <div class="item-list-price"><strong>{{ item.price_label }}</strong><small>등록 원화</small></div>
+          <div class="item-list-actions">
+            <button class="icon-button" type="button" title="수정" aria-label="{{ item.item_name }} 수정" aria-expanded="false" data-item-edit-toggle>{{ icon("settings") }}</button>
+            {% if item.is_used %}
+            <button class="icon-button danger-button is-disabled" type="button" title="과거 드랍에서 사용되어 삭제할 수 없습니다" aria-label="삭제 불가" disabled>{{ icon("trash") }}</button>
+            {% else %}
+            <form data-async-form data-confirm="{{ item.item_name }} 아이템을 삭제하시겠습니까?" method="post" action="/api/items/{{ item.item_id }}/delete">
+              <input type="hidden" name="guild_id" value="{{ guild_id }}"><button class="icon-button danger-button" type="submit" title="삭제" aria-label="{{ item.item_name }} 삭제">{{ icon("trash") }}</button>
+            </form>
+            {% endif %}
+          </div>
+        </div>
+        <form class="item-row-editor" data-item-editor data-async-form method="post" action="/api/items/{{ item.item_id }}" hidden>
+          <input type="hidden" name="guild_id" value="{{ guild_id }}">
+          <label><span>아이템 이름</span><input type="text" name="item_name" value="{{ item.item_name }}" maxlength="100" required></label>
+          <label><span>원화 시세</span><span class="item-price-control"><input type="number" name="default_price" value="{{ item.default_price or 0 }}" min="0" step="1" required><em>원</em></span></label>
+          <div class="item-editor-actions"><button class="secondary-button" type="button" data-item-edit-cancel>취소</button><button class="primary-button" type="submit">{{ icon("save") }} 저장</button></div>
+        </form>
+      </article>
       {% endfor %}
     </div>
     {% else %}{{ empty('아이템이 없습니다.', '드랍 등록에 사용할 아이템을 추가해 주세요.') }}{% endif %}
   </section>
 </div>
 {% endblock %}
-{% block scripts %}<script src="{{ url_for('static', path='/js/operations.js') }}?v=20260723.3" defer></script>{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', path='/js/operations.js') }}?v=20260723.4" defer></script>{% endblock %}
