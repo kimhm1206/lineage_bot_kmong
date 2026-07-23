@@ -754,13 +754,12 @@ async def items_page(
 ) -> dict[str, Any]:
     search = " AND i.item_name ILIKE :query" if query else ""
     params = {"guild_id": guild_id, "query": f"%{query}%"}
-    scope = "WHERE (i.guild_id = :guild_id OR i.guild_id IS NULL)"
+    scope = "WHERE i.guild_id = :guild_id"
     rows, pagination = await _fetch_page(
         session,
         count_sql=f"SELECT COUNT(*) FROM items i {scope} {search}",
         rows_sql=f"""
             SELECT i.item_id, i.item_name, i.default_price, i.is_active,
-                   CASE WHEN i.guild_id IS NULL THEN '공통' ELSE '서버' END AS scope_label,
                    TO_CHAR(i.updated_at, 'YYYY-MM-DD HH24:MI') AS updated_at_label
             FROM items i {scope} {search}
             ORDER BY i.is_active DESC, i.item_name
@@ -775,14 +774,13 @@ async def items_page(
         row["state_tone"] = "success" if row["is_active"] else "muted"
     return {
         "summary_cards": [
-            {"label": "아이템", "value": f"{pagination['total']:,}개", "meta": "공통 및 서버 항목"},
+            {"label": "아이템", "value": f"{pagination['total']:,}개", "meta": "현재 서버 전용"},
             {"label": "가격 설정", "value": f"{sum(1 for r in rows if r['default_price'] is not None):,}개", "meta": "현재 페이지"},
             {"label": "사용 중", "value": f"{sum(1 for r in rows if r['is_active']):,}개", "meta": "현재 페이지"},
         ],
         "columns": [
             {"key": "item_name", "label": "아이템", "emphasis": True},
             {"key": "price_label", "label": "기본 원화 시세", "numeric": True},
-            {"key": "scope_label", "label": "범위"},
             {"key": "updated_at_label", "label": "수정 시각"},
             {"key": "state", "label": "상태", "status_key": "state_tone"},
         ],

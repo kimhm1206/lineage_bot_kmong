@@ -11,18 +11,15 @@
     <header class="ops-section-heading"><div><h2>드랍 아이템</h2><p>이름과 기본 원화 시세만 간결하게 관리합니다.</p></div><span>{{ items|length }}개</span></header>
     {% if items %}
     <div class="compact-management-table">
-      <div class="management-table-head"><span>아이템</span><span>기본 원화 시세</span><span>범위</span><span>상태</span><span>관리</span></div>
+      <div class="management-table-head"><span>아이템</span><span>기본 원화 시세</span><span>드랍 등록</span><span>관리</span></div>
       {% for item in items %}
       <article class="management-row{% if not item.is_active %} is-inactive{% endif %}">
         <div class="management-name"><strong>{{ item.item_name }}</strong><small>최근 수정 {{ item.updated_at_label }}</small></div>
         <strong class="management-price">{{ item.price_label }}</strong>
-        <span class="management-scope">{{ item.scope_label }}</span>
-        <span class="ops-status ops-status-{{ 'complete' if item.is_active else 'muted' }}">{{ '사용 중' if item.is_active else '사용 중지' }}</span>
+        <span class="ops-status ops-status-{{ 'complete' if item.is_active else 'muted' }}">{{ '등록 가능' if item.is_active else '선택 목록 제외' }}</span>
         <div class="management-actions">
-          {% if item.editable %}
           <button class="icon-button" type="button" title="수정" data-item-edit data-item='{{ item | tojson | forceescape }}'>{{ icon("settings") }}</button>
-          {% if item.is_active %}<form data-async-form data-confirm="이 아이템을 사용 중지하시겠습니까?" method="post" action="/api/items/{{ item.item_id }}/delete"><input type="hidden" name="guild_id" value="{{ guild_id }}"><button class="icon-button danger-button" type="submit" title="사용 중지">{{ icon("trash") }}</button></form>{% endif %}
-          {% else %}<span class="management-readonly">공통 항목</span>{% endif %}
+          {% if item.is_active %}<form data-async-form data-confirm="이 아이템을 드랍 선택 목록에서 제외하시겠습니까?" method="post" action="/api/items/{{ item.item_id }}/delete"><input type="hidden" name="guild_id" value="{{ guild_id }}"><button class="icon-button danger-button" type="submit" title="선택 목록에서 제외">{{ icon("trash") }}</button></form>{% endif %}
         </div>
       </article>
       {% endfor %}
@@ -43,7 +40,7 @@
 <form class="ops-form" data-async-form method="post" action="" data-item-edit-form>
   <input type="hidden" name="guild_id" value="{{ guild_id }}">
   <div class="ops-form-grid ops-form-grid-two"><label class="ops-field"><span>아이템 이름</span><input type="text" name="item_name" maxlength="100" required></label><label class="ops-field"><span>기본 원화 시세</span><input type="number" name="default_price" min="0" step="1" required></label></div>
-  <label class="ops-toggle-row"><input type="checkbox" name="is_active" value="1"><span><strong>사용 상태</strong><small>켜면 드랍 등록 아이템 목록에 표시됩니다.</small></span></label>
+  <label class="ops-toggle-row"><input type="checkbox" name="is_active" value="1"><span><strong>드랍 등록에 사용</strong><small>켜면 드랍 등록 아이템 선택 목록에 표시됩니다.</small></span></label>
   <footer class="ops-form-actions"><button class="secondary-button" type="button" data-modal-close>취소</button><button class="primary-button" type="submit">수정 저장</button></footer>
 </form>
 {% endcall %}

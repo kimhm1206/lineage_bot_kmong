@@ -48,7 +48,9 @@ class Item(Base):
     __tablename__ = "items"
 
     item_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    guild_id: Mapped[int | None] = mapped_column(ForeignKey("guilds.guild_id", ondelete="CASCADE"))
+    guild_id: Mapped[int] = mapped_column(
+        ForeignKey("guilds.guild_id", ondelete="CASCADE"), nullable=False
+    )
     item_name: Mapped[str] = mapped_column(Text, nullable=False)
     default_price: Mapped[int | None] = mapped_column(BigInteger)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)

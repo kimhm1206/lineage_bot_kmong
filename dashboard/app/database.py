@@ -520,6 +520,61 @@ async def apply_local_schema_cleanup() -> bool:
                 """)
             )
             changed = True
+
+        item_guild_scope_applied = await connection.scalar(
+            text("SELECT 1 FROM schema_migrations WHERE version = 10")
+        )
+        if not item_guild_scope_applied:
+            await connection.execute(
+                text("""
+                    WITH default_guild AS (
+                        SELECT g.guild_id
+                        FROM guilds g
+                        LEFT JOIN settlement_drops d ON d.guild_id = g.guild_id
+                        GROUP BY g.guild_id
+                        ORDER BY COUNT(d.drop_id) DESC, g.guild_id
+                        LIMIT 1
+                    )
+                    UPDATE items i
+                    SET guild_id = COALESCE(
+                        (
+                            SELECT d.guild_id
+                            FROM catalog_item_versions v
+                            JOIN settlement_drops d ON d.item_version_id = v.item_version_id
+                            WHERE v.item_id = i.item_id
+                            GROUP BY d.guild_id
+                            ORDER BY COUNT(d.drop_id) DESC, d.guild_id
+                            LIMIT 1
+                        ),
+                        (SELECT guild_id FROM default_guild)
+                    )
+                    WHERE i.guild_id IS NULL
+                """)
+            )
+            remaining_items = int(
+                await connection.scalar(
+                    text("SELECT COUNT(*) FROM items WHERE guild_id IS NULL")
+                )
+                or 0
+            )
+            if remaining_items:
+                raise RuntimeError("길드가 없는 아이템을 귀속할 서버가 없습니다.")
+            await connection.execute(
+                text("ALTER TABLE items ALTER COLUMN guild_id SET NOT NULL")
+            )
+            await connection.execute(
+                text("""
+                    CREATE UNIQUE INDEX IF NOT EXISTS uq_items_guild_lower_name
+                    ON items (guild_id, LOWER(item_name))
+                """)
+            )
+            await connection.execute(
+                text("""
+                    INSERT INTO schema_migrations(version, applied_at)
+                    VALUES (10, EXTRACT(EPOCH FROM NOW())::BIGINT)
+                """)
+            )
+            changed = True
     return changed
 
 

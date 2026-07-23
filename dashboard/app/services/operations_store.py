@@ -211,7 +211,7 @@ async def drop_management_page(
                 text("""
                     SELECT item_id, item_name, default_price
                     FROM items
-                    WHERE (guild_id = :guild_id OR guild_id IS NULL) AND is_active IS TRUE
+                    WHERE guild_id = :guild_id AND is_active IS TRUE
                     ORDER BY item_name
                 """),
                 {"guild_id": guild_id},
@@ -495,7 +495,7 @@ async def item_management_page(session: AsyncSession, *, guild_id: int, query: s
                     SELECT item_id, guild_id, item_name, default_price, is_active,
                            TO_CHAR(updated_at, 'YYYY-MM-DD HH24:MI') AS updated_at_label
                     FROM items
-                    WHERE (guild_id = :guild_id OR guild_id IS NULL) {search}
+                    WHERE guild_id = :guild_id {search}
                     ORDER BY is_active DESC, item_name
                 """),
                 {"guild_id": guild_id, "query": f"%{query}%"},
@@ -507,13 +507,11 @@ async def item_management_page(session: AsyncSession, *, guild_id: int, query: s
         row["guild_id"] = int(row["guild_id"]) if row["guild_id"] is not None else None
         row["default_price"] = int(row["default_price"]) if row["default_price"] is not None else None
         row["price_label"] = f"{_money(row['default_price'])}원" if row["default_price"] is not None else "미설정"
-        row["scope_label"] = "공통" if row["guild_id"] is None else "서버"
-        row["editable"] = row["guild_id"] == guild_id
     return {
         "items": rows,
         "summary_cards": [
             {"label": "전체 아이템", "value": f"{len(rows):,}", "meta": "검색 결과"},
-            {"label": "사용 중", "value": f"{sum(1 for row in rows if row['is_active']):,}", "meta": "드랍 등록 가능"},
+            {"label": "등록 가능", "value": f"{sum(1 for row in rows if row['is_active']):,}", "meta": "드랍 선택 목록에 표시"},
             {"label": "가격 설정", "value": f"{sum(1 for row in rows if row['default_price'] is not None):,}", "meta": "기본 원화 시세"},
         ],
     }

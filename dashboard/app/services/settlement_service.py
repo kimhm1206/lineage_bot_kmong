@@ -139,7 +139,7 @@ async def _catalog_version(session: AsyncSession, item_id: int, guild_id: int) -
                 SELECT item_id, item_name
                 FROM items
                 WHERE item_id = :item_id
-                  AND (guild_id = :guild_id OR guild_id IS NULL)
+                  AND guild_id = :guild_id
                   AND is_active IS TRUE
             """),
             {"item_id": item_id, "guild_id": guild_id},
@@ -180,7 +180,7 @@ async def _drop_item_snapshot(session: AsyncSession, item_id: int, guild_id: int
             SELECT default_price
             FROM items
             WHERE item_id = :item_id
-              AND (guild_id = :guild_id OR guild_id IS NULL)
+              AND guild_id = :guild_id
               AND is_active IS TRUE
         """),
         {"item_id": item_id, "guild_id": guild_id},
@@ -1150,7 +1150,7 @@ async def deactivate_item(session: AsyncSession, *, guild_id: int, item_id: int)
     if updated.rowcount == 0:
         raise SettlementError("아이템을 찾을 수 없습니다.")
     await _audit(session, guild_id=guild_id, action_code="item_delete", target_id=item_id, item_id=item_id)
-    return OperationResult("아이템을 사용 중지했습니다.", (item_id,))
+    return OperationResult("아이템을 드랍 선택 목록에서 제외했습니다.", (item_id,))
 
 
 async def create_fee_rule(
