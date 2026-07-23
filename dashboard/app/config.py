@@ -26,7 +26,6 @@ class Settings(BaseSettings):
     session_secret: str = "lineage-dashboard-local-session"
     session_https_only: bool = False
     auth_local_bypass: bool = True
-    global_developer_discord_id: int = 238978205078388747
 
     model_config = SettingsConfigDict(
         env_file=BASE_DIR / ".env",

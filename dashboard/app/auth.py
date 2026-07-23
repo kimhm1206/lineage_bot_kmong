@@ -37,6 +37,7 @@ ROLE_PRIORITY = {
     "developer": 5,
 }
 SCOPE_ROLES = {1: "alliance_manager", 2: "clan_manager", 3: "clan_accountant"}
+GLOBAL_DEVELOPER_DISCORD_ID = 238978205078388747
 
 
 def _safe_next(value: str | None) -> str:
@@ -66,8 +67,7 @@ async def _enabled_guild_access(
     discord_user_id: int,
     oauth_guild_ids: set[int],
 ) -> tuple[list[dict[str, Any]], dict[int, str], dict[int, tuple[int, ...]]]:
-    settings = get_settings()
-    is_developer = discord_user_id == settings.global_developer_discord_id
+    is_developer = discord_user_id == GLOBAL_DEVELOPER_DISCORD_ID
     async with SessionLocal() as session:
         guild_rows = (
             await session.execute(
@@ -139,7 +139,7 @@ class AuthContextMiddleware(BaseHTTPMiddleware):
         )
         session_user = request.session.get("discord_user") or {}
         if local_bypass:
-            discord_user_id = settings.global_developer_discord_id
+            discord_user_id = GLOBAL_DEVELOPER_DISCORD_ID
             session_user = {
                 "id": str(discord_user_id),
                 "username": "local-developer",
