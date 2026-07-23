@@ -906,6 +906,72 @@ async def clan_settlement_entities(
         alliance_id=alliance_id,
         eyebrow="내부 수수료",
     )
+    historical_members = [
+        dict(row)
+        for row in (
+            await session.execute(
+                text("""
+                    WITH member_history AS (
+                        SELECT po.recipient_user_id AS user_id
+                        FROM settlement_payout_objects po
+                        JOIN settlement_drops d
+                          ON d.drop_id = po.drop_id
+                        JOIN settlement_drop_sales sale
+                          ON sale.drop_id = d.drop_id
+                         AND sale.status_code = 1
+                        JOIN settlement_payout_objects parent
+                          ON parent.payout_object_id =
+                             po.parent_payout_object_id
+                        WHERE d.guild_id = :guild_id
+                          AND parent.recipient_alliance_id = :alliance_id
+                          AND po.object_code = 2
+                          AND po.recipient_user_id IS NOT NULL
+                        GROUP BY po.recipient_user_id
+
+                        UNION
+
+                        SELECT recipient.user_id
+                        FROM treasury_distribution_recipients recipient
+                        JOIN treasury_distributions distribution
+                          ON distribution.treasury_distribution_id =
+                             recipient.treasury_distribution_id
+                        JOIN treasury_accounts account
+                          ON account.treasury_account_id =
+                             distribution.treasury_account_id
+                        WHERE account.guild_id = :guild_id
+                          AND account.account_scope_code = 2
+                          AND account.alliance_id = :alliance_id
+                          AND recipient.user_id IS NOT NULL
+                        GROUP BY recipient.user_id
+                    )
+                    SELECT history.user_id,
+                           COALESCE(
+                               user_row.game_nickname,
+                               user_row.discord_nickname
+                           ) AS user_name
+                    FROM member_history history
+                    JOIN users user_row
+                      ON user_row.user_id = history.user_id
+                    ORDER BY user_name
+                """),
+                {"guild_id": guild_id, "alliance_id": alliance_id},
+            )
+        ).mappings().all()
+    ]
+    for member in historical_members:
+        user_id = int(member["user_id"])
+        key = f"member:{user_id}"
+        entities.setdefault(
+            key,
+            {
+                "key": key,
+                "entity_type": "member",
+                "target_id": user_id,
+                "name": member["user_name"] or "알 수 없는 유저",
+                "eyebrow": "혈맹원",
+                "details": [],
+            },
+        )
     rows = [
         dict(row)
         for row in (
