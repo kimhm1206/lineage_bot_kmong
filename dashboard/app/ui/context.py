@@ -5,6 +5,7 @@ from fastapi import Request
 from dashboard.app.config import get_settings
 from dashboard.app.security import (
     can_manage_alliance_operations,
+    can_manage_clan_configuration,
     can_manage_clan_treasury,
     current_access_role,
     is_global_developer,
@@ -28,6 +29,7 @@ def build_template_context(
         access_role=access_role,
         can_manage_alliance=can_manage_alliance_operations(request),
         can_manage_clan=can_manage_clan_treasury(request),
+        can_configure_clan=can_manage_clan_configuration(request),
     )
     active_nav_group = next(
         (str(group["id"]) for group in navigation if group["is_active"]),

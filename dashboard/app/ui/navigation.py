@@ -109,6 +109,7 @@ def get_navigation(
     access_role: str = "user",
     can_manage_alliance: bool = False,
     can_manage_clan: bool = False,
+    can_configure_clan: bool = False,
 ) -> list[dict[str, object]]:
     groups: list[dict[str, object]] = []
     for group in NAV_GROUPS:
@@ -121,8 +122,8 @@ def get_navigation(
         for item in group.items:
             if (
                 group.id == "clan-operations"
-                and item.id in {"clan.settings", "clan.staff"}
-                and not can_manage_clan
+                and item.id == "clan.staff"
+                and not can_configure_clan
             ):
                 continue
             if (

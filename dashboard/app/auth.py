@@ -57,7 +57,7 @@ DEVELOPER_VIEW_MODES = {
         "label": "연합관리자",
         "role": "alliance_manager",
         "scopes": (1,),
-        "requires_alliance": False,
+        "requires_alliance": True,
     },
     "clan_manager": {
         "label": "혈맹관리자",
@@ -75,7 +75,7 @@ DEVELOPER_VIEW_MODES = {
         "label": "유저",
         "role": "user",
         "scopes": (),
-        "requires_alliance": False,
+        "requires_alliance": True,
     },
 }
 

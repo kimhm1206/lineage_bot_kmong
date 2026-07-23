@@ -15,10 +15,10 @@
   const roleDescriptions = {
     developer: "모든 서버와 개발자 도구",
     owner: "서버 전체 운영과 모든 혈맹",
-    alliance_manager: "드랍·판매·각혈 분배",
+    alliance_manager: "연합 운영과 선택 혈맹 조회",
     clan_manager: "선택 혈맹 운영과 설정",
     clan_accountant: "선택 혈맹 정산과 가계부",
-    user: "개인 조회와 공개 정보",
+    user: "개인 조회와 선택 혈맹 정보",
   };
   let selectedMode = "";
   let selectedAllianceId = null;

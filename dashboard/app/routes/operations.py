@@ -344,7 +344,13 @@ async def alliance_fee_page(
         else {"fee_rules": []}
     )
     context.update(page_data)
-    context.update({"query": _query(q), "scope_code": 1})
+    context.update(
+        {
+            "query": _query(q),
+            "scope_code": 1,
+            "can_edit_fee_rules": can_manage_alliance_operations(request),
+        }
+    )
     return templates.TemplateResponse(request, "pages/operations/fees.html", context)
 
 
@@ -356,11 +362,6 @@ async def clan_fee_page(
     q: str = "",
     session: AsyncSession = Depends(get_session),
 ):
-    if not can_manage_clan_treasury(request):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="혈맹 운영 담당자만 사용할 수 있습니다.",
-        )
     context, workspace = await _context(
         request,
         session,
@@ -384,7 +385,13 @@ async def clan_fee_page(
         else {"fee_rules": []}
     )
     context.update(page_data)
-    context.update({"query": _query(q), "scope_code": 2})
+    context.update(
+        {
+            "query": _query(q),
+            "scope_code": 2,
+            "can_edit_fee_rules": can_manage_clan_treasury(request),
+        }
+    )
     return templates.TemplateResponse(request, "pages/operations/fees.html", context)
 
 

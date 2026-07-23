@@ -103,7 +103,7 @@ async def current_user_alliance_id(
     session: AsyncSession,
     guild_id: int | None,
 ) -> int | None:
-    if current_access_role(request) in {"clan_manager", "clan_accountant"}:
+    if is_global_developer(request):
         try:
             developer_view_alliance_id = int(
                 getattr(request.state, "developer_view_alliance_id", None) or 0
