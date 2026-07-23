@@ -391,7 +391,7 @@
         {% endfor %}
       </div>
       <footer>
-        <a class="text-button" href="{{ request.url.remove_query_params('treasury_category_id').remove_query_params('treasury_category_active').remove_query_params('page') }}">필터 해제</a>
+        <a class="text-button" href="{{ request.url.remove_query_params('treasury_category_id').remove_query_params('treasury_category_active').remove_query_params('treasury_category').remove_query_params('page') }}">필터 해제</a>
         <button class="primary-button" type="submit">적용</button>
       </footer>
     </form>

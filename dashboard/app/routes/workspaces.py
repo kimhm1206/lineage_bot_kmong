@@ -441,7 +441,12 @@ async def alliance_settlements(
 @router.get("/alliance/treasury")
 async def alliance_treasury(
     request: Request, guild_id: int | None = None, period: int | None = None,
-    q: str = "", page: int = 1, session: AsyncSession = Depends(get_session),
+    q: str = "", page: int = 1,
+    ledger_date: str = "", treasury_direction: int = 0,
+    treasury_category_active: int = 0,
+    treasury_category_id: list[int] = Query(default=[]),
+    treasury_category: str = "",
+    session: AsyncSession = Depends(get_session),
 ):
     can_edit = can_manage_alliance_treasury(request)
     return await _render_workspace(
@@ -457,6 +462,17 @@ async def alliance_treasury(
             "alliance_id": None,
             "account_scope_code": 1,
             "include_distribution_users": can_edit,
+            "ledger_date": _date_query(ledger_date),
+            "direction_filter": (
+                treasury_direction if treasury_direction in {-1, 1} else 0
+            ),
+            "category_filter_active": treasury_category_active == 1,
+            "category_ids": treasury_category_id,
+            "category_names": (
+                ["연합 수수료"]
+                if treasury_category == "alliance_fee"
+                else []
+            ),
         },
         treasury_form_action="/alliance/treasury/entries",
         can_edit_treasury=can_edit,
@@ -566,6 +582,7 @@ async def clan_treasury(
     ledger_date: str = "", treasury_direction: int = 0,
     treasury_category_active: int = 0,
     treasury_category_id: list[int] = Query(default=[]),
+    treasury_category: str = "",
     session: AsyncSession = Depends(get_session),
 ):
     can_edit = can_manage_clan_treasury(request)
@@ -588,6 +605,11 @@ async def clan_treasury(
             ),
             "category_filter_active": treasury_category_active == 1,
             "category_ids": treasury_category_id,
+            "category_names": (
+                ["혈비"]
+                if treasury_category == "clan_fund"
+                else []
+            ),
         },
         treasury_form_action="/clan/treasury/entries",
         can_edit_treasury=can_edit,

@@ -985,6 +985,7 @@ async def treasury_page(
     direction_filter: int = 0,
     category_filter_active: bool = False,
     category_ids: Sequence[int] | None = None,
+    category_names: Sequence[str] | None = None,
 ) -> dict[str, Any]:
     if account_scope_code not in {1, 2}:
         raise ValueError("지원하지 않는 가계부 범위입니다.")
@@ -1000,12 +1001,49 @@ async def treasury_page(
     )
     normalized_direction = direction_filter if direction_filter in {-1, 1} else 0
     direction_clause = " AND e.direction = :direction_filter" if normalized_direction else ""
-    normalized_category_ids = sorted(
+    normalized_category_names = sorted(
         {
-            _int(category_id)
-            for category_id in (category_ids or [])
-            if _int(category_id) > 0
+            str(category_name).strip()
+            for category_name in (category_names or [])
+            if str(category_name).strip()
         }
+    )
+    normalized_category_ids_set = {
+        _int(category_id)
+        for category_id in (category_ids or [])
+        if _int(category_id) > 0
+    }
+    if normalized_category_names:
+        category_name_params = {
+            f"category_name_{index}": category_name
+            for index, category_name in enumerate(normalized_category_names)
+        }
+        category_name_placeholders = ", ".join(
+            f":{name}" for name in category_name_params
+        )
+        matched_category_ids = await session.scalars(
+            text(f"""
+                SELECT treasury_category_id
+                FROM treasury_categories
+                WHERE guild_id = :guild_id
+                  AND account_scope_code = :account_scope_code
+                  AND is_active IS TRUE
+                  AND category_name IN ({category_name_placeholders})
+            """),
+            {
+                "guild_id": guild_id,
+                "account_scope_code": account_scope_code,
+                **category_name_params,
+            },
+        )
+        normalized_category_ids_set.update(
+            _int(category_id)
+            for category_id in matched_category_ids
+            if _int(category_id) > 0
+        )
+    normalized_category_ids = sorted(normalized_category_ids_set)
+    effective_category_filter_active = (
+        category_filter_active or bool(normalized_category_names)
     )
     category_params = {
         f"category_id_{index}": category_id
@@ -1016,7 +1054,7 @@ async def treasury_page(
         + ", ".join(f":{name}" for name in category_params)
         + ")"
         if category_params
-        else (" AND FALSE" if category_filter_active else "")
+        else (" AND FALSE" if effective_category_filter_active else "")
     )
     scope_filter = (
         "a.account_scope_code = 1 AND a.alliance_id IS NULL"
@@ -1283,11 +1321,11 @@ async def treasury_page(
             "ledger_date": ledger_date,
             "direction": normalized_direction,
             "category_ids": normalized_category_ids,
-            "category_active": category_filter_active,
+            "category_active": effective_category_filter_active,
             "has_filters": bool(
                 ledger_date
                 or normalized_direction
-                or category_filter_active
+                or effective_category_filter_active
             ),
         },
         "treasury_filter_categories": [

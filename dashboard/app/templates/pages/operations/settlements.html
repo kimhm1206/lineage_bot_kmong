@@ -90,7 +90,7 @@
           {% if entity.entity_type == 'fee' %}
             {% if entity.is_fixed %}
             <a class="secondary-button fee-history-button"
-               href="{{ '/alliance/treasury' if settlement_level == 'alliance' else '/clan/treasury?alliance_id=' ~ alliance_id }}">
+               href="{% if settlement_level == 'alliance' %}/alliance/treasury?treasury_category={{ entity.fixed_code }}{% else %}/clan/treasury?alliance_id={{ alliance_id }}&amp;treasury_category={{ entity.fixed_code }}{% endif %}">
               {{ icon("clipboard-list") }}
               기록 확인
             </a>
