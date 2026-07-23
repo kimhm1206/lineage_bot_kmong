@@ -7146,14 +7146,14 @@ body.modal-open {
 }
 
 .auth-brand-lockup,
-.auth-flow-preview {
+.auth-system-preview {
   position: relative;
   z-index: 1;
 }
 
 .auth-brand-lockup {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 22px;
 }
 
@@ -7171,34 +7171,71 @@ body.modal-open {
   height: 27px;
 }
 
-.auth-brand-lockup small {
-  display: block;
-  margin-bottom: 22px;
-  color: #7fd8ec;
-  font-size: 0.76rem;
-  font-weight: 800;
-  letter-spacing: 0.12em;
-}
-
 .auth-brand-lockup strong {
   font-size: clamp(2rem, 3.8vw, 4.2rem);
   line-height: 1.14;
   letter-spacing: 0;
 }
 
-.auth-flow-preview {
+.auth-system-preview {
+  width: min(680px, 92%);
   display: flex;
   align-items: center;
-  gap: 16px;
-  color: rgba(255,255,255,.82);
-  font-size: 0.86rem;
-  font-weight: 700;
 }
 
-.auth-flow-preview i {
-  width: clamp(24px, 5vw, 80px);
+.auth-system-connector {
+  width: clamp(34px, 6vw, 88px);
   height: 1px;
   background: rgba(255,255,255,.28);
+}
+
+.auth-system-module {
+  width: clamp(118px, 14vw, 180px);
+  height: 94px;
+  display: grid;
+  align-content: center;
+  gap: 11px;
+  padding: 22px;
+  border: 1px solid rgba(255,255,255,.2);
+  background: rgba(5, 24, 35, .34);
+}
+
+.auth-system-module-wide {
+  width: clamp(144px, 18vw, 224px);
+}
+
+.auth-system-module i {
+  display: block;
+  height: 4px;
+  background: rgba(255,255,255,.2);
+}
+
+.auth-system-module i:nth-child(1) {
+  width: 72%;
+  background: #7fd8ec;
+}
+
+.auth-system-module i:nth-child(2) {
+  width: 100%;
+}
+
+.auth-system-module i:nth-child(3) {
+  width: 46%;
+}
+
+.auth-system-core {
+  width: 62px;
+  height: 62px;
+  display: grid;
+  flex: 0 0 62px;
+  place-items: center;
+  color: #081f2d;
+  background: #7fd8ec;
+}
+
+.auth-system-core .icon {
+  width: 27px;
+  height: 27px;
 }
 
 .auth-panel {
@@ -7212,7 +7249,7 @@ body.modal-open {
 }
 
 .auth-card header {
-  margin-bottom: 36px;
+  margin-bottom: 28px;
 }
 
 .auth-card-mark {
@@ -7220,7 +7257,7 @@ body.modal-open {
   height: 48px;
   display: grid;
   place-items: center;
-  margin-bottom: 28px;
+  margin-bottom: 24px;
   color: var(--accent);
   border: 1px solid var(--line);
   background: var(--panel);
@@ -7231,7 +7268,6 @@ body.modal-open {
   height: 23px;
 }
 
-.auth-card header p,
 .auth-failed-card > p {
   margin: 0 0 10px;
   color: var(--accent);
@@ -7241,16 +7277,19 @@ body.modal-open {
 }
 
 .auth-card h1 {
-  margin: 0 0 14px;
+  margin: 0;
   color: var(--text-strong);
   font-size: clamp(1.75rem, 3vw, 2.4rem);
   letter-spacing: 0;
 }
 
-.auth-card header > span:last-child,
 .auth-failed-card > span {
   color: var(--muted);
   line-height: 1.65;
+}
+
+.auth-mobile-brand {
+  display: none;
 }
 
 .discord-login-button {
@@ -7279,26 +7318,6 @@ body.modal-open {
   height: 22px;
 }
 
-.auth-remember {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 14px;
-  color: var(--text-muted);
-  font-size: 0.78rem;
-}
-
-.auth-remember input {
-  width: 15px;
-  height: 15px;
-}
-
-.auth-remember .icon {
-  width: 15px;
-  height: 15px;
-  color: var(--success);
-}
-
 .home-personal-actions {
   display: flex;
   align-items: end;
@@ -7321,28 +7340,6 @@ body.modal-open {
   border-radius: 6px;
   color: var(--text-strong);
   background: var(--panel);
-}
-
-.auth-card footer {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  margin-top: 34px;
-  padding-top: 24px;
-  border-top: 1px solid var(--line);
-  color: var(--muted);
-  font-size: 0.78rem;
-}
-
-.auth-card footer .icon {
-  width: 17px;
-  height: 17px;
-  flex: 0 0 auto;
-}
-
-.auth-card footer p {
-  margin: 0;
-  line-height: 1.55;
 }
 
 .auth-config-warning {
@@ -7409,6 +7406,14 @@ body.modal-open {
   .auth-panel {
     min-height: 100vh;
     padding: 28px;
+  }
+
+  .auth-mobile-brand {
+    display: block;
+    margin: 0 0 28px;
+    color: var(--accent);
+    font-size: 0.78rem;
+    font-weight: 800;
   }
 
   .home-personal-actions {

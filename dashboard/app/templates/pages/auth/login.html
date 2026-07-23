@@ -8,23 +8,23 @@
     <div class="auth-visual-grid"></div>
     <div class="auth-brand-lockup">
       <span class="auth-brand-icon">{{ icon("network") }}</span>
-      <div>
-        <small>LINEAGE OPERATIONS</small>
-        <strong>리니지 혈맹 연합<br>통합 관리</strong>
-      </div>
+      <strong>리니지 혈맹 연합<br>통합 관리</strong>
     </div>
-    <div class="auth-flow-preview">
-      <span>출석</span><i></i><span>드랍·판매</span><i></i><span>분배·가계부</span>
+    <div class="auth-system-preview">
+      <div class="auth-system-module"><i></i><i></i><i></i></div>
+      <span class="auth-system-connector"></span>
+      <div class="auth-system-core">{{ icon("layout-dashboard") }}</div>
+      <span class="auth-system-connector"></span>
+      <div class="auth-system-module auth-system-module-wide"><i></i><i></i><i></i></div>
     </div>
   </section>
 
   <section class="auth-panel">
     <div class="auth-card">
       <header>
+        <p class="auth-mobile-brand">리니지 혈맹 연합 통합 관리</p>
         <span class="auth-card-mark">{{ icon("layout-dashboard") }}</span>
-        <p>Lineage Dashboard</p>
-        <h1>운영 대시보드 로그인</h1>
-        <span>Discord 계정과 서버 권한을 확인한 뒤 담당 화면을 열어드립니다.</span>
+        <h1>로그인</h1>
       </header>
 
       {% if oauth_ready %}
@@ -32,10 +32,6 @@
         <svg aria-hidden="true" viewBox="0 0 24 24" fill="currentColor"><path d="M20.3 4.4A16.8 16.8 0 0 0 16.2 3l-.5 1a15.3 15.3 0 0 0-7.4 0l-.5-1a17.2 17.2 0 0 0-4.1 1.4C1.1 8.2.4 11.8.8 15.3a16.8 16.8 0 0 0 5 2.5l1.2-1.7a10 10 0 0 1-1.8-.9l.4-.3a12 12 0 0 0 12.8 0l.5.3c-.6.4-1.2.7-1.9.9l1.2 1.7a16.8 16.8 0 0 0 5-2.5c.5-4.1-.8-7.7-2.9-10.9ZM8.2 13.7c-1.2 0-2.2-1.1-2.2-2.5s1-2.5 2.2-2.5 2.2 1.1 2.2 2.5-1 2.5-2.2 2.5Zm7.6 0c-1.2 0-2.2-1.1-2.2-2.5s1-2.5 2.2-2.5 2.2 1.1 2.2 2.5-1 2.5-2.2 2.5Z"/></svg>
         Discord로 계속하기
       </a>
-      <div class="auth-remember">
-        {{ icon("check") }}
-        <span>로그인 상태는 이 기기에서 안전하게 유지됩니다.</span>
-      </div>
       {% else %}
       <div class="auth-config-warning">
         {{ icon("alert") }}
@@ -45,11 +41,6 @@
         </div>
       </div>
       {% endif %}
-
-      <footer>
-        <span>{{ icon("shield") }}</span>
-        <p>Discord 비밀번호는 저장하지 않으며, 가입 서버와 계정 식별 정보만 확인합니다.</p>
-      </footer>
     </div>
   </section>
 </main>
