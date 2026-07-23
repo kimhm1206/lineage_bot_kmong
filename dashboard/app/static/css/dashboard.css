@@ -5421,6 +5421,21 @@ body.modal-open {
   white-space: nowrap;
 }
 
+.alliance-history-money {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 5px;
+}
+
+.alliance-history-money strong {
+  min-width: 0;
+}
+
+.alliance-history-money small {
+  flex: 0 0 auto;
+}
+
 .alliance-history-records {
   display: grid;
   min-height: 0;
