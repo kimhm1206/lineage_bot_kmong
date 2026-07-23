@@ -15,6 +15,7 @@ from starlette.responses import Response
 
 from dashboard.app.config import BASE_DIR, get_settings
 from dashboard.app.database import SessionLocal
+from dashboard.app.services.audit_service import AuditActor, bind_actor, reset_actor
 
 
 router = APIRouter(tags=["auth"])
@@ -228,6 +229,28 @@ async def _enabled_guild_access(
 
 
 class AuthContextMiddleware(BaseHTTPMiddleware):
+    async def _call_with_actor(
+        self,
+        request: Request,
+        call_next: RequestResponseEndpoint,
+        session_user: dict[str, object],
+    ) -> Response:
+        actor_token = bind_actor(
+            AuditActor(
+                discord_id=int(request.state.discord_user_id or 0),
+                display_name=str(
+                    session_user.get("display_name")
+                    or session_user.get("username")
+                    or request.state.discord_user_id
+                ),
+                access_role=str(request.state.access_role or "user"),
+            )
+        )
+        try:
+            return await call_next(request)
+        finally:
+            reset_actor(actor_token)
+
     async def dispatch(
         self,
         request: Request,
@@ -284,7 +307,11 @@ class AuthContextMiddleware(BaseHTTPMiddleware):
                 request.state.access_scopes = (1, 2, 3)
                 request.state.allowed_guild_ids = ()
                 request.state.selected_guild_id = None
-                return await call_next(request)
+                return await self._call_with_actor(
+                    request,
+                    call_next,
+                    session_user,
+                )
             request.session.clear()
             return templates.TemplateResponse(
                 request,
@@ -324,7 +351,7 @@ class AuthContextMiddleware(BaseHTTPMiddleware):
         request.state.developer_view_alliance_id = view_alliance_id
         request.state.access_role = effective_role
         request.state.access_scopes = effective_scopes
-        return await call_next(request)
+        return await self._call_with_actor(request, call_next, session_user)
 
 
 def _authorize_url(state: str, redirect_uri: str) -> str:

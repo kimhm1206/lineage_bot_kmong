@@ -158,6 +158,34 @@ async def ensure_settings_schema() -> None:
         FROM treasury_source_types
         ON CONFLICT (source_code) DO NOTHING
         """,
+        """
+        INSERT INTO audit_entity_types(entity_type_id, entity_code)
+        VALUES
+            (8, 'fee_rule'),
+            (9, 'configuration'),
+            (10, 'assignment'),
+            (11, 'report')
+        ON CONFLICT (entity_code) DO NOTHING
+        """,
+        """
+        INSERT INTO audit_action_types(
+            action_type_id, action_code, entity_type_id
+        ) VALUES
+            (19, 'fee_rule_create', 8),
+            (20, 'fee_rule_update', 8),
+            (21, 'guild_update', 9),
+            (22, 'attendance_settings_update', 9),
+            (23, 'alliance_mapping_create', 9),
+            (24, 'alliance_mapping_delete', 9),
+            (25, 'assignment_create', 10),
+            (26, 'assignment_delete', 10),
+            (27, 'clan_policy_update', 9),
+            (28, 'treasury_distribution_create', 6),
+            (29, 'report_create', 11),
+            (30, 'report_update', 11),
+            (31, 'report_status', 11)
+        ON CONFLICT (action_code) DO NOTHING
+        """,
     )
     async with engine.begin() as connection:
         for statement in statements:

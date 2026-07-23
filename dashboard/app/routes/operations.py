@@ -19,8 +19,10 @@ from dashboard.app.security import (
     can_select_alliances,
     current_access_role,
     current_discord_user_id,
+    current_internal_user_id,
     current_guild_id,
     require_alliance_access,
+    require_clan_visibility,
     require_selected_guild,
     restrict_workspace_alliance,
 )
@@ -223,7 +225,6 @@ async def drops_page(
 async def alliance_settlements_page(
     request: Request,
     guild_id: int | None = None,
-    period: int | None = None,
     q: str = "",
     session: AsyncSession = Depends(get_session),
 ):
@@ -238,12 +239,11 @@ async def alliance_settlements_page(
         page_description="혈맹과 연합 수수료를 같은 정산 대상으로 관리합니다.",
         page_badge="ALLIANCE MANAGER",
     )
-    selected_period = workspace_store.normalize_period(period)
     page_data = (
         await operations_store.alliance_settlement_entities(
             session,
             guild_id=int(workspace["guild_id"]),
-            period_days=selected_period,
+            period_days=0,
             query="",
         )
         if workspace["guild_id"] is not None
@@ -264,8 +264,6 @@ async def alliance_settlements_page(
     context.update(fee_data)
     context.update(
         {
-            "period": selected_period,
-            "period_options": workspace_store.filter_options(workspace_store.PERIOD_OPTIONS, selected_period),
             "query": _query(q),
             "settlement_level": "alliance",
             "can_manage_settlement": can_manage,
@@ -295,6 +293,18 @@ async def clan_settlements_page(
         page_badge="CLAN MANAGER",
         clan_scoped=True,
     )
+    clan_access: dict[str, object] = {
+        "access_mode": "detail",
+        "can_manage": False,
+    }
+    if workspace["guild_id"] is not None and workspace["alliance_id"] is not None:
+        clan_access = await require_clan_visibility(
+            request,
+            session,
+            guild_id=int(workspace["guild_id"]),
+            alliance_id=int(workspace["alliance_id"]),
+            resource="distribution",
+        )
     page_data = (
         await operations_store.clan_settlement_entities(
             session,
@@ -305,6 +315,11 @@ async def clan_settlements_page(
         )
         if workspace["guild_id"] is not None and workspace["alliance_id"] is not None
         else {"entities": [], "summary_cards": []}
+    )
+    page_data = operations_store.restrict_clan_settlement_entities(
+        page_data,
+        access_mode=str(clan_access["access_mode"]),
+        user_id=await current_internal_user_id(request, session),
     )
     fee_data = (
         await operations_store.fee_management_page(
@@ -325,6 +340,8 @@ async def clan_settlements_page(
             "settlement_level": "clan",
             "can_manage_settlement": can_manage_clan_treasury(request),
             "can_edit_fee_rules": can_manage_clan_treasury(request),
+            "clan_access_mode": clan_access["access_mode"],
+            "can_view_clan_details": clan_access["access_mode"] != "summary",
             "scope_code": 2,
         }
     )
@@ -846,12 +863,18 @@ async def fee_rule_history(
     if rule_scope["scope_code"] == 1:
         require_selected_guild(request, guild_id)
     elif rule_scope["alliance_id"] is not None:
-        await require_alliance_access(
+        clan_access = await require_clan_visibility(
             request,
             session,
             guild_id=guild_id,
             alliance_id=int(rule_scope["alliance_id"]),
+            resource="distribution",
         )
+        if clan_access["access_mode"] in {"summary", "own"}:
+            raise HTTPException(
+                status_code=403,
+                detail="현재 공개 정책에서는 수수료 상세 기록을 볼 수 없습니다.",
+            )
     else:
         raise HTTPException(status_code=404, detail="수수료 적용 혈맹을 찾을 수 없습니다.")
 
@@ -882,12 +905,25 @@ async def clan_settlement_history(
     page: int = 1,
     session: AsyncSession = Depends(get_session),
 ):
-    await require_alliance_access(
+    clan_access = await require_clan_visibility(
         request,
         session,
         guild_id=guild_id,
         alliance_id=alliance_id,
+        resource="distribution",
     )
+    if clan_access["access_mode"] == "summary":
+        raise HTTPException(
+            status_code=403,
+            detail="현재 공개 정책에서는 상세 기록을 볼 수 없습니다.",
+        )
+    if clan_access["access_mode"] == "own":
+        signed_in_user_id = await current_internal_user_id(request, session)
+        if signed_in_user_id != user_id:
+            raise HTTPException(
+                status_code=403,
+                detail="본인의 분배 기록만 확인할 수 있습니다.",
+            )
     selected_status = history_status if history_status in {"all", "complete", "forfeited"} else "all"
     selected_period, date_from_epoch, date_to_epoch = _history_window(
         30 if period is None else period,
@@ -922,12 +958,18 @@ async def clan_completed_item_history(
     page: int = 1,
     session: AsyncSession = Depends(get_session),
 ):
-    await require_alliance_access(
+    clan_access = await require_clan_visibility(
         request,
         session,
         guild_id=guild_id,
         alliance_id=alliance_id,
+        resource="distribution",
     )
+    if clan_access["access_mode"] in {"summary", "own"}:
+        raise HTTPException(
+            status_code=403,
+            detail="현재 공개 정책에서는 완료 내역을 볼 수 없습니다.",
+        )
     selected_period, date_from_epoch, date_to_epoch = _history_window(
         period,
         date_from,

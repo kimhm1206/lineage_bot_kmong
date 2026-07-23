@@ -8,6 +8,8 @@ from typing import Any, Iterable
 from sqlalchemy import bindparam, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from dashboard.app.services import audit_service
+
 
 PPM_BASE = 1_000_000
 STATUS_PENDING = 0
@@ -95,46 +97,17 @@ async def _audit(
     state_code: int | None = None,
     amount_value: int | None = None,
 ) -> None:
-    action_type_id = await session.scalar(
-        text("SELECT action_type_id FROM audit_action_types WHERE action_code = :code"),
-        {"code": action_code},
-    )
-    if action_type_id is None:
-        return
-    audit_event_id = await session.scalar(
-        text("""
-            INSERT INTO audit_events (
-                guild_id, actor_id, actor_role, action_type_id, target_id, occurred_at
-            ) VALUES (:guild_id, NULL, 4, :action_type_id, :target_id, :now)
-            RETURNING audit_event_id
-        """),
-        {
-            "guild_id": guild_id,
-            "action_type_id": int(action_type_id),
-            "target_id": target_id,
-            "now": _now(),
-        },
-    )
-    await session.execute(
-        text("""
-            INSERT INTO audit_event_contexts (
-                audit_event_id, attendance_id, user_id, loot_event_id,
-                item_id, alliance_id, state_code, amount_value
-            ) VALUES (
-                :audit_event_id, :attendance_id, :user_id, :loot_event_id,
-                :item_id, :alliance_id, :state_code, :amount_value
-            )
-        """),
-        {
-            "audit_event_id": int(audit_event_id),
-            "attendance_id": attendance_id,
-            "user_id": user_id,
-            "loot_event_id": target_id if action_code.startswith(("loot_", "sale_")) else None,
-            "item_id": item_id,
-            "alliance_id": alliance_id,
-            "state_code": state_code,
-            "amount_value": amount_value,
-        },
+    await audit_service.record_event(
+        session,
+        guild_id=guild_id,
+        action_code=action_code,
+        target_id=target_id,
+        attendance_id=attendance_id,
+        user_id=user_id,
+        item_id=item_id,
+        alliance_id=alliance_id,
+        state_code=state_code,
+        amount_value=amount_value,
     )
 
 
@@ -1592,6 +1565,14 @@ async def create_fee_rule(
         {"fee_rule_id": fee_rule_id, "name": name, "ppm": ppm, "now": _now()},
     )
     await recalculate_open_settlements(session, guild_id=guild_id, scope_code=scope_code, alliance_id=alliance_id)
+    await _audit(
+        session,
+        guild_id=guild_id,
+        action_code="fee_rule_create",
+        target_id=fee_rule_id,
+        alliance_id=alliance_id,
+        amount_value=ppm,
+    )
     return OperationResult("수수료 규칙을 추가했습니다.", (fee_rule_id,))
 
 
@@ -1665,6 +1646,19 @@ async def update_fee_rule(
         guild_id=guild_id,
         scope_code=int(rule["scope_code"]),
         alliance_id=int(rule["alliance_id"]) if rule["alliance_id"] is not None else None,
+    )
+    await _audit(
+        session,
+        guild_id=guild_id,
+        action_code="fee_rule_update",
+        target_id=fee_rule_id,
+        alliance_id=(
+            int(rule["alliance_id"])
+            if rule["alliance_id"] is not None
+            else None
+        ),
+        state_code=1 if is_active else 0,
+        amount_value=ppm,
     )
     return OperationResult("수수료 규칙을 수정했습니다.", (fee_rule_id,))
 

@@ -9,6 +9,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dashboard.app.services import settings_store
+from dashboard.app.services import audit_service
 
 
 PAGE_SIZE = 20
@@ -41,6 +42,19 @@ ACTION_LABELS = {
     "treasury_deposit": "가계부 입금",
     "treasury_withdrawal": "가계부 출금",
     "treasury_reversal": "가계부 기록 취소",
+    "fee_rule_create": "수수료 규칙 추가",
+    "fee_rule_update": "수수료 규칙 수정",
+    "guild_update": "서버 설정 변경",
+    "attendance_settings_update": "출석 설정 변경",
+    "alliance_mapping_create": "혈맹 역할 연결",
+    "alliance_mapping_delete": "혈맹 역할 연결 해제",
+    "assignment_create": "운영 담당자 지정",
+    "assignment_delete": "운영 담당자 해제",
+    "clan_policy_update": "혈맹 공개 정책 변경",
+    "treasury_distribution_create": "가계부 잔액 분배 생성",
+    "report_create": "알림 등록",
+    "report_update": "알림 수정",
+    "report_status": "알림 상태 변경",
 }
 
 ROLE_LABELS = {
@@ -49,6 +63,7 @@ ROLE_LABELS = {
     3: "Alliance manager",
     4: "Clan manager",
     5: "Clan accountant",
+    6: "User",
 }
 
 
@@ -1495,6 +1510,18 @@ async def record_treasury_entry(
                 "treasury_account_id": account["treasury_account_id"],
             },
         )
+        await audit_service.record_event(
+            session,
+            guild_id=guild_id,
+            action_code=(
+                "treasury_deposit"
+                if direction == 1
+                else "treasury_withdrawal"
+            ),
+            target_id=_int(treasury_entry_id),
+            alliance_id=alliance_id,
+            amount_value=amount_adena,
+        )
         await session.commit()
         return _int(treasury_entry_id)
     except Exception:
@@ -1706,6 +1733,14 @@ async def create_treasury_distribution(
                 "account_id": account["treasury_account_id"],
             },
         )
+        await audit_service.record_event(
+            session,
+            guild_id=guild_id,
+            action_code="treasury_distribution_create",
+            target_id=_int(distribution_id),
+            alliance_id=alliance_id,
+            amount_value=distributed_amount,
+        )
         await session.commit()
         return _int(distribution_id)
     except Exception:
@@ -1743,6 +1778,12 @@ async def set_treasury_distribution_recipient_status(
     if status_code not in {0, 1}:
         raise ValueError("지원하지 않는 지급 상태입니다.")
     completed_at = int(time.time()) if status_code == 1 else None
+    scope = await treasury_distribution_scope(
+        session,
+        treasury_distribution_id,
+    )
+    if scope is None:
+        raise ValueError("공금 분배 기록을 찾을 수 없습니다.")
     user_filter = "" if user_id is None else "AND user_id = :user_id"
     result = await session.execute(
         text(f"""
@@ -1759,6 +1800,20 @@ async def set_treasury_distribution_recipient_status(
             "completed_at": completed_at,
         },
     )
+    if result.rowcount:
+        await audit_service.record_event(
+            session,
+            guild_id=_int(scope["guild_id"]),
+            action_code="payout_status",
+            target_id=treasury_distribution_id,
+            user_id=user_id,
+            alliance_id=(
+                _int(scope["alliance_id"])
+                if scope["alliance_id"] is not None
+                else None
+            ),
+            state_code=status_code,
+        )
     await session.commit()
     return int(result.rowcount or 0)
 

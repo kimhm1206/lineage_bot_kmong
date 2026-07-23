@@ -1175,6 +1175,34 @@ async def clan_settlement_entities(
     }
 
 
+def restrict_clan_settlement_entities(
+    page_data: dict[str, Any],
+    *,
+    access_mode: str,
+    user_id: int | None,
+) -> dict[str, Any]:
+    if access_mode != "own":
+        return page_data
+    entities = [
+        entity
+        for entity in page_data.get("entities", [])
+        if entity.get("entity_type") == "member"
+        and int(entity.get("target_id") or 0) == int(user_id or 0)
+    ]
+    pending_total = sum(int(entity.get("pending_amount") or 0) for entity in entities)
+    return {
+        **page_data,
+        "entities": entities,
+        "summary_cards": [
+            {
+                "label": "미분배 아데나",
+                "value": _money(pending_total),
+                "meta": "내 분배 기록",
+            }
+        ],
+    }
+
+
 async def clan_settlement_history_page(
     session: AsyncSession,
     *,

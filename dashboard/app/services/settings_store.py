@@ -5,6 +5,7 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from dashboard.app.services import audit_service
 
 SCOPE_ALLIANCE_MANAGER = 1
 SCOPE_CLAN_MANAGER = 2
@@ -65,6 +66,13 @@ async def upsert_guild(
             "icon_hash": icon_hash,
         },
     )
+    await audit_service.record_event(
+        session,
+        guild_id=guild_id,
+        action_code="guild_update",
+        target_id=guild_id,
+        state_code=1 if is_enabled else 0,
+    )
     await session.commit()
 
 
@@ -83,6 +91,12 @@ async def update_guild_metadata(
                 WHERE guild_id = :guild_id
             """),
             guild,
+        )
+        await audit_service.record_event(
+            session,
+            guild_id=int(guild["guild_id"]),
+            action_code="guild_update",
+            target_id=int(guild["guild_id"]),
         )
     await session.commit()
 
@@ -122,6 +136,12 @@ async def save_attendance_settings(
             "timer": timer,
             "attendance_available_timer": attendance_available_timer,
         },
+    )
+    await audit_service.record_event(
+        session,
+        guild_id=guild_id,
+        action_code="attendance_settings_update",
+        target_id=guild_id,
     )
     await session.commit()
 
@@ -193,14 +213,33 @@ async def save_role_mapping(
             "alliance_id": alliance_id,
         },
     )
+    await audit_service.record_event(
+        session,
+        guild_id=guild_id,
+        action_code="alliance_mapping_create",
+        target_id=int(alliance_id),
+        alliance_id=int(alliance_id),
+    )
     await session.commit()
 
 
 async def delete_role_mapping(session: AsyncSession, *, guild_id: int, mapping_id: int) -> None:
-    await session.execute(
-        text("DELETE FROM guild_alliance_role_mappings WHERE guild_id = :guild_id AND mapping_id = :mapping_id"),
+    alliance_id = await session.scalar(
+        text("""
+            DELETE FROM guild_alliance_role_mappings
+            WHERE guild_id = :guild_id AND mapping_id = :mapping_id
+            RETURNING alliance_id
+        """),
         {"guild_id": guild_id, "mapping_id": mapping_id},
     )
+    if alliance_id is not None:
+        await audit_service.record_event(
+            session,
+            guild_id=guild_id,
+            action_code="alliance_mapping_delete",
+            target_id=mapping_id,
+            alliance_id=int(alliance_id),
+        )
     await session.commit()
 
 
@@ -227,12 +266,13 @@ async def add_assignment(
     scope_code: int,
     alliance_id: int | None,
 ) -> None:
-    await session.execute(
+    assignment_id = await session.scalar(
         text("""
             INSERT INTO guild_user_assignments (
                 guild_id, discord_user_id, scope_code, alliance_id, updated_at
             ) VALUES (:guild_id, :discord_user_id, :scope_code, :alliance_id, NOW())
             ON CONFLICT DO NOTHING
+            RETURNING assignment_id
         """),
         {
             "guild_id": guild_id,
@@ -241,14 +281,41 @@ async def add_assignment(
             "alliance_id": alliance_id,
         },
     )
+    if assignment_id is not None:
+        await audit_service.record_event(
+            session,
+            guild_id=guild_id,
+            action_code="assignment_create",
+            target_id=int(assignment_id),
+            alliance_id=alliance_id,
+        )
     await session.commit()
 
 
 async def delete_assignment(session: AsyncSession, *, guild_id: int, assignment_id: int) -> None:
-    await session.execute(
-        text("DELETE FROM guild_user_assignments WHERE guild_id = :guild_id AND assignment_id = :assignment_id"),
-        {"guild_id": guild_id, "assignment_id": assignment_id},
-    )
+    deleted = (
+        await session.execute(
+            text("""
+                DELETE FROM guild_user_assignments
+                WHERE guild_id = :guild_id
+                  AND assignment_id = :assignment_id
+                RETURNING assignment_id, alliance_id
+            """),
+            {"guild_id": guild_id, "assignment_id": assignment_id},
+        )
+    ).mappings().one_or_none()
+    if deleted is not None:
+        await audit_service.record_event(
+            session,
+            guild_id=guild_id,
+            action_code="assignment_delete",
+            target_id=assignment_id,
+            alliance_id=(
+                int(deleted["alliance_id"])
+                if deleted["alliance_id"] is not None
+                else None
+            ),
+        )
     await session.commit()
 
 
@@ -282,15 +349,19 @@ async def save_policy(
         text("""
             INSERT INTO alliance_access_policies (
                 guild_id, alliance_id, distribution_visibility_code,
-                treasury_visibility_code, user_access_code, updated_at
+                treasury_visibility_code, user_access_code,
+                updated_by_discord_user_id, updated_at
             ) VALUES (
                 :guild_id, :alliance_id, :distribution_visibility_code,
-                :treasury_visibility_code, :user_access_code, NOW()
+                :treasury_visibility_code, :user_access_code,
+                :updated_by_discord_user_id, NOW()
             )
             ON CONFLICT (guild_id, alliance_id) DO UPDATE SET
                 distribution_visibility_code = EXCLUDED.distribution_visibility_code,
                 treasury_visibility_code = EXCLUDED.treasury_visibility_code,
                 user_access_code = EXCLUDED.user_access_code,
+                updated_by_discord_user_id =
+                    EXCLUDED.updated_by_discord_user_id,
                 updated_at = NOW()
         """),
         {
@@ -299,6 +370,19 @@ async def save_policy(
             "distribution_visibility_code": distribution_visibility_code,
             "treasury_visibility_code": treasury_visibility_code,
             "user_access_code": user_access_code,
+            "updated_by_discord_user_id": (
+                audit_service.current_actor().discord_id
+                if audit_service.current_actor()
+                else None
+            ),
         },
+    )
+    await audit_service.record_event(
+        session,
+        guild_id=guild_id,
+        action_code="clan_policy_update",
+        target_id=alliance_id,
+        alliance_id=alliance_id,
+        state_code=user_access_code,
     )
     await session.commit()

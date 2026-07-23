@@ -42,20 +42,7 @@
       <article class="settlement-command-card is-primary">
         <span>미분배 아데나</span>
         <strong>{{ summary_cards[0].value if summary_cards else '0' }}</strong>
-        {% if settlement_level == 'alliance' and period_options %}
-        <form method="get" action="{{ request.url.path }}">
-          <label>
-            <span class="sr-only">조회 기간</span>
-            <select name="period" onchange="this.form.submit()">
-              {% for option in period_options %}
-              <option value="{{ option.value }}" {% if option.selected %}selected{% endif %}>{{ option.label }}</option>
-              {% endfor %}
-            </select>
-          </label>
-        </form>
-        {% else %}
         <small>현재 지급할 금액</small>
-        {% endif %}
       </article>
       {% if settlement_level == 'clan' %}
       <button class="settlement-command-card is-action" type="button"
@@ -137,7 +124,7 @@
             </button>
             {% endif %}
           {% endif %}
-          {% if settlement_level == 'clan' and entity.entity_type == 'member' %}
+          {% if settlement_level == 'clan' and entity.entity_type == 'member' and can_view_clan_details %}
           <button class="secondary-button" type="button"
                   data-clan-history-open
                   data-guild-id="{{ guild_id }}"
@@ -168,7 +155,7 @@
         </span>
         <span class="entity-expand-icon">{% if entity.pending_count > 0 %}{{ icon("chevron-right") }}{% endif %}</span>
       </summary>
-      {% if entity.pending_count > 0 %}
+      {% if entity.pending_count > 0 and (settlement_level != 'clan' or can_view_clan_details) %}
       <div class="entity-detail-panel">
         <header><div><h3>분배 상세</h3><p>드랍 분배와 가계부 잔액 분배를 {{ '혈맹' if settlement_level == 'alliance' else '인원' }} 기준으로 함께 관리합니다.</p></div><div class="entity-detail-totals"><strong>미분배 {{ entity.pending_count }}건</strong></div></header>
         <div class="entity-detail-list">

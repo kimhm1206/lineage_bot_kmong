@@ -22,6 +22,7 @@ from dashboard.app.security import (
     can_select_alliances,
     current_guild_id,
     require_alliance_access,
+    require_clan_visibility,
     restrict_workspace_alliance,
 )
 from dashboard.app.services import attendance_service, workspace_store
@@ -100,6 +101,7 @@ async def _render_workspace(
     builder_kwargs: dict[str, Any] | None = None,
     treasury_form_action: str = "",
     can_edit_treasury: bool = False,
+    clan_visibility_resource: str = "",
 ):
     workspace = await workspace_store.resolve_workspace(
         session, current_guild_id(request), alliance_id, allowed_guild_ids(request)
@@ -111,6 +113,18 @@ async def _render_workspace(
     selected_guild_id = workspace["guild_id"]
     selected_alliance_id = workspace["alliance_id"]
     clean_query = query.strip()[:100]
+    if (
+        clan_visibility_resource
+        and selected_guild_id is not None
+        and selected_alliance_id is not None
+    ):
+        await require_clan_visibility(
+            request,
+            session,
+            guild_id=int(selected_guild_id),
+            alliance_id=int(selected_alliance_id),
+            resource=clan_visibility_resource,
+        )
 
     if selected_guild_id is None:
         page_data = _empty_page("등록된 서버가 없습니다.")
@@ -599,6 +613,7 @@ async def clan_treasury(
         },
         treasury_form_action="/clan/treasury/entries",
         can_edit_treasury=can_edit,
+        clan_visibility_resource="treasury",
     )
 
 

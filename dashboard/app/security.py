@@ -5,10 +5,15 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dashboard.app.config import get_settings
+from dashboard.app.services import settings_store
 
 
 DEVELOPER_ENVIRONMENTS = {"local", "development", "test"}
 ALLIANCE_OVERVIEW_ROLES = {"developer", "owner"}
+CLAN_ACCESS_SUMMARY = "summary"
+CLAN_ACCESS_DETAIL = "detail"
+CLAN_ACCESS_OWN = "own"
+CLAN_ACCESS_MANAGE = "manage"
 
 
 def current_access_role(request: Request) -> str:
@@ -192,6 +197,100 @@ async def require_alliance_access(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="본인 혈맹의 정보만 확인할 수 있습니다.",
         )
+
+
+def clan_visibility_allows(
+    visibility_code: int,
+    *,
+    can_manage: bool,
+    is_member: bool,
+) -> bool:
+    if can_manage:
+        return True
+    if visibility_code == 1:
+        return False
+    if visibility_code == 2:
+        return is_member
+    return visibility_code == 3
+
+
+def clan_user_access_mode(
+    user_access_code: int,
+    *,
+    can_manage: bool,
+) -> str:
+    if can_manage:
+        return CLAN_ACCESS_MANAGE
+    return {
+        1: CLAN_ACCESS_SUMMARY,
+        2: CLAN_ACCESS_DETAIL,
+        3: CLAN_ACCESS_OWN,
+    }.get(user_access_code, CLAN_ACCESS_DETAIL)
+
+
+async def current_internal_user_id(
+    request: Request,
+    session: AsyncSession,
+) -> int | None:
+    discord_user_id = current_discord_user_id(request)
+    if discord_user_id is None:
+        return None
+    user_id = await session.scalar(
+        text("""
+            SELECT user_id
+            FROM users
+            WHERE discord_id = :discord_user_id
+              AND is_active IS TRUE
+            ORDER BY updated_at DESC, user_id DESC
+            LIMIT 1
+        """),
+        {"discord_user_id": discord_user_id},
+    )
+    return int(user_id) if user_id is not None else None
+
+
+async def require_clan_visibility(
+    request: Request,
+    session: AsyncSession,
+    *,
+    guild_id: int,
+    alliance_id: int,
+    resource: str,
+) -> dict[str, object]:
+    policy = await settings_store.get_policy(
+        session,
+        guild_id=guild_id,
+        alliance_id=alliance_id,
+    )
+    selected_by_operator = await can_select_alliances(request, session, guild_id)
+    own_alliance_id = await current_user_alliance_id(request, session, guild_id)
+    is_member = own_alliance_id == alliance_id
+    can_manage = can_manage_clan_treasury(request) and (
+        selected_by_operator or is_member
+    )
+    visibility_key = (
+        "distribution_visibility_code"
+        if resource == "distribution"
+        else "treasury_visibility_code"
+    )
+    if not clan_visibility_allows(
+        int(policy[visibility_key]),
+        can_manage=can_manage,
+        is_member=is_member,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="이 혈맹 정보의 공개 범위에 포함되지 않습니다.",
+        )
+    return {
+        **policy,
+        "can_manage": can_manage,
+        "is_member": is_member,
+        "access_mode": clan_user_access_mode(
+            int(policy["user_access_code"]),
+            can_manage=can_manage,
+        ),
+    }
 
 
 def can_manage_alliance_operations(request: Request) -> bool:

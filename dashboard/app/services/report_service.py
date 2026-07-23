@@ -12,6 +12,8 @@ from apscheduler.triggers.date import DateTrigger
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from dashboard.app.services import audit_service
+
 from dashboard.app.database import SessionLocal
 from dashboard.app.services.discord_api import discord_api
 
@@ -318,6 +320,7 @@ async def save_report(
         "next_run_at": next_run_at,
         "report_setting_id": report_setting_id,
     }
+    is_update = bool(report_setting_id)
     if report_setting_id:
         saved_id = await session.scalar(
             text("""
@@ -359,6 +362,12 @@ async def save_report(
             """),
             params,
         )
+    await audit_service.record_event(
+        session,
+        guild_id=guild_id,
+        action_code="report_update" if is_update else "report_create",
+        target_id=int(saved_id),
+    )
     await session.commit()
     return int(saved_id)
 
@@ -409,6 +418,14 @@ async def update_status(
             "next_run_at": next_run_at,
         },
     )
+    if result.rowcount:
+        await audit_service.record_event(
+            session,
+            guild_id=guild_id,
+            action_code="report_status",
+            target_id=report_setting_id,
+            state_code={"off": 0, "on": 1, "delete": 2}[status],
+        )
     await session.commit()
     return bool(result.rowcount)
 
