@@ -1255,6 +1255,108 @@ async def apply_local_schema_cleanup() -> bool:
                 """)
             )
             changed = True
+
+        treasury_distribution_target_applied = await connection.scalar(
+            text("SELECT 1 FROM schema_migrations WHERE version = 17")
+        )
+        if not treasury_distribution_target_applied:
+            await connection.execute(
+                text("""
+                    ALTER TABLE treasury_distribution_recipients
+                    DROP CONSTRAINT treasury_distribution_recipients_pkey
+                """)
+            )
+            await connection.execute(
+                text("""
+                    ALTER TABLE treasury_distribution_recipients
+                    DROP CONSTRAINT chk_treasury_distribution_recipient_completion
+                """)
+            )
+            await connection.execute(
+                text("""
+                    ALTER TABLE treasury_distribution_recipients
+                    DROP CONSTRAINT treasury_distribution_recipients_status_code_check
+                """)
+            )
+            await connection.execute(
+                text("""
+                    ALTER TABLE treasury_distribution_recipients
+                    ALTER COLUMN user_id DROP NOT NULL,
+                    ADD COLUMN treasury_distribution_recipient_id BIGSERIAL,
+                    ADD COLUMN alliance_id BIGINT
+                        REFERENCES alliances(alliance_id) ON DELETE RESTRICT
+                """)
+            )
+            await connection.execute(
+                text("""
+                    ALTER TABLE treasury_distribution_recipients
+                    ADD PRIMARY KEY (treasury_distribution_recipient_id),
+                    ADD CONSTRAINT chk_treasury_distribution_recipient_target
+                        CHECK ((user_id IS NULL) <> (alliance_id IS NULL)),
+                    ADD CONSTRAINT chk_treasury_distribution_recipient_status
+                        CHECK (status_code IN (0, 1, 2)),
+                    ADD CONSTRAINT chk_treasury_distribution_recipient_completion
+                        CHECK (
+                            (status_code = 0 AND completed_at IS NULL)
+                            OR (status_code IN (1, 2) AND completed_at IS NOT NULL)
+                        )
+                """)
+            )
+            await connection.execute(
+                text("""
+                    CREATE UNIQUE INDEX
+                        uq_treasury_distribution_recipient_user
+                    ON treasury_distribution_recipients (
+                        treasury_distribution_id, user_id
+                    )
+                    WHERE user_id IS NOT NULL
+                """)
+            )
+            await connection.execute(
+                text("""
+                    CREATE UNIQUE INDEX
+                        uq_treasury_distribution_recipient_alliance
+                    ON treasury_distribution_recipients (
+                        treasury_distribution_id, alliance_id
+                    )
+                    WHERE alliance_id IS NOT NULL
+                """)
+            )
+            await connection.execute(
+                text("""
+                    CREATE INDEX idx_treasury_distribution_recipients_alliance
+                    ON treasury_distribution_recipients (alliance_id, status_code)
+                    WHERE alliance_id IS NOT NULL
+                """)
+            )
+            await connection.execute(
+                text("""
+                    INSERT INTO schema_migrations(version, applied_at)
+                    VALUES (17, EXTRACT(EPOCH FROM NOW())::BIGINT)
+                """)
+            )
+            changed = True
+
+        treasury_distribution_forfeiture_source_applied = await connection.scalar(
+            text("SELECT 1 FROM schema_migrations WHERE version = 18")
+        )
+        if not treasury_distribution_forfeiture_source_applied:
+            await connection.execute(
+                text("""
+                    INSERT INTO treasury_source_types(source_type_id, source_code)
+                    SELECT COALESCE(MAX(source_type_id), 0) + 1,
+                           'treasury_distribution_forfeiture'
+                    FROM treasury_source_types
+                    ON CONFLICT (source_code) DO NOTHING
+                """)
+            )
+            await connection.execute(
+                text("""
+                    INSERT INTO schema_migrations(version, applied_at)
+                    VALUES (18, EXTRACT(EPOCH FROM NOW())::BIGINT)
+                """)
+            )
+            changed = True
     return changed
 
 

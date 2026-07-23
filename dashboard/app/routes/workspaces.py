@@ -316,9 +316,14 @@ async def _save_treasury_distribution(
                 alliance_id=alliance_id,
             )
         requested_amount = _required_positive_int(form.get("requested_amount"))
-        excluded_discord_ids = [
+        exclusion_field = (
+            "excluded_alliance_ids"
+            if account_scope_code == 1
+            else "excluded_discord_ids"
+        )
+        excluded_recipient_ids = [
             _required_positive_int(value)
-            for value in form.getlist("excluded_discord_ids")
+            for value in form.getlist(exclusion_field)
             if str(value or "").strip()
         ]
         await workspace_store.create_treasury_distribution(
@@ -327,7 +332,7 @@ async def _save_treasury_distribution(
             alliance_id=alliance_id,
             account_scope_code=account_scope_code,
             requested_amount=requested_amount,
-            excluded_discord_ids=excluded_discord_ids,
+            excluded_recipient_ids=excluded_recipient_ids,
             memo=str(form.get("memo") or ""),
         )
     except (TypeError, ValueError) as exc:

@@ -289,6 +289,32 @@ def _entity_from_row(row: dict[str, Any], *, entity_type: str) -> dict[str, Any]
         "status_label": STATUS_LABELS[status],
         "status_tone": STATUS_TONES[status],
         "entity_type": entity_type,
+        "source_type": "drop",
+        "context_label": f"출석 #{int(row['attendance_id'])}",
+        "status_action": f"/api/payouts/{int(row['payout_object_id'])}/status",
+        "allows_forfeit": entity_type == "member",
+    }
+
+
+def _treasury_entity_detail(row: dict[str, Any], *, entity_type: str) -> dict[str, Any]:
+    status = int(row["status_code"])
+    recipient_id = int(row["treasury_distribution_recipient_id"])
+    return {
+        "payout_object_id": None,
+        "treasury_distribution_recipient_id": recipient_id,
+        "item_name": row["memo"] or row["distribution_label"],
+        "attendance_id": None,
+        "occurred_at_label": row["occurred_at_label"],
+        "amount": int(row["amount_adena"]),
+        "amount_label": _money(row["amount_adena"]),
+        "status_code": status,
+        "status_label": STATUS_LABELS[status],
+        "status_tone": STATUS_TONES[status],
+        "entity_type": entity_type,
+        "source_type": "treasury",
+        "context_label": row["distribution_label"],
+        "status_action": f"/api/treasury-payouts/{recipient_id}/status",
+        "allows_forfeit": entity_type == "member",
     }
 
 
@@ -414,6 +440,47 @@ async def alliance_settlement_entities(
             )
         ).mappings().all()
     ]
+    treasury_rows = [
+        dict(row)
+        for row in (
+            await session.execute(
+                text("""
+                    SELECT r.treasury_distribution_recipient_id,
+                           r.alliance_id AS recipient_alliance_id,
+                           r.status_code,
+                           d.per_recipient_amount AS amount_adena,
+                           COALESCE(d.memo, '') AS memo,
+                           '연합비 잔액 분배' AS distribution_label,
+                           TO_CHAR(
+                               TO_TIMESTAMP(d.created_at),
+                               'MM/DD HH24:MI'
+                           ) AS occurred_at_label,
+                           COALESCE(a.display_name, a.alliance_name) AS alliance_name
+                    FROM treasury_distribution_recipients r
+                    JOIN treasury_distributions d
+                      ON d.treasury_distribution_id =
+                         r.treasury_distribution_id
+                    JOIN treasury_accounts account
+                      ON account.treasury_account_id = d.treasury_account_id
+                    JOIN alliances a ON a.alliance_id = r.alliance_id
+                    WHERE account.guild_id = :guild_id
+                      AND account.account_scope_code = 1
+                      AND r.alliance_id IS NOT NULL
+                      AND r.status_code = 0
+                      AND (
+                          :period_days = 0
+                          OR d.created_at >= EXTRACT(
+                              EPOCH FROM NOW() -
+                              (:period_days * INTERVAL '1 day')
+                          )::BIGINT
+                      )
+                    ORDER BY d.created_at DESC,
+                             r.treasury_distribution_recipient_id DESC
+                """),
+                {"guild_id": guild_id, "period_days": period_days},
+            )
+        ).mappings().all()
+    ]
     entities: dict[str, dict[str, Any]] = dict(fee_entities)
     entities.update({
         f"alliance:{int(alliance['alliance_id'])}": {
@@ -456,6 +523,22 @@ async def alliance_settlement_entities(
             )
             detail_type = "fee"
         entity["details"].append(_entity_from_row(row, entity_type=detail_type))
+    for row in treasury_rows:
+        key = f"alliance:{int(row['recipient_alliance_id'])}"
+        entity = entities.setdefault(
+            key,
+            {
+                "key": key,
+                "entity_type": "alliance",
+                "target_id": int(row["recipient_alliance_id"]),
+                "name": row["alliance_name"] or "미분류",
+                "eyebrow": "혈맹 분배",
+                "details": [],
+            },
+        )
+        entity["details"].append(
+            _treasury_entity_detail(row, entity_type="alliance")
+        )
     entity_rows = list(entities.values())
     for entity in entity_rows:
         _finish_entity(entity)
@@ -640,6 +723,55 @@ async def clan_settlement_entities(
             )
         ).mappings().all()
     ]
+    treasury_rows = [
+        dict(row)
+        for row in (
+            await session.execute(
+                text("""
+                    SELECT r.treasury_distribution_recipient_id,
+                           r.user_id AS recipient_user_id,
+                           r.status_code,
+                           d.per_recipient_amount AS amount_adena,
+                           COALESCE(d.memo, '') AS memo,
+                           '혈비 잔액 분배' AS distribution_label,
+                           TO_CHAR(
+                               TO_TIMESTAMP(d.created_at),
+                               'MM/DD HH24:MI'
+                           ) AS occurred_at_label,
+                           COALESCE(
+                               u.game_nickname,
+                               u.discord_nickname
+                           ) AS user_name
+                    FROM treasury_distribution_recipients r
+                    JOIN treasury_distributions d
+                      ON d.treasury_distribution_id =
+                         r.treasury_distribution_id
+                    JOIN treasury_accounts account
+                      ON account.treasury_account_id = d.treasury_account_id
+                    JOIN users u ON u.user_id = r.user_id
+                    WHERE account.guild_id = :guild_id
+                      AND account.account_scope_code = 2
+                      AND account.alliance_id = :alliance_id
+                      AND r.user_id IS NOT NULL
+                      AND r.status_code = 0
+                      AND (
+                          :period_days = 0
+                          OR d.created_at >= EXTRACT(
+                              EPOCH FROM NOW() -
+                              (:period_days * INTERVAL '1 day')
+                          )::BIGINT
+                      )
+                    ORDER BY d.created_at DESC,
+                             r.treasury_distribution_recipient_id DESC
+                """),
+                {
+                    "guild_id": guild_id,
+                    "alliance_id": alliance_id,
+                    "period_days": period_days,
+                },
+            )
+        ).mappings().all()
+    ]
     for row in rows:
         if int(row["object_code"]) == 2:
             key = f"member:{int(row['recipient_user_id'])}"
@@ -670,6 +802,22 @@ async def clan_settlement_entities(
             )
             detail_type = "fee"
         entity["details"].append(_entity_from_row(row, entity_type=detail_type))
+    for row in treasury_rows:
+        key = f"member:{int(row['recipient_user_id'])}"
+        entity = entities.setdefault(
+            key,
+            {
+                "key": key,
+                "entity_type": "member",
+                "target_id": int(row["recipient_user_id"]),
+                "name": row["user_name"] or "알 수 없는 유저",
+                "eyebrow": "혈맹원",
+                "details": [],
+            },
+        )
+        entity["details"].append(
+            _treasury_entity_detail(row, entity_type="member")
+        )
     entity_rows = list(entities.values())
     for entity in entity_rows:
         _finish_entity(entity)

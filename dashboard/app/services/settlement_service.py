@@ -1037,6 +1037,111 @@ async def set_payout_status(
     return OperationResult(f"정산 상태를 {labels[status_code]}로 변경했습니다.", (payout_object_id,))
 
 
+async def set_treasury_distribution_recipient_status(
+    session: AsyncSession,
+    *,
+    recipient_id: int,
+    status_code: int,
+) -> OperationResult:
+    if status_code not in {STATUS_COMPLETE, STATUS_FORFEITED}:
+        raise SettlementError("공금 분배는 완료 또는 귀속 처리만 가능합니다.")
+    row = (
+        await session.execute(
+            text("""
+                SELECT r.treasury_distribution_recipient_id,
+                       r.user_id, r.alliance_id, r.status_code,
+                       d.per_recipient_amount, d.memo,
+                       account.guild_id, account.account_scope_code,
+                       account.alliance_id AS account_alliance_id,
+                       COALESCE(
+                           recipient.game_nickname,
+                           recipient.discord_nickname
+                       ) AS recipient_name
+                FROM treasury_distribution_recipients r
+                JOIN treasury_distributions d
+                  ON d.treasury_distribution_id =
+                     r.treasury_distribution_id
+                JOIN treasury_accounts account
+                  ON account.treasury_account_id = d.treasury_account_id
+                LEFT JOIN users recipient ON recipient.user_id = r.user_id
+                WHERE r.treasury_distribution_recipient_id = :recipient_id
+                FOR UPDATE OF r
+            """),
+            {"recipient_id": recipient_id},
+        )
+    ).mappings().one_or_none()
+    if row is None:
+        raise SettlementError("공금 분배 대상을 찾을 수 없습니다.")
+    current_status = int(row["status_code"])
+    if current_status == status_code:
+        return OperationResult(
+            "이미 같은 상태로 처리되어 있습니다.",
+            (recipient_id,),
+        )
+    if current_status != STATUS_PENDING:
+        raise SettlementError("이미 처리된 공금 분배는 이 화면에서 변경할 수 없습니다.")
+    if status_code == STATUS_FORFEITED:
+        if int(row["account_scope_code"]) != 2 or row["user_id"] is None:
+            raise SettlementError("귀속은 혈맹원 대상 혈비 분배에만 사용할 수 있습니다.")
+        source_type_id = await session.scalar(
+            text("""
+                SELECT source_type_id
+                FROM treasury_source_types
+                WHERE source_code = 'treasury_distribution_forfeiture'
+            """)
+        )
+        if source_type_id is None:
+            raise SettlementError("공금 귀속 원본 유형을 찾을 수 없습니다.")
+        await _treasury_credit(
+            session,
+            guild_id=int(row["guild_id"]),
+            alliance_id=int(row["account_alliance_id"]),
+            scope_code=2,
+            source_type_id=int(source_type_id),
+            source_id=recipient_id,
+            amount=int(row["per_recipient_amount"]),
+            category_name="귀속 혈비",
+            memo=(
+                f"혈비 잔액 분배 귀속 · "
+                f"{row['recipient_name'] or '알 수 없는 유저'}"
+            ),
+        )
+    await session.execute(
+        text("""
+            UPDATE treasury_distribution_recipients
+            SET status_code = :status_code,
+                completed_at = :completed_at
+            WHERE treasury_distribution_recipient_id = :recipient_id
+        """),
+        {
+            "recipient_id": recipient_id,
+            "status_code": status_code,
+            "completed_at": _now(),
+        },
+    )
+    await _audit(
+        session,
+        guild_id=int(row["guild_id"]),
+        action_code="payout_status",
+        target_id=recipient_id,
+        user_id=int(row["user_id"]) if row["user_id"] is not None else None,
+        alliance_id=(
+            int(row["alliance_id"])
+            if row["alliance_id"] is not None
+            else int(row["account_alliance_id"])
+            if row["account_alliance_id"] is not None
+            else None
+        ),
+        state_code=status_code,
+        amount_value=int(row["per_recipient_amount"]),
+    )
+    label = "완료" if status_code == STATUS_COMPLETE else "귀속"
+    return OperationResult(
+        f"공금 분배를 {label} 처리했습니다.",
+        (recipient_id,),
+    )
+
+
 async def set_payout_group_status(
     session: AsyncSession,
     *,
@@ -1046,6 +1151,7 @@ async def set_payout_group_status(
     alliance_id: int | None,
     status_code: int,
 ) -> OperationResult:
+    treasury_sql: str | None = None
     if group_type == "alliance":
         sql = """
             SELECT po.payout_object_id
@@ -1056,6 +1162,22 @@ async def set_payout_group_status(
               AND po.recipient_alliance_id = :target_id AND po.status_code = 0
             ORDER BY po.payout_object_id
         """
+        if status_code == 1:
+            treasury_sql = """
+                SELECT r.treasury_distribution_recipient_id
+                FROM treasury_distribution_recipients r
+                JOIN treasury_distributions distribution
+                  ON distribution.treasury_distribution_id =
+                     r.treasury_distribution_id
+                JOIN treasury_accounts account
+                  ON account.treasury_account_id =
+                     distribution.treasury_account_id
+                WHERE account.guild_id = :guild_id
+                  AND account.account_scope_code = 1
+                  AND r.alliance_id = :target_id
+                  AND r.status_code = 0
+                ORDER BY r.treasury_distribution_recipient_id
+            """
     elif group_type == "member":
         sql = """
             SELECT po.payout_object_id
@@ -1067,6 +1189,22 @@ async def set_payout_group_status(
               AND parent.recipient_alliance_id = :alliance_id
               AND po.status_code = 0
             ORDER BY po.payout_object_id
+        """
+        treasury_sql = """
+            SELECT r.treasury_distribution_recipient_id
+            FROM treasury_distribution_recipients r
+            JOIN treasury_distributions distribution
+              ON distribution.treasury_distribution_id =
+                 r.treasury_distribution_id
+            JOIN treasury_accounts account
+              ON account.treasury_account_id =
+                 distribution.treasury_account_id
+            WHERE account.guild_id = :guild_id
+              AND account.account_scope_code = 2
+              AND account.alliance_id = :alliance_id
+              AND r.user_id = :target_id
+              AND r.status_code = 0
+            ORDER BY r.treasury_distribution_recipient_id
         """
     elif group_type == "fee":
         fee_scope_filter = (
@@ -1101,11 +1239,38 @@ async def set_payout_group_status(
             )
         ).scalars()
     ]
-    if not payout_ids:
+    treasury_recipient_ids = (
+        [
+            int(value)
+            for value in (
+                await session.execute(
+                    text(treasury_sql),
+                    {
+                        "guild_id": guild_id,
+                        "target_id": target_id,
+                        "alliance_id": alliance_id,
+                    },
+                )
+            ).scalars()
+        ]
+        if treasury_sql
+        else []
+    )
+    if not payout_ids and not treasury_recipient_ids:
         raise SettlementError("처리할 미완료 내역이 없습니다.")
     for payout_id in payout_ids:
         await set_payout_status(session, payout_object_id=payout_id, status_code=status_code)
-    return OperationResult(f"{len(payout_ids):,}건을 한 번에 처리했습니다.", tuple(payout_ids))
+    for recipient_id in treasury_recipient_ids:
+        await set_treasury_distribution_recipient_status(
+            session,
+            recipient_id=recipient_id,
+            status_code=status_code,
+        )
+    total_count = len(payout_ids) + len(treasury_recipient_ids)
+    return OperationResult(
+        f"{total_count:,}건을 한 번에 처리했습니다.",
+        tuple(payout_ids + treasury_recipient_ids),
+    )
 
 
 async def create_item(

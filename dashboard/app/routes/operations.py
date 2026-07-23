@@ -503,6 +503,23 @@ async def set_payout_status(payout_object_id: int, request: Request, session: As
     )
 
 
+@router.post("/api/treasury-payouts/{recipient_id}/status")
+async def set_treasury_payout_status(
+    recipient_id: int,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+):
+    form = await request.form()
+    return await _result(
+        session,
+        settlement_service.set_treasury_distribution_recipient_status(
+            session,
+            recipient_id=recipient_id,
+            status_code=_status(form.get("status_code")),
+        ),
+    )
+
+
 @router.post("/api/payout-groups/{group_type}/{target_id}/status")
 async def set_payout_group_status(
     group_type: str,

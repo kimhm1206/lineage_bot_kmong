@@ -1036,42 +1036,72 @@ async def treasury_page(
     """), params)).mappings().one()
     categories = await list_treasury_categories(session, guild_id, account_scope_code)
     account_label = "연합비" if account_scope_code == 1 else "혈비"
-    eligible_filter = "" if account_scope_code == 1 else "AND u.alliance_id = :alliance_id"
     eligible_users: list[dict[str, Any]] = []
+    eligible_alliances: list[dict[str, Any]] = []
     if include_distribution_users:
-        eligible_users = [
-            {
-                **dict(row),
-                "user_id": _int(row["user_id"]),
-                "discord_id": _int(row["discord_id"]),
-                "display_name": str(row["display_name"]),
-                "username": str(row["alliance_name"]),
-            }
-            for row in (
-                await session.execute(
-                    text(f"""
-                        SELECT u.user_id, u.discord_id,
-                               COALESCE(u.game_nickname, u.discord_nickname) AS display_name,
-                               COALESCE(a.display_name, a.alliance_name, '미분류') AS alliance_name
-                        FROM users u
-                        LEFT JOIN alliances a ON a.alliance_id = u.alliance_id
-                        WHERE u.is_active IS TRUE
-                          {eligible_filter}
-                          AND EXISTS (
-                              SELECT 1
-                              FROM attendance_entries ae
-                              JOIN attendance_sessions ats
-                                ON ats.attendance_id = ae.attendance_id
-                              WHERE ae.user_id = u.user_id
-                                AND ats.guild_id = :guild_id
-                          )
-                        ORDER BY COALESCE(a.sort_order, 2147483647),
-                                 alliance_name, display_name, u.user_id
-                    """),
-                    params,
-                )
-            ).mappings().all()
-        ]
+        if account_scope_code == 1:
+            eligible_alliances = [
+                {
+                    "alliance_id": _int(row["alliance_id"]),
+                    "display_name": str(row["alliance_name"]),
+                    "member_count": _int(row["member_count"]),
+                }
+                for row in (
+                    await session.execute(
+                        text("""
+                            SELECT a.alliance_id,
+                                   COALESCE(a.display_name, a.alliance_name) AS alliance_name,
+                                   COUNT(DISTINCT u.user_id) FILTER (
+                                       WHERE u.is_active IS TRUE
+                                   ) AS member_count
+                            FROM guild_alliance_role_mappings mapping
+                            JOIN alliances a
+                              ON a.alliance_id = mapping.alliance_id
+                            LEFT JOIN users u
+                              ON u.alliance_id = a.alliance_id
+                            WHERE mapping.guild_id = :guild_id
+                              AND a.is_active IS TRUE
+                            GROUP BY a.alliance_id
+                            ORDER BY COALESCE(a.sort_order, 2147483647),
+                                     alliance_name, a.alliance_id
+                        """),
+                        params,
+                    )
+                ).mappings().all()
+            ]
+        else:
+            eligible_users = [
+                {
+                    **dict(row),
+                    "user_id": _int(row["user_id"]),
+                    "discord_id": _int(row["discord_id"]),
+                    "display_name": str(row["display_name"]),
+                    "username": str(row["alliance_name"]),
+                }
+                for row in (
+                    await session.execute(
+                        text("""
+                            SELECT u.user_id, u.discord_id,
+                                   COALESCE(u.game_nickname, u.discord_nickname) AS display_name,
+                                   COALESCE(a.display_name, a.alliance_name, '미분류') AS alliance_name
+                            FROM users u
+                            LEFT JOIN alliances a ON a.alliance_id = u.alliance_id
+                            WHERE u.is_active IS TRUE
+                              AND u.alliance_id = :alliance_id
+                              AND EXISTS (
+                                  SELECT 1
+                                  FROM attendance_entries ae
+                                  JOIN attendance_sessions ats
+                                    ON ats.attendance_id = ae.attendance_id
+                                  WHERE ae.user_id = u.user_id
+                                    AND ats.guild_id = :guild_id
+                              )
+                            ORDER BY display_name, u.user_id
+                        """),
+                        params,
+                    )
+                ).mappings().all()
+            ]
     distribution_rows: list[dict[str, Any]] = []
     if account:
         distribution_rows = [
@@ -1113,14 +1143,32 @@ async def treasury_page(
         recipient_rows = (
             await session.execute(
                 text("""
-                    SELECT r.treasury_distribution_id, r.user_id, r.status_code,
-                           COALESCE(u.game_nickname, u.discord_nickname) AS user_name,
-                           COALESCE(a.display_name, a.alliance_name, '미분류') AS alliance_name
+                    SELECT r.treasury_distribution_id,
+                           r.treasury_distribution_recipient_id,
+                           r.user_id, r.alliance_id, r.status_code,
+                           COALESCE(
+                               u.game_nickname,
+                               u.discord_nickname,
+                               target_alliance.display_name,
+                               target_alliance.alliance_name,
+                               '알 수 없는 대상'
+                           ) AS recipient_name,
+                           COALESCE(
+                               target_alliance.display_name,
+                               target_alliance.alliance_name,
+                               user_alliance.display_name,
+                               user_alliance.alliance_name,
+                               '미분류'
+                           ) AS alliance_name
                     FROM treasury_distribution_recipients r
-                    JOIN users u ON u.user_id = r.user_id
-                    LEFT JOIN alliances a ON a.alliance_id = u.alliance_id
+                    LEFT JOIN users u ON u.user_id = r.user_id
+                    LEFT JOIN alliances user_alliance
+                      ON user_alliance.alliance_id = u.alliance_id
+                    LEFT JOIN alliances target_alliance
+                      ON target_alliance.alliance_id = r.alliance_id
                     WHERE r.treasury_distribution_id = ANY(:distribution_ids)
-                    ORDER BY r.status_code, alliance_name, user_name, r.user_id
+                    ORDER BY r.status_code, alliance_name, recipient_name,
+                             r.treasury_distribution_recipient_id
                 """),
                 {"distribution_ids": distribution_ids},
             )
@@ -1129,10 +1177,30 @@ async def treasury_page(
             distribution_map[_int(recipient["treasury_distribution_id"])]["recipients"].append(
                 {
                     **dict(recipient),
-                    "user_id": _int(recipient["user_id"]),
+                    "treasury_distribution_recipient_id": _int(
+                        recipient["treasury_distribution_recipient_id"]
+                    ),
+                    "user_id": (
+                        _int(recipient["user_id"])
+                        if recipient["user_id"] is not None
+                        else None
+                    ),
+                    "alliance_id": (
+                        _int(recipient["alliance_id"])
+                        if recipient["alliance_id"] is not None
+                        else None
+                    ),
                     "status_code": _int(recipient["status_code"]),
-                    "status_label": "지급 완료" if _int(recipient["status_code"]) == 1 else "미지급",
-                    "status_tone": "success" if _int(recipient["status_code"]) == 1 else "warning",
+                    "status_label": {
+                        0: "미지급",
+                        1: "지급 완료",
+                        2: "혈비 귀속",
+                    }.get(_int(recipient["status_code"]), "확인 필요"),
+                    "status_tone": {
+                        0: "warning",
+                        1: "success",
+                        2: "muted",
+                    }.get(_int(recipient["status_code"]), "muted"),
                 }
             )
     pending_distribution_amount = 0
@@ -1172,6 +1240,7 @@ async def treasury_page(
         "treasury_balance": _int(account["current_balance"]) if account else 0,
         "treasury_account_label": account_label,
         "treasury_distribution_users": eligible_users,
+        "treasury_distribution_alliances": eligible_alliances,
         "treasury_distributions": distribution_rows,
     }
 
@@ -1352,7 +1421,7 @@ async def create_treasury_distribution(
     alliance_id: int | None,
     account_scope_code: int,
     requested_amount: int,
-    excluded_discord_ids: Sequence[int],
+    excluded_recipient_ids: Sequence[int],
     memo: str,
     created_by_user_id: int | None = None,
 ) -> int:
@@ -1388,33 +1457,61 @@ async def create_treasury_distribution(
         if requested_amount > _int(account["current_balance"]):
             raise ValueError("분배 금액이 현재 가계부 잔액보다 큽니다.")
 
-        excluded_ids = sorted({int(value) for value in excluded_discord_ids if int(value) > 0})
-        eligible_filter = "" if account_scope_code == 1 else "AND u.alliance_id = :alliance_id"
-        exclusion_filter = "AND NOT (u.discord_id = ANY(:excluded_ids))" if excluded_ids else ""
-        recipient_rows = (
-            await session.execute(
-                text(f"""
-                    SELECT u.user_id
-                    FROM users u
-                    WHERE u.is_active IS TRUE
-                      {eligible_filter}
-                      {exclusion_filter}
-                      AND EXISTS (
-                          SELECT 1
-                          FROM attendance_entries ae
-                          JOIN attendance_sessions ats
-                            ON ats.attendance_id = ae.attendance_id
-                          WHERE ae.user_id = u.user_id
-                            AND ats.guild_id = :guild_id
-                      )
-                    ORDER BY u.user_id
-                """),
-                {**params, "excluded_ids": excluded_ids},
+        excluded_ids = sorted(
+            {int(value) for value in excluded_recipient_ids if int(value) > 0}
+        )
+        if account_scope_code == 1:
+            exclusion_filter = (
+                "AND NOT (a.alliance_id = ANY(:excluded_ids))"
+                if excluded_ids
+                else ""
             )
-        ).scalars().all()
+            recipient_rows = (
+                await session.execute(
+                    text(f"""
+                        SELECT DISTINCT a.alliance_id
+                        FROM guild_alliance_role_mappings mapping
+                        JOIN alliances a
+                          ON a.alliance_id = mapping.alliance_id
+                        WHERE mapping.guild_id = :guild_id
+                          AND a.is_active IS TRUE
+                          {exclusion_filter}
+                        ORDER BY a.alliance_id
+                    """),
+                    {**params, "excluded_ids": excluded_ids},
+                )
+            ).scalars().all()
+        else:
+            exclusion_filter = (
+                "AND NOT (u.discord_id = ANY(:excluded_ids))"
+                if excluded_ids
+                else ""
+            )
+            recipient_rows = (
+                await session.execute(
+                    text(f"""
+                        SELECT u.user_id
+                        FROM users u
+                        WHERE u.is_active IS TRUE
+                          AND u.alliance_id = :alliance_id
+                          {exclusion_filter}
+                          AND EXISTS (
+                              SELECT 1
+                              FROM attendance_entries ae
+                              JOIN attendance_sessions ats
+                                ON ats.attendance_id = ae.attendance_id
+                              WHERE ae.user_id = u.user_id
+                                AND ats.guild_id = :guild_id
+                          )
+                        ORDER BY u.user_id
+                    """),
+                    {**params, "excluded_ids": excluded_ids},
+                )
+            ).scalars().all()
         recipient_ids = [int(value) for value in recipient_rows]
         if not recipient_ids:
-            raise ValueError("분배 대상자가 없습니다. 제외자 설정을 확인해 주세요.")
+            target_label = "혈맹" if account_scope_code == 1 else "혈맹원"
+            raise ValueError(f"분배 대상 {target_label}이 없습니다. 제외 설정을 확인해 주세요.")
         per_recipient_amount = requested_amount // len(recipient_ids)
         if per_recipient_amount <= 0:
             raise ValueError("분배 금액이 대상 인원보다 작습니다.")
@@ -1445,9 +1542,11 @@ async def create_treasury_distribution(
             },
         )
         await session.execute(
-            text("""
+            text(f"""
                 INSERT INTO treasury_distribution_recipients (
-                    treasury_distribution_id, user_id, status_code, completed_at
+                    treasury_distribution_id,
+                    {"alliance_id" if account_scope_code == 1 else "user_id"},
+                    status_code, completed_at
                 )
                 SELECT :distribution_id, UNNEST(CAST(:recipient_ids AS BIGINT[])), 0, NULL
             """),
@@ -1499,7 +1598,10 @@ async def create_treasury_distribution(
                 "balance_after": balance_after,
                 "source_type_id": source_type_id,
                 "distribution_id": distribution_id,
-                "memo": memo.strip()[:500] or f"{category_name} · {len(recipient_ids)}명",
+                "memo": memo.strip()[:500] or (
+                    f"{category_name} · {len(recipient_ids)}"
+                    f"{'개 혈맹' if account_scope_code == 1 else '명'}"
+                ),
                 "now": now,
                 "created_by_user_id": created_by_user_id,
             },

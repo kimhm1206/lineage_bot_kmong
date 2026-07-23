@@ -77,12 +77,19 @@
     <header class="ops-modal-header">
       <div>
         <h2 id="treasury-distribution-title">{{ treasury_account_label }} 분배</h2>
-        <p>출석 이력이 있는 활성 유저를 대상으로 균등 분배합니다.</p>
+        <p>
+          {% if treasury_scope_code == 1 %}
+          역할 매핑된 혈맹을 대상으로 균등 분배합니다.
+          {% else %}
+          선택한 혈맹의 출석 이력이 있는 혈맹원을 대상으로 균등 분배합니다.
+          {% endif %}
+        </p>
       </div>
       <button class="modal-close-button" type="button" data-modal-close aria-label="닫기">{{ icon("x") }}</button>
     </header>
     <div class="ops-modal-body">
-      <form class="ops-form" method="post" action="{{ treasury_form.distribution_action }}" data-treasury-distribution-form>
+      <form class="ops-form" method="post" action="{{ treasury_form.distribution_action }}"
+            data-treasury-distribution-form data-treasury-scope="{{ treasury_scope_code }}">
         <input type="hidden" name="guild_id" value="{{ guild_id }}">
         {% if treasury_scope_code == 2 %}<input type="hidden" name="alliance_id" value="{{ alliance_id }}">{% endif %}
         <div data-treasury-excluded-inputs></div>
@@ -97,7 +104,7 @@
             <span>분배 금액</span>
             <input type="number" name="requested_amount" min="1" max="{{ treasury_balance }}" step="1"
                    inputmode="numeric" placeholder="0" required data-treasury-distribution-amount>
-            <small>인원수로 나눈 나머지는 가계부 잔액에 남습니다.</small>
+            <small>대상 수로 나눈 나머지는 가계부 잔액에 남습니다.</small>
           </label>
           <label class="ops-field">
             <span>내용</span>
@@ -108,21 +115,34 @@
 
         <section class="treasury-exclusion-box">
           <div>
-            <span>분배 제외자</span>
-            <strong data-treasury-excluded-count>0명 제외</strong>
+            <span>{{ "분배 제외 혈맹" if treasury_scope_code == 1 else "분배 제외 혈맹원" }}</span>
+            <strong data-treasury-excluded-count>0{{ "개 혈맹" if treasury_scope_code == 1 else "명" }} 제외</strong>
           </div>
+          {% if treasury_scope_code == 1 %}
+          <div class="treasury-alliance-selector" data-treasury-alliance-selector>
+            {% for alliance in treasury_distribution_alliances %}
+            <button class="treasury-alliance-toggle" type="button"
+                    data-alliance-id="{{ alliance.alliance_id }}"
+                    aria-pressed="false">
+              <strong>{{ alliance.display_name }}</strong>
+              <small>{{ alliance.member_count }}명</small>
+            </button>
+            {% endfor %}
+          </div>
+          {% else %}
           <button class="secondary-button" type="button" data-treasury-excluded-open>
             {{ icon("users-round") }}
-            제외자 선택
+            제외 혈맹원 선택
           </button>
+          {% endif %}
           <div class="treasury-excluded-list" data-treasury-excluded-list>
-            <span>제외된 유저가 없습니다.</span>
+            <span>제외된 {{ "혈맹" if treasury_scope_code == 1 else "혈맹원" }}이 없습니다.</span>
           </div>
         </section>
 
         <div class="treasury-distribution-preview">
-          <div><span>분배 대상</span><strong data-treasury-recipient-count>{{ treasury_distribution_users | length }}명</strong></div>
-          <div><span>1인당 지급</span><strong data-treasury-per-person>0</strong></div>
+          <div><span>분배 대상</span><strong data-treasury-recipient-count>{% if treasury_scope_code == 1 %}{{ treasury_distribution_alliances | length }}개 혈맹{% else %}{{ treasury_distribution_users | length }}명{% endif %}</strong></div>
+          <div><span>{{ "혈맹당" if treasury_scope_code == 1 else "1인당" }} 지급</span><strong data-treasury-per-person>0</strong></div>
           <div><span>실제 출금</span><strong data-treasury-distributed-total>0</strong></div>
           <div><span>잔액에 남음</span><strong data-treasury-remainder>0</strong></div>
         </div>
@@ -136,6 +156,7 @@
   </section>
 </div>
 <script id="treasury-distribution-users-data" type="application/json">{{ treasury_distribution_users | tojson }}</script>
+<script id="treasury-distribution-alliances-data" type="application/json">{{ treasury_distribution_alliances | tojson }}</script>
 
 <section class="panel treasury-entry-panel">
   <div class="panel-header panel-header-inline treasury-entry-heading">
@@ -211,7 +232,7 @@
     <div>
       <span class="panel-kicker">Distribution</span>
       <h2>공금 분배 현황</h2>
-      <p>분배 대상별 지급 상태를 확인하고 개별 또는 전체 완료 처리합니다.</p>
+      <p>생성된 분배의 지급 상태입니다. 완료 처리는 {{ "각혈 분배" if treasury_scope_code == 1 else "혈맹원 분배" }}에서 진행합니다.</p>
     </div>
     <span class="workspace-result-count">최근 {{ treasury_distributions | length }}건</span>
   </div>
@@ -224,35 +245,22 @@
           <strong>{{ distribution.memo or treasury_account_label ~ " 분배" }}</strong>
         </div>
         <div><span>분배 총액</span><strong>{{ distribution.distributed_amount_label }}</strong></div>
-        <div><span>1인당</span><strong>{{ distribution.per_recipient_amount_label }}</strong></div>
-        <div><span>지급 현황</span><strong>{{ distribution.completed_count }} / {{ distribution.recipient_count }}명</strong></div>
+        <div><span>{{ "혈맹당" if treasury_scope_code == 1 else "1인당" }}</span><strong>{{ distribution.per_recipient_amount_label }}</strong></div>
+        <div><span>지급 현황</span><strong>{{ distribution.completed_count }} / {{ distribution.recipient_count }}{{ "개 혈맹" if treasury_scope_code == 1 else "명" }}</strong></div>
         <span class="workspace-status workspace-status-{{ 'success' if distribution.is_complete else 'warning' }}">
           {{ "완료" if distribution.is_complete else "지급 중" }}
         </span>
         <span class="entity-expand-icon">{{ icon("chevron-down") }}</span>
       </summary>
       <div class="treasury-distribution-detail">
-        {% if treasury_form and treasury_form.can_edit and distribution.pending_count %}
-        <form method="post" action="/treasury/distributions/{{ distribution.treasury_distribution_id }}/recipients"
-              data-confirm="미지급 대상 {{ distribution.pending_count }}명을 모두 지급 완료 처리하시겠습니까?">
-          <input type="hidden" name="status_code" value="1">
-          <button class="primary-button" type="submit">미지급 전체 완료</button>
-        </form>
-        {% endif %}
         <div class="treasury-recipient-grid">
           {% for recipient in distribution.recipients %}
           <article class="treasury-recipient-row">
             <div>
-              <strong>{{ recipient.user_name }}</strong>
-              <small>{{ recipient.alliance_name }}</small>
+              <strong>{{ recipient.recipient_name }}</strong>
+              <small>{{ "혈맹" if recipient.alliance_id else recipient.alliance_name }}</small>
             </div>
             <span class="workspace-status workspace-status-{{ recipient.status_tone }}">{{ recipient.status_label }}</span>
-            {% if treasury_form and treasury_form.can_edit %}
-            <form method="post" action="/treasury/distributions/{{ distribution.treasury_distribution_id }}/recipients/{{ recipient.user_id }}">
-              <input type="hidden" name="status_code" value="{{ 0 if recipient.status_code == 1 else 1 }}">
-              <button class="secondary-button" type="submit">{{ "완료 취소" if recipient.status_code == 1 else "지급 완료" }}</button>
-            </form>
-            {% endif %}
           </article>
           {% endfor %}
         </div>

@@ -65,19 +65,21 @@
       </summary>
       {% if entity.pending_count > 0 %}
       <div class="entity-detail-panel">
-        <header><div><h3>아이템별 상세</h3><p>아이템은 정산 근거로만 표시되며 관리 기준은 {{ '혈맹' if settlement_level == 'alliance' else '인원' }}입니다.</p></div><div class="entity-detail-totals"><strong>미분배 {{ entity.pending_count }}건</strong></div></header>
+        <header><div><h3>분배 상세</h3><p>드랍 분배와 가계부 잔액 분배를 {{ '혈맹' if settlement_level == 'alliance' else '인원' }} 기준으로 함께 관리합니다.</p></div><div class="entity-detail-totals"><strong>미분배 {{ entity.pending_count }}건</strong></div></header>
         <div class="entity-detail-list">
           {% for detail in entity.details %}
-          <article class="entity-detail-row status-{{ detail.status_tone }}" data-payout-id="{{ detail.payout_object_id }}">
-            <div class="detail-item"><strong>{{ detail.item_name }}</strong><span>#{{ detail.attendance_id }} · {{ detail.occurred_at_label }}</span></div>
+          <article class="entity-detail-row status-{{ detail.status_tone }}"
+                   data-payout-id="{{ detail.payout_object_id or '' }}"
+                   data-source-type="{{ detail.source_type }}">
+            <div class="detail-item"><strong>{{ detail.item_name }}</strong><span>{{ detail.context_label }} · {{ detail.occurred_at_label }}</span></div>
             <div class="detail-amount"><strong>{{ detail.amount_label }}</strong><span>아데나</span></div>
             <span class="ops-status ops-status-{{ detail.status_tone }}">{{ detail.status_label }}</span>
             <div class="detail-actions">
               {% if detail.status_code == 0 %}
-              <form data-async-form method="post" action="/api/payouts/{{ detail.payout_object_id }}/status"><input type="hidden" name="status_code" value="1"><button class="secondary-button" type="submit">완료</button></form>
-              {% if settlement_level == 'clan' and entity.entity_type == 'member' %}<form data-async-form data-confirm="이 분배금을 혈비로 귀속하시겠습니까?" method="post" action="/api/payouts/{{ detail.payout_object_id }}/status"><input type="hidden" name="status_code" value="2"><button class="secondary-button warning-button" type="submit">귀속</button></form>{% endif %}
+              <form data-async-form method="post" action="{{ detail.status_action }}"><input type="hidden" name="status_code" value="1"><button class="secondary-button" type="submit">완료</button></form>
+              {% if settlement_level == 'clan' and entity.entity_type == 'member' and detail.allows_forfeit %}<form data-async-form data-confirm="이 분배금을 혈비로 귀속하시겠습니까?" method="post" action="{{ detail.status_action }}"><input type="hidden" name="status_code" value="2"><button class="secondary-button warning-button" type="submit">귀속</button></form>{% endif %}
               {% elif detail.status_code == 1 and entity.entity_type != 'fee' %}
-              <form data-async-form method="post" action="/api/payouts/{{ detail.payout_object_id }}/status"><input type="hidden" name="status_code" value="0"><button class="text-button" type="submit">완료 취소</button></form>
+              {% if detail.source_type == 'drop' %}<form data-async-form method="post" action="{{ detail.status_action }}"><input type="hidden" name="status_code" value="0"><button class="text-button" type="submit">완료 취소</button></form>{% endif %}
               {% endif %}
             </div>
           </article>
