@@ -5,9 +5,9 @@
 {% block title %}{{ page_title }} · {{ app_name }}{% endblock %}
 {% block content %}
 <div data-live-page>
-  {{ toolbar(guilds, guild_id, query, search_label='아이템 검색', search_placeholder='아이템 이름 검색') }}
+  {{ toolbar(guilds, guild_id, query, search_label='아이템 검색', search_placeholder='아이템 이름 검색', client_search=True) }}
   <section class="ops-management-panel">
-    <header class="ops-section-heading item-management-heading"><div><h2>아이템 원화 시세 관리</h2><p>목록은 간결하게 확인하고 필요한 항목만 펼쳐 수정합니다.</p></div><span>{{ items|length }}개</span></header>
+    <header class="ops-section-heading item-management-heading"><div><h2>아이템 원화 시세 관리</h2><p>목록은 간결하게 확인하고 필요한 항목만 펼쳐 수정합니다.</p></div><span data-client-search-count data-count-suffix="개">{{ items|length }}개</span></header>
     <form class="item-quick-create" data-async-form method="post" action="/api/items">
       <input type="hidden" name="guild_id" value="{{ guild_id }}">
       <div class="item-create-copy"><strong>새 아이템</strong><small>이름과 원화 시세를 입력해 바로 추가합니다.</small></div>
@@ -19,7 +19,7 @@
     <div class="item-management-list">
       <div class="item-list-header"><span>아이템</span><span>원화 시세</span><span>관리</span></div>
       {% for item in items %}
-      <article class="item-list-row" data-item-row>
+      <article class="item-list-row" data-item-row data-client-search-item data-search-text="{{ item.item_name }}">
         <div class="item-list-summary">
           <div class="item-list-identity"><span class="item-list-icon">{{ icon("tag") }}</span><div><strong>{{ item.item_name }}</strong><small>최근 수정 {{ item.updated_at_label }}</small></div></div>
           <div class="item-list-price"><strong>{{ item.price_label }}</strong><small>등록 원화</small></div>
@@ -43,8 +43,9 @@
       </article>
       {% endfor %}
     </div>
+    <div class="ops-client-search-empty" data-client-search-empty hidden>검색 결과가 없습니다.</div>
     {% else %}{{ empty('아이템이 없습니다.', '드랍 등록에 사용할 아이템을 추가해 주세요.') }}{% endif %}
   </section>
 </div>
 {% endblock %}
-{% block scripts %}<script src="{{ url_for('static', path='/js/operations.js') }}?v=20260723.4" defer></script>{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', path='/js/operations.js') }}?v=20260723.5" defer></script>{% endblock %}

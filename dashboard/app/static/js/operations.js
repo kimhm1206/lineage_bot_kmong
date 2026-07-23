@@ -39,10 +39,38 @@
   const preservedDetails = () =>
     [...document.querySelectorAll("details[open][data-detail-key]")].map((detail) => detail.dataset.detailKey);
 
+  const normalizeSearch = (value) =>
+    String(value || "")
+      .normalize("NFKC")
+      .toLocaleLowerCase("ko-KR")
+      .replace(/\s+/g, " ")
+      .trim();
+
+  const applyClientSearch = (input) => {
+    if (!input) return;
+    const page = input.closest("[data-live-page]");
+    if (!page) return;
+    const query = normalizeSearch(input.value);
+    const items = [...page.querySelectorAll("[data-client-search-item]")];
+    let visibleCount = 0;
+    items.forEach((item) => {
+      const source = item.dataset.searchText || item.textContent;
+      const isVisible = !query || normalizeSearch(source).includes(query);
+      item.hidden = !isVisible;
+      if (isVisible) visibleCount += 1;
+    });
+    page.querySelectorAll("[data-client-search-count]").forEach((counter) => {
+      counter.textContent = `${visibleCount}${counter.dataset.countSuffix || "개"}`;
+    });
+    const empty = page.querySelector("[data-client-search-empty]");
+    if (empty) empty.hidden = !query || visibleCount > 0;
+  };
+
   const refreshLivePage = async () => {
     const current = document.querySelector("[data-live-page]");
     if (!current) return;
     const openKeys = preservedDetails();
+    const clientSearchValue = current.querySelector("[data-client-search-input]")?.value || "";
     const response = await fetch(window.location.href, { headers: { "X-Partial-Page": "1" } });
     if (!response.ok) throw new Error("화면 갱신에 실패했습니다.");
     const html = await response.text();
@@ -56,6 +84,11 @@
       );
       if (detail) detail.open = true;
     });
+    const clientSearchInput = current.querySelector("[data-client-search-input]");
+    if (clientSearchInput) {
+      clientSearchInput.value = clientSearchValue;
+      applyClientSearch(clientSearchInput);
+    }
   };
 
   const asyncSubmit = async (form) => {
@@ -187,6 +220,13 @@
   };
 
   document.addEventListener("submit", (event) => {
+    const clientSearchForm = event.target.closest("[data-client-search-form]");
+    if (clientSearchForm) {
+      event.preventDefault();
+      event.stopPropagation();
+      applyClientSearch(clientSearchForm.querySelector("[data-client-search-input]"));
+      return;
+    }
     const form = event.target.closest("[data-async-form]");
     if (!form) return;
     event.preventDefault();
@@ -238,6 +278,8 @@
   });
 
   document.addEventListener("input", (event) => {
+    const clientSearchInput = event.target.closest("[data-client-search-input]");
+    if (clientSearchInput) applyClientSearch(clientSearchInput);
     const saleInput = event.target.closest("[data-sale-rate]");
     if (saleInput) updateSalePreview(saleInput.form);
   });
@@ -245,4 +287,6 @@
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") closeModal(document.querySelector(".ops-modal.is-open"));
   });
+
+  document.querySelectorAll("[data-client-search-input]").forEach(applyClientSearch);
 })();

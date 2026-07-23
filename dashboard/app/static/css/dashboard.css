@@ -4655,6 +4655,23 @@ body.modal-open {
   font-size: 13px;
 }
 
+.ops-client-search-empty {
+  min-height: 108px;
+  margin-top: 12px;
+  padding: 28px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 750;
+  text-align: center;
+}
+
+.ops-client-search-empty[hidden] {
+  display: none;
+}
+
 .settlement-heading {
   align-items: center;
 }

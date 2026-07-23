@@ -164,7 +164,7 @@ async def alliance_settlements_page(
             session,
             guild_id=int(workspace["guild_id"]),
             period_days=selected_period,
-            query=_query(q),
+            query="",
         )
         if workspace["guild_id"] is not None
         else {"entities": [], "summary_cards": []}
@@ -207,7 +207,7 @@ async def clan_settlements_page(
             guild_id=int(workspace["guild_id"]),
             alliance_id=int(workspace["alliance_id"]),
             period_days=selected_period,
-            query=_query(q),
+            query="",
         )
         if workspace["guild_id"] is not None and workspace["alliance_id"] is not None
         else {"entities": [], "summary_cards": []}
@@ -242,7 +242,7 @@ async def items_page(
         page_badge="ALLIANCE MANAGER",
     )
     page_data = (
-        await operations_store.item_management_page(session, guild_id=int(workspace["guild_id"]), query=_query(q))
+        await operations_store.item_management_page(session, guild_id=int(workspace["guild_id"]), query="")
         if workspace["guild_id"] is not None
         else {"items": [], "summary_cards": []}
     )
@@ -270,7 +270,7 @@ async def alliance_fee_page(
     )
     page_data = (
         await operations_store.fee_management_page(
-            session, guild_id=int(workspace["guild_id"]), alliance_id=None, scope_code=1, query=_query(q)
+            session, guild_id=int(workspace["guild_id"]), alliance_id=None, scope_code=1, query=""
         )
         if workspace["guild_id"] is not None
         else {"fee_rules": [], "total_rate_label": "0%", "pending_total_label": "0"}
@@ -304,7 +304,7 @@ async def clan_fee_page(
             guild_id=int(workspace["guild_id"]),
             alliance_id=int(workspace["alliance_id"]),
             scope_code=2,
-            query=_query(q),
+            query="",
         )
         if workspace["guild_id"] is not None and workspace["alliance_id"] is not None
         else {"fee_rules": [], "total_rate_label": "0%", "pending_total_label": "0"}
@@ -332,7 +332,7 @@ async def bidding_page(
         page_badge="ALLIANCE MANAGER",
     )
     page_data = (
-        await operations_store.bid_management_page(session, guild_id=int(workspace["guild_id"]), query=_query(q))
+        await operations_store.bid_management_page(session, guild_id=int(workspace["guild_id"]), query="")
         if workspace["guild_id"] is not None
         else {"bid_items": [], "alliances": [], "summary_cards": []}
     )

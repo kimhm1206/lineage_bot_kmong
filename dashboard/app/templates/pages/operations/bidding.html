@@ -5,13 +5,13 @@
 {% block title %}{{ page_title }} · {{ app_name }}{% endblock %}
 {% block content %}
 <div data-live-page>
-  {{ toolbar(guilds, guild_id, query, primary_label='입찰 아이템 추가', primary_modal='bid-create-modal', search_label='아이템 검색', search_placeholder='입찰 아이템 이름 검색') }}
+  {{ toolbar(guilds, guild_id, query, primary_label='입찰 아이템 추가', primary_modal='bid-create-modal', search_label='아이템 검색', search_placeholder='입찰 아이템 이름 검색', client_search=True) }}
   {{ summary(summary_cards) }}
   <section class="ops-section-heading"><div><h2>입찰 진행표</h2><p>아이템을 펼쳐 현재 회차의 혈맹별 완료 상태를 바로 변경합니다.</p></div><span>{{ alliances|length }}개 혈맹</span></section>
   {% if bid_items %}
   <section class="bid-item-list">
     {% for item in bid_items %}
-    <details class="bid-item-card{% if item.is_free %} is-free{% endif %}{% if not item.is_active %} is-inactive{% endif %}" data-detail-key="bid:{{ item.bid_item_id }}">
+    <details class="bid-item-card{% if item.is_free %} is-free{% endif %}{% if not item.is_active %} is-inactive{% endif %}" data-detail-key="bid:{{ item.bid_item_id }}" data-client-search-item data-search-text="{{ item.item_name }}">
       <summary>
         <div class="bid-item-name"><small>{{ '무료 나눔' if item.is_free else '입찰 아이템' }}</small><strong>{{ item.item_name }}</strong></div>
         <div class="bid-cycle"><span>현재 회차</span><strong>{{ item.cycle_no }}회차</strong></div>
@@ -37,6 +37,7 @@
     </details>
     {% endfor %}
   </section>
+  <div class="ops-client-search-empty" data-client-search-empty hidden>검색 결과가 없습니다.</div>
   {% else %}{{ empty('입찰 아이템이 없습니다.', '입찰 또는 무료 나눔 아이템을 추가해 주세요.') }}{% endif %}
 </div>
 
@@ -58,4 +59,4 @@
 </form>
 {% endcall %}
 {% endblock %}
-{% block scripts %}<script src="{{ url_for('static', path='/js/operations.js') }}?v=20260723.4" defer></script>{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', path='/js/operations.js') }}?v=20260723.5" defer></script>{% endblock %}

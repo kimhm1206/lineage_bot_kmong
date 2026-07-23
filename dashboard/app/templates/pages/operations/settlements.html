@@ -5,7 +5,7 @@
 {% block title %}{{ page_title }} · {{ app_name }}{% endblock %}
 {% block content %}
 <div data-live-page>
-  {{ toolbar(guilds, guild_id, query, period_options, alliances if settlement_level == 'clan' else [], alliance_id, search_label='정산 대상 검색', search_placeholder='혈맹, 유저 또는 아이템 검색') }}
+  {{ toolbar(guilds, guild_id, query, period_options, alliances if settlement_level == 'clan' else [], alliance_id, search_label='정산 대상 검색', search_placeholder='혈맹, 유저 또는 아이템 검색', client_search=True) }}
   {{ summary(summary_cards) }}
 
   <section class="ops-section-heading settlement-heading">
@@ -19,7 +19,7 @@
   {% if entities %}
   <section class="settlement-entity-grid">
     {% for entity in entities %}
-    <details class="settlement-entity-card entity-{{ entity.entity_type }} state-{{ entity.state }}" data-detail-key="{{ entity.key }}">
+    <details class="settlement-entity-card entity-{{ entity.entity_type }} state-{{ entity.state }}" data-detail-key="{{ entity.key }}" data-client-search-item>
       <summary>
         <span class="entity-accent">{{ icon("users-round" if entity.entity_type in ['alliance', 'member'] else "receipt") }}</span>
         <span class="entity-identity"><small>{{ entity.eyebrow }}</small><strong>{{ entity.name }}</strong><em>{{ entity.total_count }}건 연결</em></span>
@@ -64,10 +64,11 @@
     </details>
     {% endfor %}
   </section>
+  <div class="ops-client-search-empty" data-client-search-empty hidden>검색 결과가 없습니다.</div>
   {% else %}
   {{ empty('정산 대상이 없습니다.', '판매 완료된 드랍과 이전 단계의 완료 상태를 확인해 주세요.') }}
   {% endif %}
 </div>
 {% endblock %}
 
-{% block scripts %}<script src="{{ url_for('static', path='/js/operations.js') }}?v=20260723.4" defer></script>{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', path='/js/operations.js') }}?v=20260723.5" defer></script>{% endblock %}
