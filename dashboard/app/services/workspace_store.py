@@ -910,6 +910,7 @@ async def treasury_page(
     period_days: int,
     query: str,
     page: int,
+    include_distribution_users: bool = False,
 ) -> dict[str, Any]:
     if account_scope_code not in {1, 2}:
         raise ValueError("지원하지 않는 가계부 범위입니다.")
@@ -959,7 +960,7 @@ async def treasury_page(
         row["amount_label"] = ("+" if is_income else "-") + _money(row["amount_adena"])
         row["balance_label"] = _money(row["balance_after"])
     account = (await session.execute(text(f"""
-        SELECT current_balance FROM treasury_accounts a
+        SELECT treasury_account_id, current_balance FROM treasury_accounts a
         WHERE a.guild_id = :guild_id AND {scope_filter}
     """), params)).mappings().first()
     totals = (await session.execute(text(f"""
@@ -969,11 +970,126 @@ async def treasury_page(
     """), params)).mappings().one()
     categories = await list_treasury_categories(session, guild_id, account_scope_code)
     account_label = "연합비" if account_scope_code == 1 else "혈비"
+    eligible_filter = "" if account_scope_code == 1 else "AND u.alliance_id = :alliance_id"
+    eligible_users: list[dict[str, Any]] = []
+    if include_distribution_users:
+        eligible_users = [
+            {
+                **dict(row),
+                "user_id": _int(row["user_id"]),
+                "discord_id": _int(row["discord_id"]),
+                "display_name": str(row["display_name"]),
+                "username": str(row["alliance_name"]),
+            }
+            for row in (
+                await session.execute(
+                    text(f"""
+                        SELECT u.user_id, u.discord_id,
+                               COALESCE(u.game_nickname, u.discord_nickname) AS display_name,
+                               COALESCE(a.display_name, a.alliance_name, '미분류') AS alliance_name
+                        FROM users u
+                        LEFT JOIN alliances a ON a.alliance_id = u.alliance_id
+                        WHERE u.is_active IS TRUE
+                          {eligible_filter}
+                          AND EXISTS (
+                              SELECT 1
+                              FROM attendance_entries ae
+                              JOIN attendance_sessions ats
+                                ON ats.attendance_id = ae.attendance_id
+                              WHERE ae.user_id = u.user_id
+                                AND ats.guild_id = :guild_id
+                          )
+                        ORDER BY COALESCE(a.sort_order, 2147483647),
+                                 alliance_name, display_name, u.user_id
+                    """),
+                    params,
+                )
+            ).mappings().all()
+        ]
+    distribution_rows: list[dict[str, Any]] = []
+    if account:
+        distribution_rows = [
+            dict(row)
+            for row in (
+                await session.execute(
+                    text("""
+                        SELECT d.treasury_distribution_id, d.requested_amount,
+                               d.per_recipient_amount, d.distributed_amount,
+                               d.recipient_count, COALESCE(d.memo, '') AS memo,
+                               TO_CHAR(
+                                   TO_TIMESTAMP(d.created_at) AT TIME ZONE 'Asia/Seoul',
+                                   'YYYY-MM-DD HH24:MI'
+                               ) AS created_at_label,
+                               COUNT(*) FILTER (WHERE r.status_code = 0) AS pending_count,
+                               COUNT(*) FILTER (WHERE r.status_code = 1) AS completed_count
+                        FROM treasury_distributions d
+                        JOIN treasury_distribution_recipients r
+                          ON r.treasury_distribution_id = d.treasury_distribution_id
+                        WHERE d.treasury_account_id = :account_id
+                        GROUP BY d.treasury_distribution_id
+                        ORDER BY d.created_at DESC, d.treasury_distribution_id DESC
+                        LIMIT 12
+                    """),
+                    {"account_id": account["treasury_account_id"]},
+                )
+            ).mappings().all()
+        ]
+    distribution_map = {
+        _int(row["treasury_distribution_id"]): row for row in distribution_rows
+    }
+    for row in distribution_rows:
+        row["recipients"] = []
+        row["distributed_amount_label"] = _money(row["distributed_amount"])
+        row["per_recipient_amount_label"] = _money(row["per_recipient_amount"])
+        row["is_complete"] = _int(row["pending_count"]) == 0
+    if distribution_map:
+        distribution_ids = list(distribution_map)
+        recipient_rows = (
+            await session.execute(
+                text("""
+                    SELECT r.treasury_distribution_id, r.user_id, r.status_code,
+                           COALESCE(u.game_nickname, u.discord_nickname) AS user_name,
+                           COALESCE(a.display_name, a.alliance_name, '미분류') AS alliance_name
+                    FROM treasury_distribution_recipients r
+                    JOIN users u ON u.user_id = r.user_id
+                    LEFT JOIN alliances a ON a.alliance_id = u.alliance_id
+                    WHERE r.treasury_distribution_id = ANY(:distribution_ids)
+                    ORDER BY r.status_code, alliance_name, user_name, r.user_id
+                """),
+                {"distribution_ids": distribution_ids},
+            )
+        ).mappings().all()
+        for recipient in recipient_rows:
+            distribution_map[_int(recipient["treasury_distribution_id"])]["recipients"].append(
+                {
+                    **dict(recipient),
+                    "user_id": _int(recipient["user_id"]),
+                    "status_code": _int(recipient["status_code"]),
+                    "status_label": "지급 완료" if _int(recipient["status_code"]) == 1 else "미지급",
+                    "status_tone": "success" if _int(recipient["status_code"]) == 1 else "warning",
+                }
+            )
+    pending_distribution_amount = 0
+    if account:
+        pending_distribution_amount = _int(
+            await session.scalar(
+                text("""
+                    SELECT COALESCE(SUM(d.per_recipient_amount), 0)
+                    FROM treasury_distribution_recipients r
+                    JOIN treasury_distributions d
+                      ON d.treasury_distribution_id = r.treasury_distribution_id
+                    WHERE d.treasury_account_id = :account_id
+                      AND r.status_code = 0
+                """),
+                {"account_id": account["treasury_account_id"]},
+            )
+        )
     return {
         "summary_cards": [
             {"label": f"현재 {account_label}", "value": _money(account["current_balance"] if account else 0), "meta": "가계부 잔액"},
             {"label": "기간 입금", "value": _money(totals["income"]), "meta": "선택 기간"},
             {"label": "기간 출금", "value": _money(totals["expense"]), "meta": "선택 기간"},
+            {"label": "지급 대기", "value": _money(pending_distribution_amount), "meta": "공금 분배 미지급액"},
         ],
         "columns": [
             {"key": "occurred_at_label", "label": "시각"},
@@ -987,6 +1103,10 @@ async def treasury_page(
         "pagination": pagination,
         "treasury_categories": categories,
         "treasury_scope_code": account_scope_code,
+        "treasury_balance": _int(account["current_balance"]) if account else 0,
+        "treasury_account_label": account_label,
+        "treasury_distribution_users": eligible_users,
+        "treasury_distributions": distribution_rows,
     }
 
 
@@ -1157,6 +1277,234 @@ async def record_treasury_entry(
     except Exception:
         await session.rollback()
         raise
+
+
+async def create_treasury_distribution(
+    session: AsyncSession,
+    *,
+    guild_id: int,
+    alliance_id: int | None,
+    account_scope_code: int,
+    requested_amount: int,
+    excluded_discord_ids: Sequence[int],
+    memo: str,
+    created_by_user_id: int | None = None,
+) -> int:
+    if account_scope_code not in {1, 2}:
+        raise ValueError("지원하지 않는 가계부 범위입니다.")
+    if account_scope_code == 1:
+        alliance_id = None
+    elif alliance_id is None:
+        raise ValueError("혈맹을 선택해 주세요.")
+    if requested_amount <= 0:
+        raise ValueError("분배 금액은 1 아데나 이상 입력해 주세요.")
+
+    try:
+        scope_filter = (
+            "account_scope_code = 1 AND alliance_id IS NULL"
+            if account_scope_code == 1
+            else "account_scope_code = 2 AND alliance_id = :alliance_id"
+        )
+        params = {"guild_id": guild_id, "alliance_id": alliance_id}
+        account = (
+            await session.execute(
+                text(f"""
+                    SELECT treasury_account_id, current_balance
+                    FROM treasury_accounts
+                    WHERE guild_id = :guild_id AND {scope_filter}
+                    FOR UPDATE
+                """),
+                params,
+            )
+        ).mappings().one_or_none()
+        if account is None:
+            raise ValueError("분배할 가계부 계정을 찾을 수 없습니다.")
+        if requested_amount > _int(account["current_balance"]):
+            raise ValueError("분배 금액이 현재 가계부 잔액보다 큽니다.")
+
+        excluded_ids = sorted({int(value) for value in excluded_discord_ids if int(value) > 0})
+        eligible_filter = "" if account_scope_code == 1 else "AND u.alliance_id = :alliance_id"
+        exclusion_filter = "AND NOT (u.discord_id = ANY(:excluded_ids))" if excluded_ids else ""
+        recipient_rows = (
+            await session.execute(
+                text(f"""
+                    SELECT u.user_id
+                    FROM users u
+                    WHERE u.is_active IS TRUE
+                      {eligible_filter}
+                      {exclusion_filter}
+                      AND EXISTS (
+                          SELECT 1
+                          FROM attendance_entries ae
+                          JOIN attendance_sessions ats
+                            ON ats.attendance_id = ae.attendance_id
+                          WHERE ae.user_id = u.user_id
+                            AND ats.guild_id = :guild_id
+                      )
+                    ORDER BY u.user_id
+                """),
+                {**params, "excluded_ids": excluded_ids},
+            )
+        ).scalars().all()
+        recipient_ids = [int(value) for value in recipient_rows]
+        if not recipient_ids:
+            raise ValueError("분배 대상자가 없습니다. 제외자 설정을 확인해 주세요.")
+        per_recipient_amount = requested_amount // len(recipient_ids)
+        if per_recipient_amount <= 0:
+            raise ValueError("분배 금액이 대상 인원보다 작습니다.")
+        distributed_amount = per_recipient_amount * len(recipient_ids)
+        now = int(time.time())
+        distribution_id = await session.scalar(
+            text("""
+                INSERT INTO treasury_distributions (
+                    treasury_account_id, requested_amount, per_recipient_amount,
+                    distributed_amount, recipient_count, memo, created_at,
+                    created_by_user_id
+                ) VALUES (
+                    :account_id, :requested_amount, :per_recipient_amount,
+                    :distributed_amount, :recipient_count, :memo, :created_at,
+                    :created_by_user_id
+                )
+                RETURNING treasury_distribution_id
+            """),
+            {
+                "account_id": account["treasury_account_id"],
+                "requested_amount": requested_amount,
+                "per_recipient_amount": per_recipient_amount,
+                "distributed_amount": distributed_amount,
+                "recipient_count": len(recipient_ids),
+                "memo": memo.strip()[:500] or None,
+                "created_at": now,
+                "created_by_user_id": created_by_user_id,
+            },
+        )
+        await session.execute(
+            text("""
+                INSERT INTO treasury_distribution_recipients (
+                    treasury_distribution_id, user_id, status_code, completed_at
+                )
+                SELECT :distribution_id, UNNEST(CAST(:recipient_ids AS BIGINT[])), 0, NULL
+            """),
+            {"distribution_id": distribution_id, "recipient_ids": recipient_ids},
+        )
+        category_name = "연합비 분배" if account_scope_code == 1 else "혈비 분배"
+        category_id = await session.scalar(
+            text("""
+                INSERT INTO treasury_categories (
+                    guild_id, account_scope_code, direction, category_name, is_active
+                ) VALUES (:guild_id, :scope_code, -1, :category_name, TRUE)
+                ON CONFLICT (guild_id, account_scope_code, direction, category_name)
+                DO UPDATE SET is_active = TRUE
+                RETURNING treasury_category_id
+            """),
+            {
+                "guild_id": guild_id,
+                "scope_code": account_scope_code,
+                "category_name": category_name,
+            },
+        )
+        source_type_id = await session.scalar(
+            text("""
+                SELECT source_type_id
+                FROM treasury_source_types
+                WHERE source_code = 'treasury_distribution'
+            """)
+        )
+        if source_type_id is None:
+            raise RuntimeError("공금 분배 원본 유형이 없습니다.")
+        balance_after = _int(account["current_balance"]) - distributed_amount
+        await session.execute(
+            text("""
+                INSERT INTO treasury_entries (
+                    treasury_account_id, treasury_category_id, direction,
+                    amount_adena, balance_after, source_type_id, source_id,
+                    memo, occurred_at, created_at, created_by_user_id,
+                    reversal_of_entry_id
+                ) VALUES (
+                    :account_id, :category_id, -1, :amount,
+                    :balance_after, :source_type_id, :distribution_id,
+                    :memo, :now, :now, :created_by_user_id, NULL
+                )
+            """),
+            {
+                "account_id": account["treasury_account_id"],
+                "category_id": category_id,
+                "amount": distributed_amount,
+                "balance_after": balance_after,
+                "source_type_id": source_type_id,
+                "distribution_id": distribution_id,
+                "memo": memo.strip()[:500] or f"{category_name} · {len(recipient_ids)}명",
+                "now": now,
+                "created_by_user_id": created_by_user_id,
+            },
+        )
+        await session.execute(
+            text("""
+                UPDATE treasury_accounts
+                SET current_balance = :balance_after, updated_at = :updated_at
+                WHERE treasury_account_id = :account_id
+            """),
+            {
+                "balance_after": balance_after,
+                "updated_at": now,
+                "account_id": account["treasury_account_id"],
+            },
+        )
+        await session.commit()
+        return _int(distribution_id)
+    except Exception:
+        await session.rollback()
+        raise
+
+
+async def treasury_distribution_scope(
+    session: AsyncSession,
+    treasury_distribution_id: int,
+) -> dict[str, int | None] | None:
+    row = (
+        await session.execute(
+            text("""
+                SELECT d.treasury_distribution_id, a.guild_id, a.alliance_id,
+                       a.account_scope_code
+                FROM treasury_distributions d
+                JOIN treasury_accounts a
+                  ON a.treasury_account_id = d.treasury_account_id
+                WHERE d.treasury_distribution_id = :distribution_id
+            """),
+            {"distribution_id": treasury_distribution_id},
+        )
+    ).mappings().one_or_none()
+    return dict(row) if row else None
+
+
+async def set_treasury_distribution_recipient_status(
+    session: AsyncSession,
+    *,
+    treasury_distribution_id: int,
+    user_id: int | None,
+    status_code: int,
+) -> int:
+    if status_code not in {0, 1}:
+        raise ValueError("지원하지 않는 지급 상태입니다.")
+    completed_at = int(time.time()) if status_code == 1 else None
+    user_filter = "" if user_id is None else "AND user_id = :user_id"
+    result = await session.execute(
+        text(f"""
+            UPDATE treasury_distribution_recipients
+            SET status_code = :status_code, completed_at = :completed_at
+            WHERE treasury_distribution_id = :distribution_id
+              {user_filter}
+              AND status_code <> :status_code
+        """),
+        {
+            "distribution_id": treasury_distribution_id,
+            "user_id": user_id,
+            "status_code": status_code,
+            "completed_at": completed_at,
+        },
+    )
+    await session.commit()
+    return int(result.rowcount or 0)
 
 
 async def forfeits_page(

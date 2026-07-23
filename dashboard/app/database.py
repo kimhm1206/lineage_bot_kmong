@@ -41,6 +41,8 @@ EXPECTED_TABLES = frozenset(
         "settlement_payout_objects",
         "treasury_accounts",
         "treasury_categories",
+        "treasury_distribution_recipients",
+        "treasury_distributions",
         "treasury_entries",
         "treasury_source_types",
         "users",
@@ -635,6 +637,96 @@ async def apply_local_schema_cleanup() -> bool:
                 text("""
                     INSERT INTO schema_migrations(version, applied_at)
                     VALUES (12, EXTRACT(EPOCH FROM NOW())::BIGINT)
+                """)
+            )
+            changed = True
+
+        treasury_distribution_applied = await connection.scalar(
+            text("SELECT 1 FROM schema_migrations WHERE version = 13")
+        )
+        if not treasury_distribution_applied:
+            await connection.execute(
+                text("""
+                    INSERT INTO treasury_source_types(source_type_id, source_code)
+                    SELECT COALESCE(MAX(source_type_id), 0) + 1,
+                           'treasury_distribution'
+                    FROM treasury_source_types
+                    ON CONFLICT (source_code) DO NOTHING
+                """)
+            )
+            await connection.execute(
+                text("""
+                    CREATE TABLE treasury_distributions (
+                        treasury_distribution_id BIGSERIAL PRIMARY KEY,
+                        treasury_account_id BIGINT NOT NULL
+                            REFERENCES treasury_accounts(treasury_account_id) ON DELETE RESTRICT,
+                        requested_amount BIGINT NOT NULL
+                            CHECK (requested_amount > 0),
+                        per_recipient_amount BIGINT NOT NULL
+                            CHECK (per_recipient_amount > 0),
+                        distributed_amount BIGINT NOT NULL
+                            CHECK (distributed_amount > 0),
+                        recipient_count INTEGER NOT NULL
+                            CHECK (recipient_count > 0),
+                        memo TEXT,
+                        created_at BIGINT NOT NULL
+                            DEFAULT (EXTRACT(EPOCH FROM NOW())::BIGINT),
+                        created_by_user_id BIGINT
+                            REFERENCES users(user_id) ON DELETE SET NULL,
+                        CONSTRAINT chk_treasury_distribution_amounts
+                            CHECK (
+                                distributed_amount = per_recipient_amount * recipient_count
+                                AND distributed_amount <= requested_amount
+                            )
+                    )
+                """)
+            )
+            await connection.execute(
+                text("""
+                    CREATE TABLE treasury_distribution_recipients (
+                        treasury_distribution_id BIGINT NOT NULL
+                            REFERENCES treasury_distributions(treasury_distribution_id)
+                            ON DELETE CASCADE,
+                        user_id BIGINT NOT NULL
+                            REFERENCES users(user_id) ON DELETE RESTRICT,
+                        status_code SMALLINT NOT NULL DEFAULT 0
+                            CHECK (status_code IN (0, 1)),
+                        completed_at BIGINT,
+                        PRIMARY KEY (treasury_distribution_id, user_id),
+                        CONSTRAINT chk_treasury_distribution_recipient_completion
+                            CHECK (
+                                (status_code = 0 AND completed_at IS NULL)
+                                OR (status_code = 1 AND completed_at IS NOT NULL)
+                            )
+                    )
+                """)
+            )
+            await connection.execute(
+                text("""
+                    CREATE INDEX idx_treasury_distributions_account_time
+                    ON treasury_distributions (
+                        treasury_account_id, created_at DESC, treasury_distribution_id DESC
+                    )
+                """)
+            )
+            await connection.execute(
+                text("""
+                    CREATE INDEX idx_treasury_distribution_recipients_status
+                    ON treasury_distribution_recipients (
+                        treasury_distribution_id, status_code, user_id
+                    )
+                """)
+            )
+            await connection.execute(
+                text("""
+                    CREATE INDEX idx_treasury_distribution_recipients_user
+                    ON treasury_distribution_recipients (user_id, status_code)
+                """)
+            )
+            await connection.execute(
+                text("""
+                    INSERT INTO schema_migrations(version, applied_at)
+                    VALUES (13, EXTRACT(EPOCH FROM NOW())::BIGINT)
                 """)
             )
             changed = True

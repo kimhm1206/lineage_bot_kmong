@@ -131,6 +131,11 @@ async def _render_workspace(
             "error": request.query_params.get("error", ""),
             "treasury_form": {
                 "action": treasury_form_action,
+                "distribution_action": (
+                    "/alliance/treasury/distributions"
+                    if page_data.get("treasury_scope_code") == 1
+                    else "/clan/treasury/distributions"
+                ),
                 "can_edit": can_edit_treasury,
                 "occurred_at_value": datetime.now(KST).strftime("%Y-%m-%dT%H:%M"),
             } if (
@@ -254,6 +259,95 @@ async def _save_treasury_entry(
     return _treasury_redirect(path, guild_id=guild_id, alliance_id=alliance_id, notice="가계부 내역을 기록했습니다.")
 
 
+async def _save_treasury_distribution(
+    request: Request,
+    session: AsyncSession,
+    *,
+    path: str,
+    account_scope_code: int,
+    can_edit: bool,
+) -> RedirectResponse:
+    if not can_edit:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="공금 분배 권한이 없습니다.")
+
+    form = await request.form()
+    guild_id: int | None = None
+    alliance_id: int | None = None
+    try:
+        guild_id = _required_positive_int(form.get("guild_id"))
+        if account_scope_code == 2:
+            alliance_id = _required_positive_int(form.get("alliance_id"))
+        requested_amount = _required_positive_int(form.get("requested_amount"))
+        excluded_discord_ids = [
+            _required_positive_int(value)
+            for value in form.getlist("excluded_discord_ids")
+            if str(value or "").strip()
+        ]
+        await workspace_store.create_treasury_distribution(
+            session,
+            guild_id=guild_id,
+            alliance_id=alliance_id,
+            account_scope_code=account_scope_code,
+            requested_amount=requested_amount,
+            excluded_discord_ids=excluded_discord_ids,
+            memo=str(form.get("memo") or ""),
+        )
+    except (TypeError, ValueError) as exc:
+        message = str(exc).strip() or "분배 정보를 다시 확인해 주세요."
+        return _treasury_redirect(path, guild_id=guild_id, alliance_id=alliance_id, error=message)
+    return _treasury_redirect(
+        path,
+        guild_id=guild_id,
+        alliance_id=alliance_id,
+        notice="공금 분배를 생성했습니다.",
+    )
+
+
+async def _update_treasury_distribution_status(
+    request: Request,
+    session: AsyncSession,
+    *,
+    distribution_id: int,
+    user_id: int | None,
+) -> RedirectResponse:
+    scope = await workspace_store.treasury_distribution_scope(session, distribution_id)
+    if scope is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="공금 분배 기록을 찾을 수 없습니다.")
+    account_scope_code = int(scope["account_scope_code"] or 0)
+    can_edit = (
+        can_manage_alliance_treasury(request)
+        if account_scope_code == 1
+        else can_manage_clan_treasury(request)
+    )
+    if not can_edit:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="공금 분배 권한이 없습니다.")
+
+    form = await request.form()
+    path = "/alliance/treasury" if account_scope_code == 1 else "/clan/treasury"
+    try:
+        status_code = int(str(form.get("status_code") or ""))
+        changed = await workspace_store.set_treasury_distribution_recipient_status(
+            session,
+            treasury_distribution_id=distribution_id,
+            user_id=user_id,
+            status_code=status_code,
+        )
+    except (TypeError, ValueError) as exc:
+        return _treasury_redirect(
+            path,
+            guild_id=int(scope["guild_id"] or 0),
+            alliance_id=int(scope["alliance_id"]) if scope["alliance_id"] is not None else None,
+            error=str(exc).strip() or "지급 상태를 변경하지 못했습니다.",
+        )
+    label = "지급 완료" if status_code == 1 else "미지급"
+    return _treasury_redirect(
+        path,
+        guild_id=int(scope["guild_id"] or 0),
+        alliance_id=int(scope["alliance_id"]) if scope["alliance_id"] is not None else None,
+        notice=f"{changed:,}건을 {label} 상태로 변경했습니다.",
+    )
+
+
 @router.get("/_legacy/alliance/drops", include_in_schema=False)
 async def alliance_drops(
     request: Request, guild_id: int | None = None, period: int | None = None,
@@ -295,6 +389,7 @@ async def alliance_treasury(
     request: Request, guild_id: int | None = None, period: int | None = None,
     q: str = "", page: int = 1, session: AsyncSession = Depends(get_session),
 ):
+    can_edit = can_manage_alliance_treasury(request)
     return await _render_workspace(
         request, session,
         active_nav="alliance.treasury",
@@ -304,9 +399,13 @@ async def alliance_treasury(
         page_badge="ALLIANCE MANAGER",
         builder=workspace_store.treasury_page,
         guild_id=guild_id, alliance_id=None, period=period, query=q, page=page,
-        builder_kwargs={"alliance_id": None, "account_scope_code": 1},
+        builder_kwargs={
+            "alliance_id": None,
+            "account_scope_code": 1,
+            "include_distribution_users": can_edit,
+        },
         treasury_form_action="/alliance/treasury/entries",
-        can_edit_treasury=can_manage_alliance_treasury(request),
+        can_edit_treasury=can_edit,
     )
 
 
@@ -315,6 +414,19 @@ async def create_alliance_treasury_entry(
     request: Request, session: AsyncSession = Depends(get_session),
 ):
     return await _save_treasury_entry(
+        request,
+        session,
+        path="/alliance/treasury",
+        account_scope_code=1,
+        can_edit=can_manage_alliance_treasury(request),
+    )
+
+
+@router.post("/alliance/treasury/distributions")
+async def create_alliance_treasury_distribution(
+    request: Request, session: AsyncSession = Depends(get_session),
+):
+    return await _save_treasury_distribution(
         request,
         session,
         path="/alliance/treasury",
@@ -404,6 +516,7 @@ async def clan_treasury(
     period: int | None = None, q: str = "", page: int = 1,
     session: AsyncSession = Depends(get_session),
 ):
+    can_edit = can_manage_clan_treasury(request)
     return await _render_workspace(
         request, session,
         active_nav="clan.treasury",
@@ -414,9 +527,12 @@ async def clan_treasury(
         builder=workspace_store.treasury_page,
         guild_id=guild_id, alliance_id=alliance_id, period=period, query=q, page=page,
         needs_alliance=True,
-        builder_kwargs={"account_scope_code": 2},
+        builder_kwargs={
+            "account_scope_code": 2,
+            "include_distribution_users": can_edit,
+        },
         treasury_form_action="/clan/treasury/entries",
-        can_edit_treasury=can_manage_clan_treasury(request),
+        can_edit_treasury=can_edit,
     )
 
 
@@ -430,6 +546,48 @@ async def create_clan_treasury_entry(
         path="/clan/treasury",
         account_scope_code=2,
         can_edit=can_manage_clan_treasury(request),
+    )
+
+
+@router.post("/clan/treasury/distributions")
+async def create_clan_treasury_distribution(
+    request: Request, session: AsyncSession = Depends(get_session),
+):
+    return await _save_treasury_distribution(
+        request,
+        session,
+        path="/clan/treasury",
+        account_scope_code=2,
+        can_edit=can_manage_clan_treasury(request),
+    )
+
+
+@router.post("/treasury/distributions/{distribution_id}/recipients")
+async def update_all_treasury_distribution_recipients(
+    request: Request,
+    distribution_id: int,
+    session: AsyncSession = Depends(get_session),
+):
+    return await _update_treasury_distribution_status(
+        request,
+        session,
+        distribution_id=distribution_id,
+        user_id=None,
+    )
+
+
+@router.post("/treasury/distributions/{distribution_id}/recipients/{user_id}")
+async def update_treasury_distribution_recipient(
+    request: Request,
+    distribution_id: int,
+    user_id: int,
+    session: AsyncSession = Depends(get_session),
+):
+    return await _update_treasury_distribution_status(
+        request,
+        session,
+        distribution_id=distribution_id,
+        user_id=user_id,
     )
 
 
