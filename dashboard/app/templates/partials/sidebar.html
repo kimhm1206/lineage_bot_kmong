@@ -6,7 +6,7 @@
       {{ icon("layout-dashboard") }}
     </a>
 
-    <nav class="rail-nav" aria-label="업무 분류">
+    <nav class="rail-nav" aria-label="메뉴 분류">
       {% for group in navigation %}
       <button
         class="rail-nav-button{% if group.is_active %} is-active{% endif %}"
@@ -42,7 +42,7 @@
       {% if not group.is_active %}hidden{% endif %}
     >
       <header class="nav-section-heading">
-        <span>업무 메뉴</span>
+        <span>주요 메뉴</span>
         <h2>{{ group.label }}</h2>
         {% if group.description %}<p>{{ group.description }}</p>{% endif %}
       </header>
