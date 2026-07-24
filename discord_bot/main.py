@@ -5,6 +5,7 @@ import re
 import time
 import unicodedata
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import discord
 from dotenv import load_dotenv
@@ -28,7 +29,7 @@ from discord_bot.utils.panel import build_runtime_label, update_admin_panel
 from discord_bot.views.admin_panel import AdminPanelView
 
 
-load_dotenv()
+load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 if not TOKEN:

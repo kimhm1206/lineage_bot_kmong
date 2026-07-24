@@ -14,26 +14,21 @@ WebSocket 브리지, DB 명령 큐는 제거됐다.
 
 ## 환경 설정
 
-대시보드는 `dashboard/.env`, 봇은 루트 `.env`를 읽는다.
+대시보드와 봇은 모두 프로젝트 루트 `.env` 하나를 읽는다.
 
-봇의 최소 설정:
+공통 최소 설정:
 
 ```dotenv
 DISCORD_BOT_TOKEN=
 DEVELOPER_DISCORD_ID=238978205078388747
 BOT_DATABASE_URL=postgresql://postgres:password@127.0.0.1:5432/lineage_antalas
 DASHBOARD_BASE_URL=https://dashboard.example.com
-```
-
-대시보드의 최소 설정:
-
-```dotenv
 ENVIRONMENT=production
 DATABASE_URL=postgresql+asyncpg://postgres:password@127.0.0.1:5432/lineage_antalas
-DISCORD_BOT_TOKEN=
 DISCORD_CLIENT_ID=
 DISCORD_CLIENT_SECRET=
 DISCORD_REDIRECT_URI=https://dashboard.example.com/auth/discord/callback
+DISCORD_REDIRECT_URI_LOCAL=http://localhost:8000/auth/discord/callback
 SESSION_SECRET=
 SESSION_HTTPS_ONLY=true
 AUTH_LOCAL_BYPASS=false

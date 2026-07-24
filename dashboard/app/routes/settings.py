@@ -115,7 +115,7 @@ async def _guild_context(
         "guild_id": selected,
         "selected_guild": next((row for row in guild_options if row["guild_id"] == selected), None),
         "discord_configured": discord_api.configured,
-        "discord_error": "" if discord_api.configured else "dashboard/.env에 Discord 봇 토큰을 설정해 주세요.",
+        "discord_error": "" if discord_api.configured else "루트 .env에 Discord 봇 토큰을 설정해 주세요.",
     }
 
 

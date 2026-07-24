@@ -58,7 +58,7 @@ class DiscordRestClient:
 
     async def _get(self, path: str, *, params: dict[str, Any] | None = None, cache_key: str | None = None) -> Any:
         if not self._token:
-            raise DiscordApiError("dashboard/.env에 DISCORD_BOT_TOKEN을 설정해 주세요.")
+            raise DiscordApiError("루트 .env에 DISCORD_BOT_TOKEN을 설정해 주세요.")
 
         key = cache_key or path
         cached = self._cache.get(key)
@@ -129,7 +129,7 @@ class DiscordRestClient:
 
     async def send_message(self, channel_id: int, content: str) -> dict[str, Any]:
         if not self._token:
-            raise DiscordApiError("dashboard/.env에 DISCORD_BOT_TOKEN을 설정해 주세요.")
+            raise DiscordApiError("루트 .env에 DISCORD_BOT_TOKEN을 설정해 주세요.")
         try:
             response = await self._http_client().post(
                 f"/channels/{channel_id}/messages",

@@ -20,7 +20,8 @@ dashboard/venv/bin/python -m uvicorn dashboard.app.main:app --host 0.0.0.0 --por
 postgresql+asyncpg://postgres:testest@127.0.0.1:5432/testdb
 ```
 
-필요하면 `dashboard/.env`를 만들어 `dashboard/.env.example` 값을 덮어쓰면 됩니다.
+모든 설정은 프로젝트 루트 `.env` 하나에서 관리합니다. 필요한 키는 루트
+`.env.example`을 기준으로 작성합니다.
 
 운영 배포 전에는 웹을 실행하기 전에 Alembic 마이그레이션을 적용합니다.
 웹 서버 시작 과정에서는 DDL을 실행하지 않습니다.
@@ -30,7 +31,9 @@ dashboard/venv/bin/python -m alembic \
   -c dashboard/alembic.ini upgrade head
 ```
 
-Discord 채널·역할·서버 유저 목록은 봇을 별도로 실행하지 않고 REST API로만 조회합니다. 실제 봇 토큰은 Git에 포함되는 `.env.example`에 넣지 말고, Git에서 제외되는 `dashboard/.env`에만 설정합니다.
+Discord 채널·역할·서버 유저 목록은 봇을 별도로 실행하지 않고 REST API로만
+조회합니다. 실제 봇 토큰은 Git에 포함되는 `.env.example`에 넣지 말고,
+Git에서 제외되는 루트 `.env`에만 설정합니다.
 
 ```text
 DISCORD_BOT_TOKEN=실제_봇_토큰

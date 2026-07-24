@@ -34,8 +34,8 @@ dashboard/venv/bin/python -m uvicorn dashboard.app.main:app \
 discord_bot/venv/bin/python -m discord_bot.main
 ```
 
-운영에서는 루트 `.env`의 `BOT_DATABASE_URL`과 `dashboard/.env`의
-`DATABASE_URL`이 같은 DB를 가리키는지 먼저 확인한다.
+운영에서는 루트 `.env`의 `BOT_DATABASE_URL`과 `DATABASE_URL`이 같은 DB를
+가리키는지 먼저 확인한다. 대시보드와 봇은 모두 이 루트 `.env`를 읽는다.
 
 ## 주의
 

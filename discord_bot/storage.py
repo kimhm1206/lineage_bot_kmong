@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from contextlib import contextmanager
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Iterator
 
 import psycopg2
@@ -10,7 +11,7 @@ from dotenv import load_dotenv
 from psycopg2.extras import RealDictCursor, execute_values
 
 
-load_dotenv()
+load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 REQUIRED_TABLES = {
     "alliances",
