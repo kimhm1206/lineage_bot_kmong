@@ -238,18 +238,6 @@ def _display_name_value(value: Any) -> str | None:
     return display_name[:100]
 
 
-def _member_has_alliance_role(
-    member: dict[str, Any],
-    *,
-    alliance_id: int,
-    role_alliance_map: dict[int, int],
-) -> bool:
-    return any(
-        role_alliance_map.get(int(role_id)) == alliance_id
-        for role_id in member.get("roles", [])
-    )
-
-
 @router.get("/server")
 async def server_settings(
     request: Request,
@@ -770,33 +758,15 @@ async def save_accountant(request: Request, session: AsyncSession = Depends(get_
         guild_id = _int_value(form.get("guild_id"), minimum=1)
         alliance_id = _int_value(form.get("alliance_id"), minimum=1)
         discord_user_id = _int_value(form.get("discord_user_id"), minimum=1)
-        discord_display_name: str | None = None
+        discord_display_name = _display_name_value(form.get("discord_display_name"))
         await _require_clan_configuration(
             request,
             session,
             guild_id=guild_id,
             alliance_id=alliance_id,
         )
-        if discord_api.configured:
-            members = await discord_api.members(guild_id)
-            selected_member = next(
-                (
-                    row
-                    for row in members
-                    if int(row.get("user", {}).get("id", 0)) == discord_user_id
-                ),
-                None,
-            )
-            if selected_member is None:
-                raise ValueError
-            mappings = await settings_store.list_role_mappings(session, guild_id)
-            if not _member_has_alliance_role(
-                selected_member,
-                alliance_id=alliance_id,
-                role_alliance_map=_role_alliance_map(mappings),
-            ):
-                raise ValueError
-            discord_display_name = _member_display_name(selected_member)
+        # The shared picker is already scoped to the selected clan. Rechecking
+        # Discord roles here creates a second cache-dependent failure point.
         await settings_store.add_assignment(
             session,
             guild_id=guild_id,
