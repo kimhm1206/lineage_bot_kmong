@@ -11,7 +11,7 @@ class HelpGuide:
     tip: str
     preview_title: str
     preview_metrics: tuple[tuple[str, str], ...]
-    preview_rows: tuple[tuple[str, str, str], ...]
+    preview_rows: tuple[tuple[str, ...], ...]
 
 
 def _guide(
@@ -20,7 +20,7 @@ def _guide(
     tip: str,
     preview_title: str,
     preview_metrics: tuple[tuple[str, str], ...],
-    preview_rows: tuple[tuple[str, str, str], ...],
+    preview_rows: tuple[tuple[str, ...], ...],
 ) -> HelpGuide:
     return HelpGuide(
         summary=summary,
@@ -106,8 +106,8 @@ GUIDES: dict[str, HelpGuide] = {
         "연합비 원장",
         (("현재 잔액", "8,430,000"), ("이번 달 입금", "1,240,000"), ("이번 달 출금", "310,000")),
         (
-            ("연합 수수료", "07/24 21:30 · 드랍 #482", "입금"),
-            ("이벤트 지원", "07/22 19:10 · 공성 준비", "출금"),
+            ("07/24 21:30", "입금", "연합 수수료 · 드랍 #482", "+180,000"),
+            ("07/22 19:10", "출금", "이벤트 지원 · 공성 준비", "-310,000"),
         ),
     ),
     "alliance.bidding": _guide(
@@ -119,10 +119,11 @@ GUIDES: dict[str, HelpGuide] = {
         ),
         "입찰표 아이템은 아이템 관리 목록을 기준으로 자동 구성됩니다.",
         "아이템 이력",
-        (("아이템", "42개"), ("혈맹", "6개"), ("최근 구매", "오늘")),
+        (),
         (
-            ("마법서", "혈맹 1 · 2회 / 혈맹 2 · 1회", "기록"),
-            ("희귀 방어구", "혈맹 1 · 0회 / 혈맹 2 · 3회", "기록"),
+            ("마법서", "2", "1", "0", "기록"),
+            ("희귀 방어구", "0", "3", "1", "기록"),
+            ("축복받은 주문서", "1", "1", "2", "기록"),
         ),
     ),
     "alliance.items": _guide(
@@ -167,9 +168,9 @@ GUIDES: dict[str, HelpGuide] = {
         "혈비 가계부",
         (("현재 잔액", "2,180,000"), ("혈비 입금", "380,000"), ("귀속", "92,000")),
         (
-            ("혈비", "07/24 21:31 · 정산 #482", "입금"),
-            ("귀속", "혈맹원 3 · 아이템명 · 출석 #1557", "입금"),
-            ("소모품 구입", "07/21 18:20 · 운영 물품", "출금"),
+            ("07/24 21:31", "입금", "혈비 · 정산 #482", "+380,000"),
+            ("07/24 20:18", "입금", "귀속 · 혈맹원 3 · 출석 #1557", "+92,000"),
+            ("07/21 18:20", "출금", "소모품 구입 · 운영 물품", "-120,000"),
         ),
     ),
     "clan.staff": _guide(
@@ -303,8 +304,8 @@ GUIDES: dict[str, HelpGuide] = {
         "작업 로그",
         (("기간", "최근 한 달"), ("작업 유형", "출석 수정"), ("기록", "42건")),
         (
-            ("출석 인원 추가", "작업자 · 대상 Discord ID", "07/24 22:10"),
-            ("아이템 수정", "마법서 · 원화 시세 변경", "07/24 19:30"),
+            ("07/24 22:10", "출석 인원 추가", "작업자", "Discord ID 1234"),
+            ("07/24 19:30", "아이템 수정", "작업자", "마법서 · 시세 변경"),
         ),
     ),
     "developer.server": _guide(
@@ -366,6 +367,30 @@ GUIDE_ACCESS_LABELS: dict[str, str] = {
     "developer.system": "디벨로퍼",
 }
 
+GUIDE_PREVIEW_KINDS: dict[str, str] = {
+    "home.personal": "dashboard",
+    "home.distributions": "distribution",
+    "alliance.drops": "drops",
+    "alliance.settlement": "settlement",
+    "alliance.treasury": "ledger",
+    "alliance.bidding": "matrix",
+    "alliance.items": "catalog",
+    "clan.settlement": "settlement",
+    "clan.treasury": "ledger",
+    "clan.staff": "staff",
+    "attendance.status": "attendance",
+    "attendance.stats": "statistics",
+    "attendance.alliance": "analytics",
+    "attendance.settings": "settings",
+    "operations.alliances": "mapping",
+    "operations.delegation": "staff",
+    "operations.notifications": "notification",
+    "operations.audit": "audit",
+    "developer.server": "server",
+    "developer.bot": "diagnostic",
+    "developer.system": "diagnostic",
+}
+
 
 def get_help_guide_groups(
     navigation: list[dict[str, Any]],
@@ -387,6 +412,7 @@ def get_help_guide_groups(
                     "preview_title": guide.preview_title,
                     "preview_metrics": guide.preview_metrics,
                     "preview_rows": guide.preview_rows,
+                    "preview_kind": GUIDE_PREVIEW_KINDS.get(item_id, "records"),
                     "access_label": GUIDE_ACCESS_LABELS.get(item_id, "유저"),
                 }
             )

@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from dashboard.app.ui.help_guides import GUIDES, get_help_guide_groups
+from dashboard.app.ui.help_guides import (
+    GUIDES,
+    GUIDE_PREVIEW_KINDS,
+    get_help_guide_groups,
+)
 from dashboard.app.ui.navigation import NAV_GROUPS, get_navigation
 
 
@@ -12,6 +16,7 @@ def test_every_navigation_item_has_a_help_guide() -> None:
     }
 
     assert set(GUIDES) == navigation_ids
+    assert set(GUIDE_PREVIEW_KINDS) == navigation_ids
 
 
 def test_help_guides_follow_visible_navigation() -> None:

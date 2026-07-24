@@ -1,4 +1,5 @@
 {% from "components/icons.html" import icon %}
+{% from "components/help_guide_preview.html" import preview_canvas with context %}
 
 <div
   class="ops-modal help-guide-modal"
@@ -109,28 +110,7 @@
                   <strong>{{ guide.preview_title }}</strong>
                   <span>화면 예시</span>
                 </div>
-                <div class="help-guide-preview-canvas">
-                  <div class="help-guide-preview-metrics">
-                    {% for metric in guide.preview_metrics %}
-                    <div>
-                      <span>{{ metric[0] }}</span>
-                      <strong>{{ metric[1] }}</strong>
-                    </div>
-                    {% endfor %}
-                  </div>
-                  <div class="help-guide-preview-list">
-                    {% for row in guide.preview_rows %}
-                    <div class="help-guide-preview-row">
-                      <span class="help-guide-row-marker"></span>
-                      <div>
-                        <strong>{{ row[0] }}</strong>
-                        <small>{{ row[1] }}</small>
-                      </div>
-                      <span class="help-guide-preview-status">{{ row[2] }}</span>
-                    </div>
-                    {% endfor %}
-                  </div>
-                </div>
+                {{ preview_canvas(guide) }}
               </section>
             </div>
           </article>

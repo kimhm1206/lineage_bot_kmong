@@ -1,0 +1,275 @@
+{% from "components/icons.html" import icon %}
+
+{% macro preview_canvas(guide) %}
+<div class="help-preview-canvas help-preview-{{ guide.preview_kind }}">
+  {% if guide.preview_kind == "dashboard" %}
+    <div class="help-preview-metrics">
+      {% for metric in guide.preview_metrics %}
+      <div><span>{{ metric[0] }}</span><strong>{{ metric[1] }}</strong><small>아데나</small></div>
+      {% endfor %}
+    </div>
+    <div class="help-preview-section-title"><strong>바로가기</strong><span>전체 메뉴</span></div>
+    <div class="help-preview-quick-grid">
+      {% for row in guide.preview_rows %}
+      <div><span>{{ icon("chevron-right") }}</span><strong>{{ row[0] }}</strong><small>{{ row[1] }}</small></div>
+      {% endfor %}
+    </div>
+
+  {% elif guide.preview_kind == "distribution" %}
+    <div class="help-preview-toolbar">
+      <div class="help-preview-segments"><b>미수령</b><span>완료</span><span>귀속</span></div>
+      <div class="help-preview-search">{{ icon("search") }} 아이템 검색</div>
+    </div>
+    <div class="help-preview-metrics">
+      {% for metric in guide.preview_metrics %}
+      <div><span>{{ metric[0] }}</span><strong>{{ metric[1] }}</strong></div>
+      {% endfor %}
+    </div>
+    <div class="help-preview-card-grid">
+      {% for row in guide.preview_rows %}
+      <article><div><small>ITEM</small><strong>{{ row[0] }}</strong><span>{{ row[1] }}</span></div><b>{{ row[2] }}</b></article>
+      {% endfor %}
+    </div>
+
+  {% elif guide.preview_kind == "drops" %}
+    <div class="help-preview-command">
+      <div><strong>판매 대기 목록</strong><small>판매 전 드랍만 표시</small></div>
+      <button type="button">{{ icon("plus-square") }} 드랍 등록</button>
+    </div>
+    <div class="help-preview-metrics">
+      {% for metric in guide.preview_metrics %}
+      <div><span>{{ metric[0] }}</span><strong>{{ metric[1] }}</strong></div>
+      {% endfor %}
+    </div>
+    <div class="help-preview-records">
+      {% for row in guide.preview_rows %}
+      <article>
+        <span class="help-preview-accent"></span>
+        <div><small>DROP #{{ 482 - loop.index0 }}</small><strong>{{ row[0] }}</strong><em>{{ row[1] }}</em></div>
+        <div class="help-preview-mini-stat"><small>참여 인원</small><strong>{{ 84 - loop.index0 * 9 }}명</strong></div>
+        <b>{{ row[2] }}</b>
+        <button type="button">판매 완료</button>
+      </article>
+      {% endfor %}
+    </div>
+
+  {% elif guide.preview_kind == "settlement" %}
+    <div class="help-preview-command-cards">
+      {% for metric in guide.preview_metrics %}
+      <div class="{% if loop.first %}is-primary{% endif %}"><span>{{ metric[0] }}</span><strong>{{ metric[1] }}</strong><small>{% if loop.first %}현재 지급할 금액{% else %}현재 적용 규칙{% endif %}</small></div>
+      {% endfor %}
+      <div class="is-action">{{ icon("settings") }}<strong>수수료 설정</strong><small>규칙 확인·수정</small></div>
+    </div>
+    <div class="help-preview-section-title"><strong>{% if guide.id == "alliance.settlement" %}혈맹별 정산{% else %}인원별 정산{% endif %}</strong><span>미완료 우선</span></div>
+    <div class="help-preview-entity-list">
+      {% for row in guide.preview_rows %}
+      <article>
+        <span>{{ icon("receipt" if "수수료" in row[0] or "혈비" in row[0] else "users-round") }}</span>
+        <div><small>{% if "수수료" in row[0] or "혈비" in row[0] %}수수료{% else %}정산 대상{% endif %}</small><strong>{{ row[0] }}</strong><em>{{ row[1] }}</em></div>
+        <b>{{ row[2] }}</b>
+        <button type="button">상세</button>
+      </article>
+      {% endfor %}
+    </div>
+
+  {% elif guide.preview_kind == "ledger" %}
+    <div class="help-preview-metrics">
+      {% for metric in guide.preview_metrics %}
+      <div><span>{{ metric[0] }}</span><strong>{{ metric[1] }}</strong><small>아데나</small></div>
+      {% endfor %}
+    </div>
+    <div class="help-preview-filter-row">
+      <div><span>시각</span><strong>최근 한 달</strong>{{ icon("chevron-down") }}</div>
+      <div><span>구분</span><strong>전체</strong>{{ icon("chevron-down") }}</div>
+      <div><span>항목</span><strong>전체</strong>{{ icon("chevron-down") }}</div>
+      <button type="button">{{ icon("plus-square") }} 입출금 등록</button>
+    </div>
+    <div class="help-preview-table-wrap">
+      <table class="help-preview-table">
+        <thead><tr><th>시각</th><th>구분</th><th>항목</th><th class="is-number">금액</th></tr></thead>
+        <tbody>
+          {% for row in guide.preview_rows %}
+          <tr><td>{{ row[0] }}</td><td><b class="help-preview-ledger-type is-{{ 'out' if row[1] == '출금' else 'in' }}">{{ row[1] }}</b></td><td>{{ row[2] }}</td><td class="is-number {% if row[3].startswith('+') %}is-positive{% else %}is-negative{% endif %}">{{ row[3] }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+  {% elif guide.preview_kind == "matrix" %}
+    <div class="help-preview-toolbar">
+      <div class="help-preview-search">{{ icon("search") }} 아이템 이름 검색</div>
+      <span>아이템별 혈맹 구매 현황</span>
+    </div>
+    <div class="help-preview-table-wrap">
+      <table class="help-preview-table help-preview-matrix-table">
+        <thead><tr><th>아이템</th><th>혈맹 1</th><th>혈맹 2</th><th>혈맹 3</th><th>과거 기록</th></tr></thead>
+        <tbody>
+          {% for row in guide.preview_rows %}
+          <tr>
+            <td><strong>{{ row[0] }}</strong></td>
+            {% for value in row[1:4] %}<td><b class="{% if value != '0' %}has-count{% endif %}">{{ value }}</b></td>{% endfor %}
+            <td><button type="button">{{ icon("clipboard-list") }} {{ row[4] }}</button></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+  {% elif guide.preview_kind == "catalog" %}
+    <div class="help-preview-toolbar">
+      <div class="help-preview-search">{{ icon("search") }} 아이템 이름 검색</div>
+      <span>아이템 원화 시세 관리</span>
+    </div>
+    <div class="help-preview-create-row">
+      <div><strong>새 아이템</strong><small>드랍에 사용할 항목 추가</small></div>
+      <label><span>아이템 이름</span><b>아이템 입력</b></label>
+      <label><span>원화 시세</span><b>0 원</b></label>
+      <button type="button">{{ icon("plus-square") }} 추가</button>
+    </div>
+    <div class="help-preview-table-wrap">
+      <table class="help-preview-table">
+        <thead><tr><th>아이템</th><th class="is-number">원화 시세</th><th>관리</th></tr></thead>
+        <tbody>
+          {% for row in guide.preview_rows %}
+          <tr><td><strong>{{ row[0] }}</strong><small>최근 수정 오늘</small></td><td class="is-number">{{ row[1] | replace('기본 원화 시세 ', '') }}</td><td><button type="button">{{ icon("settings") }} {{ row[2] }}</button></td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+  {% elif guide.preview_kind == "attendance" %}
+    <div class="help-preview-filter-row">
+      <div><span>날짜</span><strong>최근 한 달</strong>{{ icon("calendar-check") }}</div>
+      <div class="is-wide"><span>닉네임</span><strong>유저 검색</strong>{{ icon("search") }}</div>
+      <button type="button">조회</button>
+    </div>
+    <div class="help-preview-attendance-list">
+      {% for row in guide.preview_rows %}
+      <article>
+        <div><small>ATTENDANCE</small><strong>{{ row[0] }}</strong><span>{{ row[1] }}</span></div>
+        <div class="help-preview-clan-chips"><b>혈맹 1 18명</b><b>혈맹 2 21명</b><b>혈맹 3 16명</b></div>
+        <button type="button">{{ row[2] }} {{ icon("chevron-right") }}</button>
+      </article>
+      {% endfor %}
+    </div>
+
+  {% elif guide.preview_kind == "statistics" %}
+    <div class="help-preview-filter-row">
+      <div><span>기간</span><strong>최근 한 달</strong>{{ icon("chevron-down") }}</div>
+      <div class="is-wide"><span>닉네임 검색</span><strong>전체 유저</strong>{{ icon("search") }}</div>
+      <button type="button">{{ icon("download") }} CSV</button>
+    </div>
+    <div class="help-preview-metrics">
+      {% for metric in guide.preview_metrics %}
+      <div><span>{{ metric[0] }}</span><strong>{{ metric[1] }}</strong></div>
+      {% endfor %}
+    </div>
+    <div class="help-preview-table-wrap">
+      <table class="help-preview-table">
+        <thead><tr><th>닉네임</th><th>참여 횟수</th><th>참여율</th></tr></thead>
+        <tbody>
+          {% for row in guide.preview_rows %}
+          <tr><td><strong>{{ row[0] }}</strong></td><td>{{ row[1].split(' · ')[0] }}</td><td><div class="help-preview-progress"><i style="width: {{ row[1].split(' · ')[1] if ' · ' in row[1] else '70%' }}"></i></div><b>{{ row[1].split(' · ')[1] if ' · ' in row[1] else row[2] }}</b></td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+  {% elif guide.preview_kind == "analytics" %}
+    <div class="help-preview-filter-row">
+      <div><span>혈맹</span><strong>혈맹 1</strong>{{ icon("chevron-down") }}</div>
+      <div><span>기간</span><strong>최근 한 달</strong>{{ icon("calendar-check") }}</div>
+    </div>
+    <div class="help-preview-metrics">
+      {% for metric in guide.preview_metrics %}
+      <div><span>{{ metric[0] }}</span><strong>{{ metric[1] }}</strong></div>
+      {% endfor %}
+    </div>
+    <div class="help-preview-analytics-grid">
+      <div class="help-preview-chart">
+        <header><strong>시간대별 참여</strong><span>평균 인원</span></header>
+        <div><i style="height: 28%"></i><i style="height: 46%"></i><i style="height: 72%"></i><i style="height: 92%"></i><i style="height: 64%"></i><i style="height: 38%"></i></div>
+        <footer><span>12시</span><span>15시</span><span>18시</span><span>21시</span><span>00시</span></footer>
+      </div>
+      <div class="help-preview-ranking">
+        <header><strong>참여 순위</strong><span>TOP 2</span></header>
+        {% for row in guide.preview_rows %}<div><b>{{ loop.index }}</b><span><strong>{{ row[0] }}</strong><small>{{ row[1] }}</small></span></div>{% endfor %}
+      </div>
+    </div>
+
+  {% elif guide.preview_kind in ["settings", "mapping", "staff"] %}
+    <div class="help-preview-form-shell">
+      <header><div><strong>{{ guide.preview_title }}</strong><small>변경할 값을 확인한 뒤 저장합니다.</small></div><button type="button">{{ icon("save") }} 저장</button></header>
+      <div class="help-preview-field-grid">
+        {% for metric in guide.preview_metrics %}
+        <label><span>{{ metric[0] }}</span><b>{{ metric[1] }}</b>{{ icon("chevron-down") }}</label>
+        {% endfor %}
+      </div>
+      <div class="help-preview-setting-list">
+        {% for row in guide.preview_rows %}
+        <article><span>{{ icon("users-round" if guide.preview_kind == "staff" else "settings") }}</span><div><strong>{{ row[0] }}</strong><small>{{ row[1] }}</small></div><button type="button">{{ row[2] }}</button></article>
+        {% endfor %}
+      </div>
+    </div>
+
+  {% elif guide.preview_kind == "notification" %}
+    <div class="help-preview-builder">
+      <div class="help-preview-builder-form">
+        <header><strong>알림 구성</strong><span>활성</span></header>
+        {% for metric in guide.preview_metrics %}
+        <label><span>{{ metric[0] }}</span><b>{{ metric[1] }}</b>{{ icon("chevron-down") }}</label>
+        {% endfor %}
+        <div class="help-preview-builder-fields"><label><span>집계 기간</span><b>오늘</b></label><label><span>표시 개수</span><b>TOP 10</b></label></div>
+        <button type="button">알림 저장</button>
+      </div>
+      <div class="help-preview-discord">
+        <header><span>ON</span><strong>Discord 미리보기</strong></header>
+        <div><strong>오늘의 출석 순위</strong><small>매일 23:59 발송</small>{% for row in guide.preview_rows %}<p><b>{{ loop.index }}.</b> {{ row[0] }} <span>{{ row[1] }}</span></p>{% endfor %}</div>
+      </div>
+    </div>
+
+  {% elif guide.preview_kind == "audit" %}
+    <div class="help-preview-tabs"><b>전체</b><span>출석 수정</span><span>아이템</span><span>드랍</span><span>설정</span></div>
+    <div class="help-preview-filter-row">
+      <div><span>기간</span><strong>최근 한 달</strong>{{ icon("calendar-check") }}</div>
+      <div class="is-wide"><span>대상 ID</span><strong>전체 기록</strong>{{ icon("search") }}</div>
+    </div>
+    <div class="help-preview-table-wrap">
+      <table class="help-preview-table">
+        <thead><tr><th>시각</th><th>작업</th><th>작업자</th><th>대상</th></tr></thead>
+        <tbody>{% for row in guide.preview_rows %}<tr><td>{{ row[0] }}</td><td><strong>{{ row[1] }}</strong></td><td>{{ row[2] }}</td><td>{{ row[3] }}</td></tr>{% endfor %}</tbody>
+      </table>
+    </div>
+
+  {% elif guide.preview_kind == "server" %}
+    <div class="help-preview-create-row">
+      <div><strong>서버 등록</strong><small>허용할 Discord 서버 ID</small></div>
+      <label><span>서버 ID</span><b>1234567890</b></label>
+      <button type="button">{{ icon("plus-square") }} 등록</button>
+    </div>
+    <div class="help-preview-metrics">
+      {% for metric in guide.preview_metrics %}<div><span>{{ metric[0] }}</span><strong>{{ metric[1] }}</strong></div>{% endfor %}
+    </div>
+    <div class="help-preview-setting-list">
+      {% for row in guide.preview_rows %}<article><span>{{ icon("server") }}</span><div><strong>{{ row[0] }}</strong><small>{{ row[1] }}</small></div><b>{{ row[2] }}</b></article>{% endfor %}
+    </div>
+
+  {% elif guide.preview_kind == "diagnostic" %}
+    <div class="help-preview-diagnostic-head"><div><span class="status-indicator is-online"></span><strong>서비스 연결 정상</strong></div><button type="button">{{ icon("refresh") }} 다시 점검</button></div>
+    <div class="help-preview-metrics">
+      {% for metric in guide.preview_metrics %}<div><span>{{ metric[0] }}</span><strong>{{ metric[1] }}</strong><small>정상 상태</small></div>{% endfor %}
+    </div>
+    <div class="help-preview-setting-list">
+      {% for row in guide.preview_rows %}<article><span>{{ icon("check") }}</span><div><strong>{{ row[0] }}</strong><small>{{ row[1] }}</small></div><b>{{ row[2] }}</b></article>{% endfor %}
+    </div>
+
+  {% else %}
+    <div class="help-preview-metrics">
+      {% for metric in guide.preview_metrics %}<div><span>{{ metric[0] }}</span><strong>{{ metric[1] }}</strong></div>{% endfor %}
+    </div>
+    <div class="help-preview-records">
+      {% for row in guide.preview_rows %}<article><span class="help-preview-accent"></span><div><strong>{{ row[0] }}</strong><em>{{ row[1] }}</em></div><b>{{ row[2] }}</b></article>{% endfor %}
+    </div>
+  {% endif %}
+</div>
+{% endmacro %}
