@@ -12,7 +12,6 @@ data/
 aitest/
 .venv/
 .vscode/tasks.json
-deploy.sh
 deploy_kmong.sh
 deploy_antalas
 scripts/sync_guild_roles_from_nicknames.py
