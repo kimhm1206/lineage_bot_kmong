@@ -719,6 +719,12 @@ async def clan_settings(
         for row in assignments
         if row["scope_code"] == settings_store.SCOPE_CLAN_ACCOUNTANT and row["alliance_id"] == alliance_id
     ]
+    clan_manager_ids = [
+        row["discord_user_id"]
+        for row in assignments
+        if row["scope_code"] == settings_store.SCOPE_CLAN_MANAGER
+        and row["alliance_id"] == alliance_id
+    ]
     policy = await settings_store.get_policy(session, guild_id=guild_data["guild_id"], alliance_id=alliance_id) if guild_data["guild_id"] and alliance_id else {}
     context = build_template_context(
         request,
@@ -741,6 +747,7 @@ async def clan_settings(
             ),
             "accountants": accountants,
             "accountant_ids": [row["discord_user_id"] for row in accountants],
+            "clan_manager_ids": clan_manager_ids,
             "policy": policy,
             "policy_labels": POLICY_LABELS,
             "discord_error": api_error or guild_data["discord_error"],
