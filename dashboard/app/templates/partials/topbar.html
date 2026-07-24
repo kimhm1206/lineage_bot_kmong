@@ -8,6 +8,15 @@
 
   <div class="topbar-actions">
     <span class="environment-pill">{{ environment | upper }}</span>
+    <button
+      class="icon-button topbar-help"
+      type="button"
+      data-help-guide-open
+      aria-label="도움말"
+      title="현재 페이지 도움말"
+    >
+      {{ icon("help-circle") }}
+    </button>
     <button class="theme-toggle" type="button" data-theme-toggle aria-label="테마 변경">
       <span class="theme-icon theme-icon-moon">{{ icon("moon") }}</span>
       <span class="theme-icon theme-icon-sun">{{ icon("sun") }}</span>

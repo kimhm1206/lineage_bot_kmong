@@ -28,6 +28,19 @@
   </div>
 </section>
 
+<section class="home-guide-entry" aria-labelledby="home-guide-title">
+  <div class="home-guide-entry-icon">{{ icon("help-circle") }}</div>
+  <div>
+    <span>Visual in-app guide</span>
+    <h2 id="home-guide-title">페이지별 사용 가이드</h2>
+    <p>작업 순서와 화면 위치를 실제 UI 형태로 빠르게 확인합니다.</p>
+  </div>
+  <button class="primary-button" type="button" data-help-guide-open data-guide-target="home.personal">
+    가이드 열기
+    {{ icon("chevron-right") }}
+  </button>
+</section>
+
 <section class="home-quick-navigation" aria-label="메뉴 바로가기">
   {% for group in navigation %}
   {% set shortcuts = group.nav_items | rejectattr('id', 'equalto', 'home.personal') | list %}

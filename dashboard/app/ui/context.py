@@ -11,6 +11,7 @@ from dashboard.app.security import (
     is_global_developer,
 )
 from dashboard.app.ui.navigation import get_navigation
+from dashboard.app.ui.help_guides import get_help_guide_groups
 
 
 def build_template_context(
@@ -40,6 +41,7 @@ def build_template_context(
         "app_name": settings.app_name,
         "environment": settings.environment,
         "navigation": navigation,
+        "help_guide_groups": get_help_guide_groups(navigation),
         "active_nav_group": active_nav_group,
         "current_access_role": access_role,
         "current_access_role_label": {
