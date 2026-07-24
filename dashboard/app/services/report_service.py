@@ -8,6 +8,7 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from dashboard.app.identifiers import snowflake_text
 from dashboard.app.services import audit_service
 
 
@@ -225,7 +226,7 @@ async def list_reports(session: AsyncSession, guild_id: int) -> list[dict[str, A
         report = {
             **row,
             "report_setting_id": int(row["report_setting_id"]),
-            "channel_id": int(row["channel_id"]),
+            "channel_id": snowflake_text(row["channel_id"]),
             "frequency": frequency,
             "period_type": period,
             "group_by": group_by,

@@ -6,6 +6,7 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from dashboard.app.identifiers import json_safe_snowflakes
 
 PAGE_SIZE = 12
 STATUS_LABELS = {0: "미완료", 1: "완료", 2: "귀속"}
@@ -275,25 +276,27 @@ async def drop_management_page(
             )
         ).mappings().all()
     ]
-    buyer_users = [
-        dict(row)
-        for row in (
-            await session.execute(
-                text("""
-                    SELECT DISTINCT u.user_id, u.discord_id, u.alliance_id,
-                           COALESCE(u.game_nickname, u.discord_nickname) AS display_name,
-                           u.discord_nickname AS username
-                    FROM users u
-                    JOIN guild_alliance_role_mappings mapping
-                      ON mapping.alliance_id = u.alliance_id
-                     AND mapping.guild_id = :guild_id
-                    WHERE u.is_active IS TRUE
-                    ORDER BY display_name
-                """),
-                {"guild_id": guild_id},
-            )
-        ).mappings().all()
-    ]
+    buyer_users = json_safe_snowflakes(
+        [
+            dict(row)
+            for row in (
+                await session.execute(
+                    text("""
+                        SELECT DISTINCT u.user_id, u.discord_id, u.alliance_id,
+                               COALESCE(u.game_nickname, u.discord_nickname) AS display_name,
+                               u.discord_nickname AS username
+                        FROM users u
+                        JOIN guild_alliance_role_mappings mapping
+                          ON mapping.alliance_id = u.alliance_id
+                         AND mapping.guild_id = :guild_id
+                        WHERE u.is_active IS TRUE
+                        ORDER BY display_name
+                    """),
+                    {"guild_id": guild_id},
+                )
+            ).mappings().all()
+        ]
+    )
     return {
         "rows": rows,
         "pagination": pagination,

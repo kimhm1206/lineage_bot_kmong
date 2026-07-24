@@ -8,8 +8,8 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from dashboard.app.services import settings_store
-from dashboard.app.services import audit_service
+from dashboard.app.identifiers import snowflake_text
+from dashboard.app.services import audit_service, settings_store
 
 
 PAGE_SIZE = 20
@@ -1220,7 +1220,7 @@ async def treasury_page(
                 {
                     **dict(row),
                     "user_id": _int(row["user_id"]),
-                    "discord_id": _int(row["discord_id"]),
+                    "discord_id": snowflake_text(row["discord_id"]),
                     "display_name": str(row["display_name"]),
                     "username": str(row["alliance_name"]),
                 }

@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from dashboard.app.config import BASE_DIR
 from dashboard.app.database import get_session
+from dashboard.app.identifiers import snowflake_text
 from dashboard.app.security import (
     allowed_guild_ids,
     can_manage_alliance_operations,
@@ -211,7 +212,7 @@ def _member_rows(
             {
                 # Discord snowflakes exceed JavaScript's safe integer range.
                 # Keep them as strings throughout JSON and form handling.
-                "discord_id": str(discord_id),
+                "discord_id": snowflake_text(discord_id),
                 "display_name": display_name,
                 "username": user.get("username", ""),
                 "alliance_ids": alliance_ids,

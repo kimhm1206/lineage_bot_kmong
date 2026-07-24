@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from dashboard.app.config import BASE_DIR
 from dashboard.app.database import get_session
+from dashboard.app.identifiers import json_safe_snowflakes, snowflake_text
 from dashboard.app.security import (
     allowed_guild_ids,
     can_manage_notifications,
@@ -40,7 +41,7 @@ async def _text_channels(guild_id: int) -> tuple[list[dict[str, Any]], str]:
         return [], str(exc)
     return [
         {
-            "id": int(channel["id"]),
+            "id": snowflake_text(channel["id"]),
             "name": str(channel.get("name") or channel["id"]),
         }
         for channel in channels
@@ -84,7 +85,9 @@ async def notifications_page(
     context.update(
         {
             "reports": reports,
-            "reports_json": [report["form_data"] for report in reports],
+            "reports_json": json_safe_snowflakes(
+                [report["form_data"] for report in reports]
+            ),
             "channels": channels,
             "channel_error": channel_error,
             "active_count": sum(1 for report in reports if report["status"] == "on"),
