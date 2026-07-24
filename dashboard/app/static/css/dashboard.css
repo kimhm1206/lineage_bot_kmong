@@ -1395,6 +1395,10 @@ a {
   background: var(--panel-subtle);
 }
 
+.segmented-control.columns-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .segment {
   min-height: 36px;
   border: 0;

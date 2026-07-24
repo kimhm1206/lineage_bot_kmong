@@ -331,7 +331,7 @@ async def get_policy(session: AsyncSession, *, guild_id: int, alliance_id: int) 
     row = result.mappings().one_or_none()
     return dict(row) if row else {
         "distribution_visibility_code": 2,
-        "treasury_visibility_code": 3,
+        "treasury_visibility_code": 2,
         "user_access_code": 2,
     }
 

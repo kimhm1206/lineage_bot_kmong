@@ -10,7 +10,6 @@ from dashboard.app.services import settings_store
 
 DEVELOPER_ENVIRONMENTS = {"local", "development", "test"}
 ALLIANCE_OVERVIEW_ROLES = {"developer", "owner"}
-CLAN_ACCESS_SUMMARY = "summary"
 CLAN_ACCESS_DETAIL = "detail"
 CLAN_ACCESS_OWN = "own"
 CLAN_ACCESS_MANAGE = "manage"
@@ -211,7 +210,7 @@ def clan_visibility_allows(
         return False
     if visibility_code == 2:
         return is_member
-    return visibility_code == 3
+    return False
 
 
 def clan_user_access_mode(
@@ -222,10 +221,9 @@ def clan_user_access_mode(
     if can_manage:
         return CLAN_ACCESS_MANAGE
     return {
-        1: CLAN_ACCESS_SUMMARY,
         2: CLAN_ACCESS_DETAIL,
         3: CLAN_ACCESS_OWN,
-    }.get(user_access_code, CLAN_ACCESS_DETAIL)
+    }.get(user_access_code, CLAN_ACCESS_OWN)
 
 
 async def current_internal_user_id(

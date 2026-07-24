@@ -34,9 +34,9 @@ templates = Jinja2Templates(directory=str(BASE_DIR / "app" / "templates"))
 TEXT_CHANNEL_TYPES = {0, 5}
 VOICE_CHANNEL_TYPES = {2, 13}
 POLICY_LABELS = {
-    "distribution_visibility_code": {1: "관리자만", 2: "혈맹원 전체", 3: "전체 공개"},
-    "treasury_visibility_code": {1: "관리자만", 2: "혈맹원 전체", 3: "전체 공개"},
-    "user_access_code": {1: "요약 조회", 2: "상세 조회", 3: "내 기록만"},
+    "distribution_visibility_code": {1: "관리자만", 2: "혈맹원 전체"},
+    "treasury_visibility_code": {1: "관리자만", 2: "혈맹원 전체"},
+    "user_access_code": {2: "상세 조회", 3: "내 기록만"},
 }
 
 
@@ -762,9 +762,9 @@ async def save_clan_policy(request: Request, session: AsyncSession = Depends(get
             guild_id=guild_id,
             alliance_id=alliance_id,
         )
-        distribution = _int_value(form.get("distribution_visibility_code"), minimum=1, maximum=3)
-        treasury = _int_value(form.get("treasury_visibility_code"), minimum=1, maximum=3)
-        access = _int_value(form.get("user_access_code"), minimum=1, maximum=3)
+        distribution = _int_value(form.get("distribution_visibility_code"), minimum=1, maximum=2)
+        treasury = _int_value(form.get("treasury_visibility_code"), minimum=1, maximum=2)
+        access = _int_value(form.get("user_access_code"), minimum=2, maximum=3)
         await settings_store.save_policy(
             session,
             guild_id=guild_id,

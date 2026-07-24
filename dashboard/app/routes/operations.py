@@ -341,7 +341,7 @@ async def clan_settlements_page(
             "can_manage_settlement": can_manage_clan_treasury(request),
             "can_edit_fee_rules": can_manage_clan_treasury(request),
             "clan_access_mode": clan_access["access_mode"],
-            "can_view_clan_details": clan_access["access_mode"] != "summary",
+            "can_view_clan_details": True,
             "scope_code": 2,
         }
     )
@@ -870,7 +870,7 @@ async def fee_rule_history(
             alliance_id=int(rule_scope["alliance_id"]),
             resource="distribution",
         )
-        if clan_access["access_mode"] in {"summary", "own"}:
+        if clan_access["access_mode"] == "own":
             raise HTTPException(
                 status_code=403,
                 detail="현재 공개 정책에서는 수수료 상세 기록을 볼 수 없습니다.",
@@ -912,11 +912,6 @@ async def clan_settlement_history(
         alliance_id=alliance_id,
         resource="distribution",
     )
-    if clan_access["access_mode"] == "summary":
-        raise HTTPException(
-            status_code=403,
-            detail="현재 공개 정책에서는 상세 기록을 볼 수 없습니다.",
-        )
     if clan_access["access_mode"] == "own":
         signed_in_user_id = await current_internal_user_id(request, session)
         if signed_in_user_id != user_id:
@@ -965,7 +960,7 @@ async def clan_completed_item_history(
         alliance_id=alliance_id,
         resource="distribution",
     )
-    if clan_access["access_mode"] in {"summary", "own"}:
+    if clan_access["access_mode"] == "own":
         raise HTTPException(
             status_code=403,
             detail="현재 공개 정책에서는 완료 내역을 볼 수 없습니다.",

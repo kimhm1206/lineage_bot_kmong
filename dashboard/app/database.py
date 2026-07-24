@@ -111,11 +111,11 @@ async def ensure_settings_schema() -> None:
             guild_id BIGINT NOT NULL REFERENCES guilds(guild_id) ON DELETE CASCADE,
             alliance_id BIGINT NOT NULL REFERENCES alliances(alliance_id) ON DELETE CASCADE,
             distribution_visibility_code SMALLINT NOT NULL DEFAULT 2
-                CHECK (distribution_visibility_code IN (1, 2, 3)),
-            treasury_visibility_code SMALLINT NOT NULL DEFAULT 3
-                CHECK (treasury_visibility_code IN (1, 2, 3)),
+                CHECK (distribution_visibility_code IN (1, 2)),
+            treasury_visibility_code SMALLINT NOT NULL DEFAULT 2
+                CHECK (treasury_visibility_code IN (1, 2)),
             user_access_code SMALLINT NOT NULL DEFAULT 2
-                CHECK (user_access_code IN (1, 2, 3)),
+                CHECK (user_access_code IN (2, 3)),
             updated_by_discord_user_id BIGINT,
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             PRIMARY KEY (guild_id, alliance_id)
@@ -1510,6 +1510,85 @@ async def apply_local_schema_cleanup() -> bool:
                 text("""
                     INSERT INTO schema_migrations(version, applied_at)
                     VALUES (21, EXTRACT(EPOCH FROM NOW())::BIGINT)
+                """)
+            )
+            changed = True
+
+        access_policy_cleanup_applied = await connection.scalar(
+            text("SELECT 1 FROM schema_migrations WHERE version = 22")
+        )
+        if not access_policy_cleanup_applied:
+            await connection.execute(
+                text("""
+                    UPDATE alliance_access_policies
+                    SET distribution_visibility_code = 2
+                    WHERE distribution_visibility_code = 3
+                """)
+            )
+            await connection.execute(
+                text("""
+                    UPDATE alliance_access_policies
+                    SET treasury_visibility_code = 2
+                    WHERE treasury_visibility_code = 3
+                """)
+            )
+            await connection.execute(
+                text("""
+                    UPDATE alliance_access_policies
+                    SET user_access_code = 3
+                    WHERE user_access_code = 1
+                """)
+            )
+            await connection.execute(
+                text("""
+                    DO $$
+                    DECLARE policy_constraint RECORD;
+                    BEGIN
+                        FOR policy_constraint IN
+                            SELECT constraint_name
+                            FROM information_schema.constraint_column_usage
+                            WHERE table_schema = 'public'
+                              AND table_name = 'alliance_access_policies'
+                              AND column_name IN (
+                                  'distribution_visibility_code',
+                                  'treasury_visibility_code',
+                                  'user_access_code'
+                              )
+                        LOOP
+                            IF EXISTS (
+                                SELECT 1
+                                FROM pg_constraint
+                                WHERE conname = policy_constraint.constraint_name
+                                  AND contype = 'c'
+                            ) THEN
+                                EXECUTE format(
+                                    'ALTER TABLE alliance_access_policies DROP CONSTRAINT %I',
+                                    policy_constraint.constraint_name
+                                );
+                            END IF;
+                        END LOOP;
+                    END
+                    $$;
+                """)
+            )
+            await connection.execute(
+                text("""
+                    ALTER TABLE alliance_access_policies
+                        ALTER COLUMN distribution_visibility_code SET DEFAULT 2,
+                        ALTER COLUMN treasury_visibility_code SET DEFAULT 2,
+                        ALTER COLUMN user_access_code SET DEFAULT 2,
+                        ADD CONSTRAINT chk_alliance_access_distribution_visibility
+                            CHECK (distribution_visibility_code IN (1, 2)),
+                        ADD CONSTRAINT chk_alliance_access_treasury_visibility
+                            CHECK (treasury_visibility_code IN (1, 2)),
+                        ADD CONSTRAINT chk_alliance_access_user_access
+                            CHECK (user_access_code IN (2, 3))
+                """)
+            )
+            await connection.execute(
+                text("""
+                    INSERT INTO schema_migrations(version, applied_at)
+                    VALUES (22, EXTRACT(EPOCH FROM NOW())::BIGINT)
                 """)
             )
             changed = True
