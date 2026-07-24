@@ -607,7 +607,11 @@ async def save_manager(request: Request, session: AsyncSession = Depends(get_ses
         alliance_id = _optional_snowflake(form.get("alliance_id")) if scope_code == 2 else None
         if scope_code == 2 and alliance_id is None:
             raise ValueError
-        if discord_api.configured:
+        # The shared picker already receives only members of the selected guild.
+        # A second REST lookup here can reject a valid selected member when the
+        # Discord member cache changes between rendering the page and submitting.
+        # Clan managers still need the additional role-to-alliance validation.
+        if scope_code == settings_store.SCOPE_CLAN_MANAGER and discord_api.configured:
             members = await discord_api.members(guild_id)
             selected_member = next(
                 (
@@ -619,14 +623,13 @@ async def save_manager(request: Request, session: AsyncSession = Depends(get_ses
             )
             if selected_member is None:
                 raise ValueError
-            if scope_code == 2:
-                mappings = await settings_store.list_role_mappings(session, guild_id)
-                if not _member_has_alliance_role(
-                    selected_member,
-                    alliance_id=alliance_id,
-                    role_alliance_map=_role_alliance_map(mappings),
-                ):
-                    raise ValueError
+            mappings = await settings_store.list_role_mappings(session, guild_id)
+            if not _member_has_alliance_role(
+                selected_member,
+                alliance_id=alliance_id,
+                role_alliance_map=_role_alliance_map(mappings),
+            ):
+                raise ValueError
         await settings_store.add_assignment(
             session,
             guild_id=guild_id,
