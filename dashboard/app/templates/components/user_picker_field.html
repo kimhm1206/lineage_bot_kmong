@@ -1,6 +1,6 @@
 {% from "components/icons.html" import icon %}
 
-{% macro user_picker_field(label="서버 유저", input_name="discord_user_id", display_name_input_name="", empty_name="유저 선택", empty_meta="검색해서 선택", clearable=false) %}
+{% macro user_picker_field(label="서버 유저", input_name="discord_user_id", empty_name="유저 선택", empty_meta="검색해서 선택", clearable=false) %}
 <div class="user-picker-field" data-user-picker-field>
   <span class="field-label">{{ label }}</span>
   <div class="user-picker-control">
@@ -19,9 +19,6 @@
     {% endif %}
   </div>
   <input type="hidden" name="{{ input_name }}" data-user-id>
-  {% if display_name_input_name %}
-  <input type="hidden" name="{{ display_name_input_name }}" data-user-display-name>
-  {% endif %}
   <p class="picker-error is-hidden" data-picker-error>유저를 선택해 주세요.</p>
 </div>
 {% endmacro %}

@@ -259,8 +259,8 @@ async def delete_role_mapping(session: AsyncSession, *, guild_id: int, mapping_i
 async def list_assignments(session: AsyncSession, guild_id: int) -> list[dict[str, Any]]:
     result = await session.execute(
         text("""
-            SELECT ua.assignment_id, ua.discord_user_id, ua.discord_display_name,
-                   ua.scope_code, ua.alliance_id, a.alliance_name
+            SELECT ua.assignment_id, ua.discord_user_id, ua.scope_code,
+                   ua.alliance_id, a.alliance_name
             FROM guild_user_assignments ua
             LEFT JOIN alliances a ON a.alliance_id = ua.alliance_id
             WHERE ua.guild_id = :guild_id
@@ -276,28 +276,22 @@ async def add_assignment(
     *,
     guild_id: int,
     discord_user_id: int,
-    discord_display_name: str | None,
     scope_code: int,
     alliance_id: int | None,
 ) -> None:
     existing_assignment_id = await session.scalar(
         text("""
-            UPDATE guild_user_assignments
-            SET discord_display_name = COALESCE(
-                    :discord_display_name,
-                    discord_display_name
-                ),
-                updated_at = NOW()
+            SELECT assignment_id
+            FROM guild_user_assignments
             WHERE guild_id = :guild_id
               AND discord_user_id = :discord_user_id
               AND scope_code = :scope_code
               AND alliance_id IS NOT DISTINCT FROM :alliance_id
-            RETURNING assignment_id
+            LIMIT 1
         """),
         {
             "guild_id": guild_id,
             "discord_user_id": discord_user_id,
-            "discord_display_name": discord_display_name,
             "scope_code": scope_code,
             "alliance_id": alliance_id,
         },
@@ -309,18 +303,14 @@ async def add_assignment(
     assignment_id = await session.scalar(
         text("""
             INSERT INTO guild_user_assignments (
-                guild_id, discord_user_id, discord_display_name, scope_code, alliance_id, updated_at
-            ) VALUES (
-                :guild_id, :discord_user_id, :discord_display_name,
-                :scope_code, :alliance_id, NOW()
-            )
+                guild_id, discord_user_id, scope_code, alliance_id, updated_at
+            ) VALUES (:guild_id, :discord_user_id, :scope_code, :alliance_id, NOW())
             ON CONFLICT DO NOTHING
             RETURNING assignment_id
         """),
         {
             "guild_id": guild_id,
             "discord_user_id": discord_user_id,
-            "discord_display_name": discord_display_name,
             "scope_code": scope_code,
             "alliance_id": alliance_id,
         },
@@ -336,35 +326,67 @@ async def add_assignment(
     await session.commit()
 
 
-async def refresh_assignment_display_names(
+async def repair_rounded_assignment_discord_ids(
     session: AsyncSession,
     *,
     guild_id: int,
-    names_by_discord_id: dict[int, str],
-) -> None:
-    values = [
-        {
-            "guild_id": guild_id,
-            "discord_user_id": discord_user_id,
-            "discord_display_name": display_name,
-        }
-        for discord_user_id, display_name in names_by_discord_id.items()
-        if display_name
-    ]
-    if not values:
-        return
-    await session.execute(
-        text("""
-            UPDATE guild_user_assignments
-            SET discord_display_name = :discord_display_name,
-                updated_at = NOW()
-            WHERE guild_id = :guild_id
-              AND discord_user_id = :discord_user_id
-              AND discord_display_name IS DISTINCT FROM :discord_display_name
-        """),
-        values,
-    )
-    await session.commit()
+    exact_discord_ids: set[int],
+) -> bool:
+    """Repair snowflakes rounded by a browser's unsafe JSON number parsing."""
+    if not exact_discord_ids:
+        return False
+    assignments = (
+        await session.execute(
+            text("""
+                SELECT assignment_id, discord_user_id, scope_code, alliance_id
+                FROM guild_user_assignments
+                WHERE guild_id = :guild_id
+            """),
+            {"guild_id": guild_id},
+        )
+    ).mappings().all()
+    rounded_candidates: dict[float, list[int]] = {}
+    for discord_user_id in exact_discord_ids:
+        rounded_candidates.setdefault(float(discord_user_id), []).append(discord_user_id)
+
+    repaired = False
+    for row in assignments:
+        stored_id = int(row["discord_user_id"])
+        if stored_id in exact_discord_ids or stored_id <= 2**53:
+            continue
+        candidates = rounded_candidates.get(float(stored_id), [])
+        if len(candidates) != 1:
+            continue
+        exact_id = candidates[0]
+        updated_id = await session.scalar(
+            text("""
+                UPDATE guild_user_assignments AS current_assignment
+                SET discord_user_id = :exact_id,
+                    updated_at = NOW()
+                WHERE current_assignment.assignment_id = :assignment_id
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM guild_user_assignments AS existing_assignment
+                      WHERE existing_assignment.guild_id = :guild_id
+                        AND existing_assignment.discord_user_id = :exact_id
+                        AND existing_assignment.scope_code = :scope_code
+                        AND existing_assignment.alliance_id
+                            IS NOT DISTINCT FROM :alliance_id
+                  )
+                RETURNING current_assignment.assignment_id
+            """),
+            {
+                "assignment_id": int(row["assignment_id"]),
+                "guild_id": guild_id,
+                "exact_id": exact_id,
+                "scope_code": int(row["scope_code"]),
+                "alliance_id": row["alliance_id"],
+            },
+        )
+        repaired = repaired or updated_id is not None
+    if repaired:
+        await session.commit()
+    return repaired
 
 
 async def delete_assignment(session: AsyncSession, *, guild_id: int, assignment_id: int) -> None:

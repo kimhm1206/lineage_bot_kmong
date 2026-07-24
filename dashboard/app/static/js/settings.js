@@ -37,7 +37,6 @@
       const field = form.querySelector("[data-user-picker-field]");
       const openButton = field?.querySelector("[data-user-picker-open]");
       const hiddenInput = field?.querySelector("[data-user-id]");
-      const displayNameInput = field?.querySelector("[data-user-display-name]");
       const name = field?.querySelector("[data-user-picker-name]");
       const meta = field?.querySelector("[data-user-picker-meta]");
       const error = field?.querySelector("[data-picker-error]");
@@ -46,7 +45,6 @@
 
       function clearSelection() {
         hiddenInput.value = "";
-        if (displayNameInput) displayNameInput.value = "";
         name.textContent = "유저 선택";
         meta.textContent = "검색해서 선택";
         openButton.classList.remove("has-selection");
@@ -69,7 +67,6 @@
         if (!result?.length) return;
         const selected = result[0];
         hiddenInput.value = String(selected.discord_id);
-        if (displayNameInput) displayNameInput.value = selected.display_name || "";
         name.textContent = selected.display_name;
         meta.textContent = selected.username || String(selected.discord_id);
         openButton.classList.add("has-selection");

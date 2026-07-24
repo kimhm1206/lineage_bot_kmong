@@ -209,7 +209,9 @@ def _member_rows(
         )
         rows.append(
             {
-                "discord_id": discord_id,
+                # Discord snowflakes exceed JavaScript's safe integer range.
+                # Keep them as strings throughout JSON and form handling.
+                "discord_id": str(discord_id),
                 "display_name": display_name,
                 "username": user.get("username", ""),
                 "alliance_ids": alliance_ids,
@@ -229,13 +231,6 @@ def _member_display_name(member: dict[str, Any]) -> str:
         or user.get("id")
         or ""
     ).strip()
-
-
-def _display_name_value(value: Any) -> str | None:
-    display_name = str(value or "").strip()
-    if not display_name:
-        return None
-    return display_name[:100]
 
 
 @router.get("/server")
@@ -540,17 +535,19 @@ async def manager_settings(
         resources["members"],
         role_alliance_map=_role_alliance_map(mappings),
     )
-    if guild_data["guild_id"] is not None:
-        await settings_store.refresh_assignment_display_names(
+    if guild_data["guild_id"] is not None and await settings_store.repair_rounded_assignment_discord_ids(
+        session,
+        guild_id=int(guild_data["guild_id"]),
+        exact_discord_ids=set(member_names),
+    ):
+        assignments = await settings_store.list_assignments(
             session,
-            guild_id=int(guild_data["guild_id"]),
-            names_by_discord_id=member_names,
+            int(guild_data["guild_id"]),
         )
     for row in assignments:
-        row["display_name"] = (
-            member_names.get(row["discord_user_id"])
-            or row.get("discord_display_name")
-            or str(row["discord_user_id"])
+        row["display_name"] = member_names.get(
+            row["discord_user_id"],
+            str(row["discord_user_id"]),
         )
     alliance_managers = [
         row for row in assignments if row["scope_code"] == settings_store.SCOPE_ALLIANCE_MANAGER
@@ -584,9 +581,12 @@ async def manager_settings(
             }
         )
     assigned_member_ids = {
-        "alliance": [row["discord_user_id"] for row in alliance_managers],
+        "alliance": [str(row["discord_user_id"]) for row in alliance_managers],
         "clans": {
-            str(group["alliance_id"]): [row["discord_user_id"] for row in group["managers"]]
+            str(group["alliance_id"]): [
+                str(row["discord_user_id"])
+                for row in group["managers"]
+            ]
             for group in clan_manager_groups
             if group["alliance_id"] is not None
         },
@@ -624,7 +624,6 @@ async def save_manager(request: Request, session: AsyncSession = Depends(get_ses
         guild_id = _int_value(form.get("guild_id"), minimum=1)
         await _require_owner_configuration(request, session, guild_id)
         discord_user_id = _int_value(form.get("discord_user_id"), minimum=1)
-        discord_display_name = _display_name_value(form.get("discord_display_name"))
         scope_code = _int_value(form.get("scope_code"), minimum=1, maximum=2)
         alliance_id = (
             _optional_snowflake(form.get("alliance_id"))
@@ -641,7 +640,6 @@ async def save_manager(request: Request, session: AsyncSession = Depends(get_ses
             session,
             guild_id=guild_id,
             discord_user_id=discord_user_id,
-            discord_display_name=discord_display_name,
             scope_code=scope_code,
             alliance_id=alliance_id,
         )
@@ -680,9 +678,12 @@ async def clan_settings(
     request: Request,
     guild_id: int | None = None,
     alliance_id: int | None = None,
+    refresh: bool = False,
     session: AsyncSession = Depends(get_session),
 ):
     guild_data = await _guild_context(request, session)
+    if refresh and guild_data["guild_id"] is not None:
+        discord_api.clear_members_cache(int(guild_data["guild_id"]))
     alliances = await settings_store.list_guild_alliances(session, guild_data["guild_id"]) if guild_data["guild_id"] else []
     can_select_alliance = await can_select_alliances(request, session, guild_data["guild_id"])
     if not can_select_alliance:
@@ -711,16 +712,28 @@ async def clan_settings(
         resources["members"],
         role_alliance_map=_role_alliance_map(mappings),
     )
+    if guild_data["guild_id"] is not None and await settings_store.repair_rounded_assignment_discord_ids(
+        session,
+        guild_id=int(guild_data["guild_id"]),
+        exact_discord_ids=set(member_names),
+    ):
+        assignments = await settings_store.list_assignments(
+            session,
+            int(guild_data["guild_id"]),
+        )
     accountants = [
         {
             **row,
-            "display_name": member_names.get(row["discord_user_id"], str(row["discord_user_id"])),
+            "display_name": member_names.get(
+                row["discord_user_id"],
+                str(row["discord_user_id"]),
+            ),
         }
         for row in assignments
         if row["scope_code"] == settings_store.SCOPE_CLAN_ACCOUNTANT and row["alliance_id"] == alliance_id
     ]
     clan_manager_ids = [
-        row["discord_user_id"]
+        str(row["discord_user_id"])
         for row in assignments
         if row["scope_code"] == settings_store.SCOPE_CLAN_MANAGER
         and row["alliance_id"] == alliance_id
@@ -746,13 +759,15 @@ async def clan_settings(
                 None,
             ),
             "accountants": accountants,
-            "accountant_ids": [row["discord_user_id"] for row in accountants],
+            "accountant_ids": [str(row["discord_user_id"]) for row in accountants],
             "clan_manager_ids": clan_manager_ids,
             "policy": policy,
             "policy_labels": POLICY_LABELS,
             "discord_error": api_error or guild_data["discord_error"],
             "notice": request.query_params.get("notice", ""),
             "error": request.query_params.get("error", ""),
+            "show_api_refresh": True,
+            "api_refresh_label": "서버 유저 목록 갱신",
         }
     )
     return templates.TemplateResponse(request, "pages/settings/clan.html", context)
@@ -765,7 +780,6 @@ async def save_accountant(request: Request, session: AsyncSession = Depends(get_
         guild_id = _int_value(form.get("guild_id"), minimum=1)
         alliance_id = _int_value(form.get("alliance_id"), minimum=1)
         discord_user_id = _int_value(form.get("discord_user_id"), minimum=1)
-        discord_display_name = _display_name_value(form.get("discord_display_name"))
         await _require_clan_configuration(
             request,
             session,
@@ -778,7 +792,6 @@ async def save_accountant(request: Request, session: AsyncSession = Depends(get_
             session,
             guild_id=guild_id,
             discord_user_id=discord_user_id,
-            discord_display_name=discord_display_name,
             scope_code=settings_store.SCOPE_CLAN_ACCOUNTANT,
             alliance_id=alliance_id,
         )

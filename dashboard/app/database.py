@@ -80,7 +80,6 @@ async def ensure_settings_schema() -> None:
             assignment_id BIGSERIAL PRIMARY KEY,
             guild_id BIGINT NOT NULL REFERENCES guilds(guild_id) ON DELETE CASCADE,
             discord_user_id BIGINT NOT NULL,
-            discord_display_name TEXT,
             scope_code SMALLINT NOT NULL CHECK (scope_code IN (1, 2, 3)),
             alliance_id BIGINT REFERENCES alliances(alliance_id) ON DELETE CASCADE,
             assigned_by_discord_user_id BIGINT,
@@ -92,10 +91,6 @@ async def ensure_settings_schema() -> None:
                     OR (scope_code IN (2, 3) AND alliance_id IS NOT NULL)
                 )
         )
-        """,
-        """
-        ALTER TABLE guild_user_assignments
-        ADD COLUMN IF NOT EXISTS discord_display_name TEXT
         """,
         """
         CREATE UNIQUE INDEX IF NOT EXISTS uq_guild_alliance_manager_user
