@@ -66,6 +66,65 @@ ROLE_LABELS = {
     6: "User",
 }
 
+AUDIT_FILTERS = {
+    "all": {
+        "label": "전체",
+        "entity_codes": (),
+    },
+    "attendance": {
+        "label": "출석",
+        "entity_codes": ("attendance",),
+    },
+    "item": {
+        "label": "아이템",
+        "entity_codes": ("item",),
+    },
+    "drop": {
+        "label": "드랍 · 판매",
+        "entity_codes": ("loot", "sale"),
+    },
+    "bid": {
+        "label": "입찰",
+        "entity_codes": ("bid_item",),
+    },
+    "payout": {
+        "label": "분배",
+        "entity_codes": ("payout", "fee_rule"),
+    },
+    "treasury": {
+        "label": "가계부",
+        "entity_codes": ("treasury",),
+    },
+    "settings": {
+        "label": "설정",
+        "entity_codes": ("configuration", "assignment"),
+    },
+    "report": {
+        "label": "알림",
+        "entity_codes": ("report",),
+    },
+}
+
+
+def normalize_audit_type(value: str) -> str:
+    return value if value in AUDIT_FILTERS else "all"
+
+
+def audit_target_label(row: dict[str, Any]) -> str:
+    if (
+        row.get("entity_code") == "attendance"
+        and row.get("target_user_id") is not None
+    ):
+        attendance_id = row.get("attendance_id") or row.get("target_id")
+        target_name = row.get("target_user_name") or "알 수 없는 유저"
+        return (
+            f"출석 #{attendance_id} · {target_name} · "
+            f"유저 #{row['target_user_id']}"
+        )
+    if row.get("target_id") is not None:
+        return f"{row['entity_code']} #{row['target_id']}"
+    return str(row.get("entity_code") or "-")
+
 
 def _int(value: Any, default: int = 0) -> int:
     try:
@@ -1868,26 +1927,79 @@ async def reports_page(
 
 async def audit_page(
     session: AsyncSession,
-    *, guild_id: int, period_days: int, query: str, page: int
+    *,
+    guild_id: int,
+    period_days: int,
+    query: str,
+    page: int,
+    audit_type: str = "all",
 ) -> dict[str, Any]:
+    selected_audit_type = normalize_audit_type(audit_type)
+    selected_entities = AUDIT_FILTERS[selected_audit_type]["entity_codes"]
     period = _period_clause("e.occurred_at", period_days, unix=True)
-    search = " AND (COALESCE(actor.fallback_name, u.discord_nickname, CAST(actor.discord_id AS TEXT), '') ILIKE :query OR at.action_code ILIKE :query)" if query else ""
-    params = {"guild_id": guild_id, "period_days": period_days, "query": f"%{query}%"}
+    search = (
+        """
+        AND (
+            COALESCE(
+                actor.fallback_name,
+                actor_user.discord_nickname,
+                CAST(actor.discord_id AS TEXT),
+                ''
+            ) ILIKE :query
+            OR COALESCE(target_user.game_nickname, '') ILIKE :query
+            OR COALESCE(target_user.discord_nickname, '') ILIKE :query
+            OR CAST(context.user_id AS TEXT) ILIKE :query
+            OR CAST(e.target_id AS TEXT) ILIKE :query
+            OR at.action_code ILIKE :query
+        )
+        """
+        if query
+        else ""
+    )
+    entity_filter = (
+        "AND et.entity_code = ANY(CAST(:entity_codes AS TEXT[]))"
+        if selected_entities
+        else ""
+    )
+    params = {
+        "guild_id": guild_id,
+        "period_days": period_days,
+        "query": f"%{query}%",
+        "entity_codes": list(selected_entities),
+    }
     from_sql = f"""
         FROM audit_events e
         JOIN audit_action_types at ON at.action_type_id = e.action_type_id
         JOIN audit_entity_types et ON et.entity_type_id = at.entity_type_id
         LEFT JOIN audit_actors actor ON actor.actor_id = e.actor_id
-        LEFT JOIN users u ON u.user_id = actor.user_id
-        WHERE e.guild_id = :guild_id {period} {search}
+        LEFT JOIN users actor_user ON actor_user.user_id = actor.user_id
+        LEFT JOIN audit_event_contexts context
+          ON context.audit_event_id = e.audit_event_id
+        LEFT JOIN users target_user ON target_user.user_id = context.user_id
+        WHERE e.guild_id = :guild_id
+              {period} {entity_filter} {search}
     """
     rows, pagination = await _fetch_page(
         session,
         count_sql=f"SELECT COUNT(*) {from_sql}",
         rows_sql=f"""
-            SELECT e.audit_event_id, at.action_code, et.entity_code, e.target_id, e.actor_role,
-                   COALESCE(actor.fallback_name, u.discord_nickname, CAST(actor.discord_id AS TEXT), '시스템') AS actor_name,
-                   TO_CHAR(TO_TIMESTAMP(e.occurred_at), 'YYYY-MM-DD HH24:MI:SS') AS occurred_at_label
+            SELECT e.audit_event_id, at.action_code, et.entity_code,
+                   e.target_id, e.actor_role, context.attendance_id,
+                   context.user_id AS target_user_id,
+                   COALESCE(
+                       target_user.game_nickname,
+                       target_user.discord_nickname
+                   ) AS target_user_name,
+                   COALESCE(
+                       actor.fallback_name,
+                       actor_user.discord_nickname,
+                       CAST(actor.discord_id AS TEXT),
+                       '시스템'
+                   ) AS actor_name,
+                   TO_CHAR(
+                       TO_TIMESTAMP(e.occurred_at),
+                       'YYYY-MM-DD HH24:MI:SS'
+                   ) AS occurred_at_label
             {from_sql}
             ORDER BY e.occurred_at DESC, e.audit_event_id DESC
             LIMIT :limit OFFSET :offset
@@ -1897,15 +2009,19 @@ async def audit_page(
     )
     for row in rows:
         row["action_label"] = ACTION_LABELS.get(row["action_code"], row["action_code"])
-        row["target_label"] = f"{row['entity_code']} #{row['target_id']}" if row["target_id"] is not None else row["entity_code"]
+        row["target_label"] = audit_target_label(row)
         row["role_label"] = ROLE_LABELS.get(_int(row["actor_role"]), "User")
-    action_count = len({row["action_code"] for row in rows})
     return {
-        "summary_cards": [
-            {"label": "작업 기록", "value": f"{pagination['total']:,}건", "meta": "선택 기간"},
-            {"label": "작업 종류", "value": f"{action_count:,}개", "meta": "현재 페이지"},
-            {"label": "표시 범위", "value": "운영 작업", "meta": "상태 일괄 완료 제외"},
+        "summary_cards": [],
+        "audit_filters": [
+            {
+                "value": value,
+                "label": config["label"],
+                "selected": value == selected_audit_type,
+            }
+            for value, config in AUDIT_FILTERS.items()
         ],
+        "audit_type": selected_audit_type,
         "columns": [
             {"key": "occurred_at_label", "label": "시각"},
             {"key": "actor_name", "label": "작업자", "emphasis": True},

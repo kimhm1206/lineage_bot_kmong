@@ -983,7 +983,8 @@ async def clan_attendance(
 @router.get("/operations/audit")
 async def operation_audit(
     request: Request, guild_id: int | None = None, period: int | None = None,
-    q: str = "", page: int = 1, session: AsyncSession = Depends(get_session),
+    q: str = "", audit_type: str = "all", page: int = 1,
+    session: AsyncSession = Depends(get_session),
 ):
     if not (
         can_manage_alliance_operations(request)
@@ -1002,4 +1003,5 @@ async def operation_audit(
         page_badge="OWNER",
         builder=workspace_store.audit_page,
         guild_id=guild_id, alliance_id=None, period=period, query=q, page=page,
+        builder_kwargs={"audit_type": audit_type},
     )

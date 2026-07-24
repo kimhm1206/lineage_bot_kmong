@@ -7,6 +7,38 @@
 {% if notice %}<div class="notice-banner notice-success">{{ icon("check") }}<span>{{ notice }}</span></div>{% endif %}
 {% if error %}<div class="notice-banner notice-error">{{ icon("alert") }}<span>{{ error }}</span></div>{% endif %}
 
+{% if audit_filters %}
+<section class="audit-filter-shell">
+  <nav class="audit-filter-tabs" aria-label="작업 종류">
+    {% for tab in audit_filters %}
+    <a class="audit-filter-tab{% if tab.selected %} is-active{% endif %}"
+       href="{{ request.url.include_query_params(audit_type=tab.value, page=1) }}">
+      {{ tab.label }}
+    </a>
+    {% endfor %}
+  </nav>
+  <form class="audit-search-row" method="get" action="{{ request.url.path }}">
+    <input type="hidden" name="audit_type" value="{{ audit_type }}">
+    <label class="workspace-filter-field workspace-filter-period">
+      <span>기간</span>
+      <select name="period" onchange="this.form.submit()">
+        {% for option in period_options %}
+        <option value="{{ option.value }}" {% if option.selected %}selected{% endif %}>{{ option.label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="workspace-filter-field workspace-filter-search">
+      <span>검색</span>
+      <span class="workspace-search-control">
+        {{ icon("search") }}
+        <input type="search" name="q" value="{{ query }}"
+               placeholder="작업자, 유저, 대상 ID 검색">
+      </span>
+    </label>
+    <button class="primary-button workspace-search-button" type="submit">조회</button>
+  </form>
+</section>
+{% else %}
 <form class="workspace-filter-bar" method="get" action="{{ request.url.path }}">
   {% if treasury_filters %}
   {% if treasury_filters.ledger_date %}<input type="hidden" name="ledger_date" value="{{ treasury_filters.ledger_date }}">{% endif %}
@@ -52,7 +84,9 @@
   </a>
   {% endif %}
 </form>
+{% endif %}
 
+{% if summary_cards %}
 <section class="workspace-summary-grid">
   {% for card in summary_cards %}
   <article class="workspace-summary-card">
@@ -62,6 +96,7 @@
   </article>
   {% endfor %}
 </section>
+{% endif %}
 
 {% if treasury_form and treasury_form.can_edit %}
   <section class="treasury-distribution-toolbar">

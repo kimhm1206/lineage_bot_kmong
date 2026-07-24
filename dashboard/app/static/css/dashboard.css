@@ -2876,6 +2876,68 @@ body.modal-open {
   display: block;
 }
 
+.audit-filter-shell {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.audit-filter-tabs {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  padding: 8px;
+  border-bottom: 1px solid var(--line);
+  scrollbar-width: thin;
+}
+
+.audit-filter-tab {
+  display: inline-flex;
+  min-height: 36px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  color: var(--muted-strong);
+  font-size: 12px;
+  font-weight: 850;
+  text-decoration: none;
+}
+
+.audit-filter-tab:hover {
+  border-color: var(--line);
+  background: var(--panel-subtle);
+  color: var(--text-strong);
+}
+
+.audit-filter-tab.is-active {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.audit-search-row {
+  display: grid;
+  grid-template-columns: 180px minmax(280px, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+  padding: 12px;
+}
+
+@media (max-width: 720px) {
+  .audit-search-row {
+    grid-template-columns: 1fr;
+  }
+
+  .audit-search-row .workspace-search-button {
+    width: 100%;
+  }
+}
+
 .workspace-summary-card span {
   color: var(--muted-strong);
   font-size: 12px;
