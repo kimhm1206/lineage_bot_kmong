@@ -1,12 +1,11 @@
 {% extends "layouts/app_shell.html" %}
 {% from "components/icons.html" import icon %}
-{% from "components/operations.html" import toolbar, summary, empty, modal with context %}
+{% from "components/operations.html" import toolbar, empty, modal with context %}
 
 {% block title %}{{ page_title }} · {{ app_name }}{% endblock %}
 {% block content %}
 <div data-live-page>
   {{ toolbar(guilds, guild_id, query, search_label='아이템 검색', search_placeholder='아이템 이름 검색', client_search=True) }}
-  {{ summary(summary_cards) }}
 
   <section class="ops-section-heading">
     <div>

@@ -9044,7 +9044,7 @@ body.has-open-modal {
   display: grid;
   min-height: 0;
   flex: 1 1 auto;
-  grid-template-columns: 252px minmax(0, 1fr);
+  grid-template-columns: 268px minmax(0, 1fr);
   overflow: hidden;
 }
 
@@ -9082,17 +9082,17 @@ body.has-open-modal {
 
 .help-guide-tab-group > div {
   display: grid;
-  gap: 3px;
+  gap: 4px;
 }
 
 .help-guide-tab {
   display: grid;
   width: 100%;
-  min-height: 38px;
-  grid-template-columns: 28px minmax(0, 1fr);
+  min-height: 46px;
+  grid-template-columns: 30px minmax(0, 1fr);
   align-items: center;
-  gap: 7px;
-  padding: 5px 8px;
+  gap: 9px;
+  padding: 6px 9px;
   border: 1px solid transparent;
   border-radius: 6px;
   background: transparent;
@@ -9101,10 +9101,10 @@ body.has-open-modal {
   text-align: left;
 }
 
-.help-guide-tab > span {
+.help-guide-tab > span:first-child {
   display: grid;
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   place-items: center;
   border-radius: 5px;
   background: color-mix(in srgb, var(--panel) 70%, transparent);
@@ -9117,8 +9117,13 @@ body.has-open-modal {
 
 .help-guide-tab-copy {
   display: grid;
+  width: auto;
+  height: auto;
   min-width: 0;
-  gap: 1px;
+  align-content: center;
+  justify-items: start;
+  gap: 2px;
+  background: transparent;
 }
 
 .help-guide-tab strong,
@@ -9130,12 +9135,14 @@ body.has-open-modal {
 
 .help-guide-tab strong {
   font-size: 12px;
+  line-height: 1.25;
 }
 
 .help-guide-tab small {
   color: var(--muted);
   font-size: 9px;
   font-weight: 800;
+  line-height: 1.2;
 }
 
 .help-guide-tab:hover {
@@ -9149,7 +9156,7 @@ body.has-open-modal {
   color: var(--accent-strong);
 }
 
-.help-guide-tab.is-active > span {
+.help-guide-tab.is-active > span:first-child {
   background: var(--panel);
 }
 
@@ -9658,13 +9665,14 @@ body.has-open-modal {
   .help-guide-tab {
     width: auto;
     min-width: max-content;
-    grid-template-columns: 24px auto;
+    min-height: 38px;
+    grid-template-columns: 26px auto;
     padding: 4px 8px;
   }
 
-  .help-guide-tab > span {
-    width: 24px;
-    height: 24px;
+  .help-guide-tab > span:first-child {
+    width: 26px;
+    height: 26px;
   }
 
   .help-guide-panel {

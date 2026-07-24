@@ -21,6 +21,7 @@ def test_help_guides_follow_visible_navigation() -> None:
         can_manage_alliance=False,
         can_manage_clan=False,
         can_configure_clan=False,
+        can_manage_notifications=False,
     )
     visible_ids = {
         str(item["id"])
@@ -44,6 +45,7 @@ def test_help_guides_expose_minimum_access_labels() -> None:
         can_manage_alliance=True,
         can_manage_clan=True,
         can_configure_clan=True,
+        can_manage_notifications=True,
     )
     guides = {
         str(guide["id"]): guide
@@ -54,4 +56,4 @@ def test_help_guides_expose_minimum_access_labels() -> None:
     assert guides["home.personal"]["access_label"] == "유저"
     assert guides["operations.delegation"]["access_label"] == "오너"
     assert guides["developer.system"]["access_label"] == "디벨로퍼"
-    assert guides["developer.system"]["access_suffix"] == "전용"
+    assert "access_suffix" not in guides["developer.system"]

@@ -11,7 +11,7 @@ from dashboard.app.config import BASE_DIR
 from dashboard.app.database import get_session
 from dashboard.app.security import (
     allowed_guild_ids,
-    can_manage_alliance_operations,
+    can_manage_notifications,
     current_discord_user_id,
     current_guild_id,
     require_selected_guild,
@@ -26,7 +26,7 @@ templates = Jinja2Templates(directory=str(BASE_DIR / "app" / "templates"))
 
 
 def _require_report_access(request: Request) -> None:
-    if not can_manage_alliance_operations(request):
+    if not can_manage_notifications(request):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="알림을 관리할 권한이 없습니다.",
@@ -78,7 +78,7 @@ async def notifications_page(
         page_title="알림 관리",
         page_description="출석 통계 메시지를 구성하고 정해진 시각에 Discord로 발송합니다.",
         page_kicker="Scheduled reports",
-        page_badge="ALLIANCE MANAGER",
+        page_badge="ALLIANCE / CLAN MANAGER",
     )
     context.update(workspace)
     context.update(

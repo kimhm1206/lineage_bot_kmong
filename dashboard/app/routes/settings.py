@@ -119,8 +119,12 @@ async def _guild_context(
     }
 
 
-def _require_alliance_configuration(request: Request, guild_id: int) -> None:
-    require_selected_guild(request, guild_id)
+def _require_alliance_configuration(
+    request: Request,
+    guild_id: int | None,
+) -> None:
+    if guild_id is not None:
+        require_selected_guild(request, guild_id)
     if not can_manage_alliance_operations(request):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -433,12 +437,10 @@ async def alliance_settings(
     session: AsyncSession = Depends(get_session),
 ):
     guild_data = await _guild_context(request, session)
-    if guild_data["guild_id"] is not None:
-        await _require_owner_configuration(
-            request,
-            session,
-            int(guild_data["guild_id"]),
-        )
+    _require_alliance_configuration(
+        request,
+        int(guild_data["guild_id"]) if guild_data["guild_id"] is not None else None,
+    )
     if refresh and guild_data["guild_id"]:
         discord_api.clear_cache(f"roles:{guild_data['guild_id']}")
     alliances = await settings_store.list_guild_alliances(session, guild_data["guild_id"]) if guild_data["guild_id"] else []
@@ -451,7 +453,7 @@ async def alliance_settings(
         page_title="혈맹과 역할 매핑",
         page_description="Discord 역할을 혈맹에 연결해 출석과 분배에서 소속을 판별합니다.",
         page_kicker="Clan role mapping",
-        page_badge="OWNER",
+        page_badge="ALLIANCE MANAGER",
     )
     context.update(guild_data)
     context.update(
@@ -474,7 +476,7 @@ async def save_alliance_mapping(request: Request, session: AsyncSession = Depend
     form = await request.form()
     try:
         guild_id = _int_value(form.get("guild_id"), minimum=1)
-        await _require_owner_configuration(request, session, guild_id)
+        _require_alliance_configuration(request, guild_id)
         role_id = _int_value(form.get("role_id"), minimum=1)
         alliance_name = str(form.get("alliance_name", "")).strip()
         if not alliance_name or len(alliance_name) > 100:
@@ -503,7 +505,7 @@ async def remove_alliance_mapping(mapping_id: int, request: Request, session: As
     guild_id = _optional_snowflake(form.get("guild_id"))
     if guild_id is None:
         return _redirect("/settings/alliances", error="서버를 선택해 주세요.")
-    await _require_owner_configuration(request, session, guild_id)
+    _require_alliance_configuration(request, guild_id)
     await settings_store.delete_role_mapping(session, guild_id=guild_id, mapping_id=mapping_id)
     return _redirect("/settings/alliances", guild_id=guild_id, notice="역할 연결을 해제했습니다.")
 

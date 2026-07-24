@@ -118,7 +118,7 @@ GUIDES: dict[str, HelpGuide] = {
             "기록 확인에서 해당 아이템의 구매 일시를 확인합니다.",
         ),
         "입찰표 아이템은 아이템 관리 목록을 기준으로 자동 구성됩니다.",
-        "아이템 입찰표",
+        "아이템 이력",
         (("아이템", "42개"), ("혈맹", "6개"), ("최근 구매", "오늘")),
         (
             ("마법서", "혈맹 1 · 2회 / 혈맹 2 · 1회", "기록"),
@@ -357,9 +357,9 @@ GUIDES: dict[str, HelpGuide] = {
 GUIDE_ACCESS_LABELS: dict[str, str] = {
     "clan.staff": "혈맹관리자",
     "attendance.settings": "연합관리자",
-    "operations.alliances": "오너",
+    "operations.alliances": "연합관리자",
     "operations.delegation": "오너",
-    "operations.notifications": "연합관리자",
+    "operations.notifications": "연합관리자 · 혈맹관리자",
     "operations.audit": "연합관리자 · 혈맹관리자",
     "developer.server": "디벨로퍼",
     "developer.bot": "디벨로퍼",
@@ -388,11 +388,6 @@ def get_help_guide_groups(
                     "preview_metrics": guide.preview_metrics,
                     "preview_rows": guide.preview_rows,
                     "access_label": GUIDE_ACCESS_LABELS.get(item_id, "유저"),
-                    "access_suffix": (
-                        "전용"
-                        if item_id.startswith("developer.")
-                        else "부터"
-                    ),
                 }
             )
         if guides:

@@ -47,13 +47,7 @@
               <span>{{ icon(guide.icon) }}</span>
               <span class="help-guide-tab-copy">
                 <strong>{{ guide.label }}</strong>
-                <small>
-                  {% if guide.access_suffix == '전용' %}
-                  {{ guide.access_label }} 전용
-                  {% else %}
-                  {{ guide.access_label }}부터
-                  {% endif %}
-                </small>
+                <small>{{ guide.access_label }}</small>
               </span>
             </button>
             {% endfor %}
@@ -78,13 +72,7 @@
               <div class="help-guide-title-copy">
                 <div class="help-guide-title-meta">
                   <span>{{ group.label }}</span>
-                  <strong>
-                    {% if guide.access_suffix == '전용' %}
-                    {{ guide.access_label }} 전용
-                    {% else %}
-                    최소 권한 · {{ guide.access_label }}
-                    {% endif %}
-                  </strong>
+                  <strong>최소 권한 · {{ guide.access_label }}</strong>
                 </div>
                 <h3>{{ guide.label }}</h3>
                 <p>{{ guide.summary }}</p>

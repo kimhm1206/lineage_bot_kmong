@@ -42,7 +42,7 @@ NAV_GROUPS: tuple[NavGroup, ...] = (
             NavItem("alliance.drops", "드랍 등록", "/alliance/drops", "plus-square", "출석 회차와 아이템 연결"),
             NavItem("alliance.settlement", "각혈 분배", "/alliance/settlements", "network", "혈맹별 1차 정산"),
             NavItem("alliance.treasury", "연합비 가계부", "/alliance/treasury", "receipt", "연합 전체 입출금과 잔액"),
-            NavItem("alliance.bidding", "아이템 입찰", "/alliance/bidding", "gavel", "혈맹별 구매 횟수와 이력"),
+            NavItem("alliance.bidding", "아이템 이력", "/alliance/bidding", "gavel", "혈맹별 구매 횟수와 이력"),
             NavItem("alliance.items", "아이템 관리", "/alliance/items", "tag", "아이템과 원화 시세"),
         ),
         description="드랍, 판매와 혈맹별 1차 분배",
@@ -107,6 +107,7 @@ def get_navigation(
     can_manage_alliance: bool = False,
     can_manage_clan: bool = False,
     can_configure_clan: bool = False,
+    can_manage_notifications: bool = False,
 ) -> list[dict[str, object]]:
     groups: list[dict[str, object]] = []
     for group in NAV_GROUPS:
@@ -130,12 +131,15 @@ def get_navigation(
             if group.id == "operations":
                 allowed = (
                     item.id == "operations.notifications"
-                    and can_manage_alliance
+                    and can_manage_notifications
                 ) or (
                     item.id == "operations.audit"
                     and (can_manage_alliance or can_manage_clan)
                 ) or (
-                    item.id in {"operations.alliances", "operations.delegation"}
+                    item.id == "operations.alliances"
+                    and can_manage_alliance
+                ) or (
+                    item.id == "operations.delegation"
                     and access_role in {"developer", "owner"}
                 )
                 if not allowed:

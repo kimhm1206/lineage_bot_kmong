@@ -1919,10 +1919,6 @@ async def bid_management_page(
     return {
         "item_rows": item_rows,
         "alliances": alliances,
-        "summary_cards": [
-            {"label": "아이템", "value": f"{len(item_rows):,}", "meta": "아이템 관리 기준"},
-            {"label": "혈맹", "value": f"{len(alliances):,}", "meta": "역할 매핑 기준"},
-        ],
     }
 
 

@@ -316,6 +316,13 @@ def can_manage_clan_configuration(request: Request) -> bool:
     )
 
 
+def can_manage_notifications(request: Request) -> bool:
+    return (
+        can_manage_alliance_operations(request)
+        or can_manage_clan_configuration(request)
+    )
+
+
 async def require_developer(request: Request) -> None:
     if not is_developer(request):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="개발자 전용 기능입니다.")

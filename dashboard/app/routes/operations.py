@@ -413,7 +413,7 @@ async def bidding_page(
         guild_id=guild_id,
         alliance_id=None,
         active_nav="alliance.bidding",
-        page_title="아이템 입찰",
+        page_title="아이템 이력",
         page_description="혈맹별 아이템 구매 횟수와 날짜별 구매 기록을 관리합니다.",
         page_badge="ALLIANCE MANAGER",
     )
@@ -426,7 +426,7 @@ async def bidding_page(
             visible_alliance_id=None,
         )
         if workspace["guild_id"] is not None
-        else {"item_rows": [], "alliances": [], "summary_cards": []}
+        else {"item_rows": [], "alliances": []}
     )
     context.update(page_data)
     context.update(

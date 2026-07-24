@@ -7,6 +7,7 @@ from dashboard.app.security import (
     can_manage_alliance_operations,
     can_manage_clan_configuration,
     can_manage_clan_treasury,
+    can_manage_notifications,
     current_access_role,
     is_global_developer,
 )
@@ -31,6 +32,7 @@ def build_template_context(
         can_manage_alliance=can_manage_alliance_operations(request),
         can_manage_clan=can_manage_clan_treasury(request),
         can_configure_clan=can_manage_clan_configuration(request),
+        can_manage_notifications=can_manage_notifications(request),
     )
     active_nav_group = next(
         (str(group["id"]) for group in navigation if group["is_active"]),
