@@ -5,7 +5,7 @@ import time
 from collections.abc import Sequence
 from typing import Any
 
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dashboard.app.identifiers import snowflake_text
@@ -361,40 +361,53 @@ async def attendance_member_options(
     session: AsyncSession,
     *,
     guild_id: int,
+    include_discord_ids: Sequence[int] = (),
 ) -> list[dict[str, Any]]:
+    current_member_filter = ""
+    params: dict[str, Any] = {"guild_id": guild_id}
+    statement = text("""
+        SELECT DISTINCT
+               u.user_id,
+               u.discord_id,
+               COALESCE(u.game_nickname, u.discord_nickname) AS display_name,
+               u.discord_nickname,
+               u.alliance_id,
+               COALESCE(a.display_name, a.alliance_name, '미분류') AS alliance_name,
+               COALESCE(a.sort_order, 2147483647) AS alliance_sort
+        FROM users u
+        LEFT JOIN alliances a ON a.alliance_id = u.alliance_id
+        WHERE u.is_active IS TRUE
+          AND (
+              EXISTS (
+                  SELECT 1
+                  FROM guild_alliance_role_mappings mapping
+                  WHERE mapping.guild_id = :guild_id
+                    AND mapping.alliance_id = u.alliance_id
+              )
+              OR EXISTS (
+                  SELECT 1
+                  FROM attendance_entries entry
+                  JOIN attendance_sessions attendance
+                    ON attendance.attendance_id = entry.attendance_id
+                  WHERE entry.user_id = u.user_id
+                    AND attendance.guild_id = :guild_id
+              )
+              {current_member_filter}
+          )
+        ORDER BY alliance_sort, alliance_name, display_name, u.user_id
+    """)
+    if include_discord_ids:
+        current_member_filter = "OR u.discord_id IN :current_discord_ids"
+        statement = text(
+            statement.text.format(current_member_filter=current_member_filter)
+        ).bindparams(bindparam("current_discord_ids", expanding=True))
+        params["current_discord_ids"] = list(include_discord_ids)
+    else:
+        statement = text(statement.text.format(current_member_filter=""))
     rows = (
         await session.execute(
-            text("""
-                SELECT DISTINCT
-                       u.user_id,
-                       u.discord_id,
-                       COALESCE(u.game_nickname, u.discord_nickname) AS display_name,
-                       u.discord_nickname,
-                       u.alliance_id,
-                       COALESCE(a.display_name, a.alliance_name, '미분류') AS alliance_name,
-                       COALESCE(a.sort_order, 2147483647) AS alliance_sort
-                FROM users u
-                LEFT JOIN alliances a ON a.alliance_id = u.alliance_id
-                WHERE u.is_active IS TRUE
-                  AND (
-                      EXISTS (
-                          SELECT 1
-                          FROM guild_alliance_role_mappings mapping
-                          WHERE mapping.guild_id = :guild_id
-                            AND mapping.alliance_id = u.alliance_id
-                      )
-                      OR EXISTS (
-                          SELECT 1
-                          FROM attendance_entries entry
-                          JOIN attendance_sessions attendance
-                            ON attendance.attendance_id = entry.attendance_id
-                          WHERE entry.user_id = u.user_id
-                            AND attendance.guild_id = :guild_id
-                      )
-                  )
-                ORDER BY alliance_sort, alliance_name, display_name, u.user_id
-            """),
-            {"guild_id": guild_id},
+            statement,
+            params,
         )
     ).mappings().all()
     return [
@@ -407,6 +420,70 @@ async def attendance_member_options(
         }
         for row in rows
     ]
+
+
+async def sync_discord_members(
+    session: AsyncSession,
+    *,
+    guild_id: int,
+    members: Sequence[dict[str, Any]],
+) -> list[int]:
+    role_rows = (
+        await session.execute(
+            text("""
+                SELECT role_id, alliance_id
+                FROM guild_alliance_role_mappings
+                WHERE guild_id = :guild_id
+            """),
+            {"guild_id": guild_id},
+        )
+    ).mappings().all()
+    role_alliances = {
+        int(row["role_id"]): int(row["alliance_id"])
+        for row in role_rows
+    }
+    discord_ids: list[int] = []
+    for member in members:
+        user = member.get("user") or {}
+        if user.get("bot") or not user.get("id"):
+            continue
+        discord_id = int(user["id"])
+        display_name = str(
+            member.get("nick")
+            or user.get("global_name")
+            or user.get("username")
+            or discord_id
+        ).strip()
+        alliance_ids = sorted(
+            {
+                role_alliances[int(role_id)]
+                for role_id in member.get("roles", [])
+                if int(role_id) in role_alliances
+            }
+        )
+        alliance_id = alliance_ids[0] if alliance_ids else None
+        await session.execute(
+            text("""
+                INSERT INTO users (
+                    alliance_id, discord_id, discord_nickname, is_active, updated_at
+                )
+                VALUES (
+                    :alliance_id, :discord_id, :discord_nickname, TRUE, CURRENT_TIMESTAMP
+                )
+                ON CONFLICT (discord_id) DO UPDATE
+                SET alliance_id = COALESCE(EXCLUDED.alliance_id, users.alliance_id),
+                    discord_nickname = EXCLUDED.discord_nickname,
+                    is_active = TRUE,
+                    updated_at = CURRENT_TIMESTAMP
+            """),
+            {
+                "alliance_id": alliance_id,
+                "discord_id": discord_id,
+                "discord_nickname": display_name or str(discord_id),
+            },
+        )
+        discord_ids.append(discord_id)
+    return discord_ids
 
 
 async def attendance_session_detail(

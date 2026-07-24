@@ -215,7 +215,7 @@
     showToast(payload.message);
   };
 
-  const addMembers = async (button) => {
+  const addMembers = async (button, forceRefresh = false) => {
     if (!state.attendance || !window.dashboardUserPicker) {
       showToast("유저 선택기를 준비하지 못했습니다.", "error");
       return;
@@ -223,11 +223,13 @@
     const root = editor();
     const guildId = root?.dataset.guildId;
     const original = button.innerHTML;
-    if (state.memberOptionsGuild !== guildId) {
+    if (forceRefresh || state.memberOptionsGuild !== guildId) {
       button.disabled = true;
-      button.textContent = "유저 불러오는 중";
+      button.textContent = forceRefresh ? "길드 명단 갱신 중" : "유저 불러오는 중";
       try {
-        const response = await fetch(`/api/attendance/member-options?guild_id=${encodeURIComponent(guildId)}`, {
+        const params = new URLSearchParams({ guild_id: guildId });
+        if (forceRefresh) params.set("refresh", "true");
+        const response = await fetch(`/api/attendance/member-options?${params}`, {
           headers: { Accept: "application/json" },
         });
         const payload = await response.json();
@@ -236,6 +238,9 @@
         }
         state.memberOptions = payload.users || [];
         state.memberOptionsGuild = guildId;
+        if (forceRefresh) {
+          showToast(`길드 멤버 ${Number(payload.member_count || 0).toLocaleString("ko-KR")}명을 갱신했습니다.`);
+        }
       } catch (error) {
         showToast(error.message, "error");
         return;
@@ -304,6 +309,11 @@
     const addButton = event.target.closest("[data-attendance-member-add]");
     if (addButton) {
       addMembers(addButton);
+      return;
+    }
+    const refreshButton = event.target.closest("[data-attendance-member-refresh]");
+    if (refreshButton) {
+      addMembers(refreshButton, true);
       return;
     }
     const deleteButton = event.target.closest("[data-attendance-member-delete]");

@@ -5761,7 +5761,7 @@ body.modal-open {
 
 .attendance-editor-toolbar {
   display: grid;
-  grid-template-columns: auto minmax(260px, 1fr);
+  grid-template-columns: auto auto minmax(260px, 1fr);
   gap: 10px;
 }
 

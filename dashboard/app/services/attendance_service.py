@@ -127,8 +127,10 @@ async def add_members(
     guild_id: int,
     attendance_id: int,
     user_ids: Iterable[object],
+    guild_member_discord_ids: Iterable[object] = (),
 ) -> int:
     requested = _user_ids(user_ids)
+    current_discord_ids = _user_ids(guild_member_discord_ids)
     if not requested:
         raise AttendanceEditError("추가할 유저를 선택해 주세요.")
 
@@ -141,6 +143,11 @@ async def add_members(
         session,
         guild_id=guild_id,
         attendance_id=attendance_id,
+    )
+    current_member_filter = (
+        "OR u.discord_id IN :current_discord_ids"
+        if current_discord_ids
+        else ""
     )
     eligible_statement = text("""
         SELECT u.user_id
@@ -162,14 +169,26 @@ async def add_members(
                   WHERE entry.user_id = u.user_id
                     AND attendance.guild_id = :guild_id
               )
+              {current_member_filter}
           )
-    """).bindparams(bindparam("user_ids", expanding=True))
+    """.format(current_member_filter=current_member_filter)).bindparams(
+        bindparam("user_ids", expanding=True)
+    )
+    eligible_params: dict[str, object] = {
+        "user_ids": requested,
+        "guild_id": guild_id,
+    }
+    if current_discord_ids:
+        eligible_statement = eligible_statement.bindparams(
+            bindparam("current_discord_ids", expanding=True)
+        )
+        eligible_params["current_discord_ids"] = current_discord_ids
     eligible_ids = {
         int(value)
         for value in (
             await session.execute(
                 eligible_statement,
-                {"user_ids": requested, "guild_id": guild_id},
+                eligible_params,
             )
         ).scalars()
     }

@@ -26,6 +26,7 @@ from dashboard.app.security import (
     restrict_workspace_alliance,
 )
 from dashboard.app.services import attendance_service, workspace_store
+from dashboard.app.services.discord_api import DiscordApiError, discord_api
 from dashboard.app.ui.context import build_template_context
 
 
@@ -759,12 +760,38 @@ async def attendance_status(
 async def attendance_member_options(
     request: Request,
     guild_id: int,
+    refresh: bool = False,
     session: AsyncSession = Depends(get_session),
 ):
     if not can_manage_alliance_operations(request):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="출석을 수정할 권한이 없습니다.")
-    users = await workspace_store.attendance_member_options(session, guild_id=guild_id)
-    return JSONResponse({"ok": True, "users": users})
+    discord_ids: list[int] = []
+    if refresh:
+        try:
+            discord_api.clear_members_cache(guild_id)
+            members = await discord_api.members(guild_id)
+            discord_ids = await workspace_store.sync_discord_members(
+                session,
+                guild_id=guild_id,
+                members=members,
+            )
+            await session.commit()
+        except DiscordApiError as exc:
+            await session.rollback()
+            return JSONResponse({"ok": False, "message": str(exc)}, status_code=502)
+    users = await workspace_store.attendance_member_options(
+        session,
+        guild_id=guild_id,
+        include_discord_ids=discord_ids,
+    )
+    return JSONResponse(
+        {
+            "ok": True,
+            "users": users,
+            "refreshed": refresh,
+            "member_count": len(discord_ids) if refresh else len(users),
+        }
+    )
 
 
 async def _attendance_edit_response(
@@ -811,6 +838,17 @@ async def attendance_add_members(
     if guild_id is None:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="서버를 선택해 주세요.")
     user_ids = form.getlist("user_ids")
+    try:
+        current_members = await discord_api.members(guild_id)
+    except DiscordApiError:
+        # Existing role-mapped or previously attended users can still be edited
+        # while Discord is temporarily unavailable.
+        current_members = []
+    current_member_discord_ids = [
+        member.get("user", {}).get("id")
+        for member in current_members
+        if not member.get("user", {}).get("bot")
+    ]
     return await _attendance_edit_response(
         session,
         guild_id=guild_id,
@@ -820,6 +858,7 @@ async def attendance_add_members(
             guild_id=guild_id,
             attendance_id=attendance_id,
             user_ids=user_ids,
+            guild_member_discord_ids=current_member_discord_ids,
         ),
         success_message="출석 인원을 추가했습니다.",
     )
