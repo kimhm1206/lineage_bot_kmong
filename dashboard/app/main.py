@@ -9,10 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from dashboard.app.config import BASE_DIR, get_settings
 from dashboard.app.auth import AuthContextMiddleware, router as auth_router
 from dashboard.app.database import (
-    SessionLocal,
-    apply_local_schema_cleanup,
     close_database,
-    ensure_settings_schema,
     ping_database,
 )
 from dashboard.app.routes import (
@@ -25,23 +22,19 @@ from dashboard.app.routes import (
     workspaces,
 )
 from dashboard.app.session import RememberMeSessionMiddleware
-from dashboard.app.services import settlement_service
 from dashboard.app.services.discord_api import discord_api
+from dashboard.app.services.bot_event_acks import bot_event_ack_listener
 from dashboard.app.services.settlement_service import SettlementError
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await ping_database()
-    await ensure_settings_schema()
-    schema_changed = await apply_local_schema_cleanup()
-    if schema_changed:
-        async with SessionLocal() as session:
-            await settlement_service.normalize_all_open_settlements(session)
-            await session.commit()
+    await bot_event_ack_listener.start()
     try:
         yield
     finally:
+        await bot_event_ack_listener.stop()
         await discord_api.close()
         await close_database()
 

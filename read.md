@@ -23,8 +23,6 @@ DISCORD_BOT_TOKEN=
 DEVELOPER_DISCORD_ID=238978205078388747
 BOT_DATABASE_URL=postgresql://postgres:password@127.0.0.1:5432/lineage_antalas
 DASHBOARD_BASE_URL=https://dashboard.example.com
-REPORT_SCHEDULE_REFRESH_SECONDS=60
-GUILD_REGISTRY_REFRESH_SECONDS=30
 ```
 
 대시보드의 최소 설정:
@@ -37,7 +35,9 @@ DISCORD_CLIENT_ID=
 DISCORD_CLIENT_SECRET=
 DISCORD_REDIRECT_URI=https://dashboard.example.com/auth/discord/callback
 SESSION_SECRET=
+SESSION_HTTPS_ONLY=true
 AUTH_LOCAL_BYPASS=false
+BOT_EVENT_ACK_TIMEOUT_SECONDS=5
 ```
 
 ## 설치
@@ -52,6 +52,13 @@ discord_bot/venv/bin/pip install -r discord_bot/requirements.txt
 
 ## 실행
 
+DB 마이그레이션:
+
+```bash
+dashboard/venv/bin/python -m alembic \
+  -c dashboard/alembic.ini upgrade head
+```
+
 대시보드:
 
 ```bash
@@ -65,8 +72,8 @@ dashboard/venv/bin/python -m uvicorn dashboard.app.main:app \
 discord_bot/venv/bin/python -m discord_bot.main
 ```
 
-봇은 시작할 때 필요한 새 스키마가 있는지만 검증한다. 테이블을 자동 생성하거나
-길드를 자동 등록하지 않는다.
+대시보드와 봇은 시작할 때 테이블을 자동 생성하지 않는다. 배포 전에 Alembic을
+실행해야 하며, 봇은 필요한 스키마가 있는지만 검증한다.
 
 ## 서버 등록 정책
 
@@ -78,20 +85,25 @@ discord_bot/venv/bin/python -m discord_bot.main
 4. 미등록 서버에서 명령을 실행하면 개발자 문의 안내만 표시한다.
 
 기존 마이그레이션으로 들어온 서버는 등록 상태를 그대로 유지한다.
-서버 등록/비활성화는 DB 알림으로 즉시 반영되고, 알림 유실 시에도 기본 30초
-안에 다시 동기화된다. 출석 버튼을 누를 때마다 DB를 조회하지 않는다.
+서버 등록/비활성화는 DB 알림으로 즉시 반영된다. 봇은 처리 결과를 ACK 알림으로
+돌려주며 웹은 반영 성공 여부를 표시한다. 출석 버튼과 음성 상태 변경에서는
+DB를 조회하지 않는다.
 
 ## 통신 구조
 
 - 브라우저와 대시보드: 일반 HTTP
 - 봇과 Discord: Discord Gateway
-- 대시보드에서 봇: PostgreSQL `LISTEN/NOTIFY` 제어 이벤트
+- 대시보드에서 봇: PostgreSQL `LISTEN/NOTIFY` 제어 이벤트와 처리 ACK
 - 공통 상태: PostgreSQL
 
 실시간 출석 참여자는 봇 프로세스 메모리에서만 관리하고, 출석 종료 후 한 번
 PostgreSQL에 저장한다. 알림/출석 설정 저장 시 대시보드가 DB 알림을 보내므로
-APScheduler 재등록과 패널 수정은 즉시 처리된다. 봇 재접속이나 알림 유실에
-대비해 통계 알림 설정은 기본 60초마다, 등록 서버는 30초마다 다시 확인한다.
+APScheduler 재등록과 패널 수정은 즉시 처리된다. 30초/60초 주기 DB 조회는
+사용하지 않는다. 봇의 DB 알림 연결이 재연결되면 등록 서버, 출석 설정,
+알림 스케줄을 한 번 전체 동기화해 연결 중 놓친 변경을 복구한다.
+
+출석 종료 저장은 역할 매핑과 닉네임 혈맹을 확인한 뒤 세션 1회, 유저 일괄
+upsert 1회, 출석 참가자 일괄 insert 1회로 처리한다.
 
 ## 점검
 

@@ -138,13 +138,26 @@ async def save_report(
             form=values,
             report_setting_id=report_setting_id,
         )
-        await bot_events.publish_bot_event(
+        bot_result = await bot_events.publish_bot_event(
             session,
             "refresh_report_schedules",
             guild_id=guild_id,
         )
     except ValueError as exc:
         return JSONResponse({"ok": False, "message": str(exc)}, status_code=422)
+    if not bot_result.applied:
+        return JSONResponse(
+            {
+                "ok": False,
+                "persisted": True,
+                "message": (
+                    "알림 설정은 저장했지만 봇 스케줄 반영을 확인하지 못했습니다. "
+                    f"{bot_result.message} 설정을 다시 저장하지 말고 봇 상태를 확인해 주세요."
+                ),
+                "report_setting_id": saved_id,
+            },
+            status_code=503,
+        )
     return JSONResponse(
         {
             "ok": True,
@@ -212,7 +225,7 @@ async def report_status(
             actor_discord_id=current_discord_user_id(request) or 0,
             status=target_status,
         )
-        await bot_events.publish_bot_event(
+        bot_result = await bot_events.publish_bot_event(
             session,
             "refresh_report_schedules",
             guild_id=guild_id,
@@ -221,5 +234,17 @@ async def report_status(
         return JSONResponse({"ok": False, "message": str(exc)}, status_code=422)
     if not updated:
         return JSONResponse({"ok": False, "message": "알림을 찾을 수 없습니다."}, status_code=404)
+    if not bot_result.applied:
+        return JSONResponse(
+            {
+                "ok": False,
+                "persisted": True,
+                "message": (
+                    "알림 상태는 저장했지만 봇 스케줄 반영을 확인하지 못했습니다. "
+                    f"{bot_result.message}"
+                ),
+            },
+            status_code=503,
+        )
     message = "알림을 삭제했습니다." if target_status == "delete" else "알림 상태를 변경했습니다."
     return JSONResponse({"ok": True, "message": message})

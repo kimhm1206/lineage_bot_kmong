@@ -13,6 +13,7 @@ from typing import Any
 import discord
 
 from discord_bot.storage import database
+from discord_bot.runtime_settings import cached_guild_settings
 from discord_bot.utils.panel import (
     build_attendance_embed,
     clear_attendance_state,
@@ -187,7 +188,9 @@ async def start_attendance(
         if bool(state.get("active")):
             return False, "이미 출석이 진행 중입니다."
 
-        settings = database.get_settings(guild.id)
+        settings = cached_guild_settings(bot, guild.id)
+        if settings is None:
+            return False, "봇 설정을 동기화하는 중입니다. 잠시 후 다시 시도해주세요."
         voice_channel_ids = _settings_voice_channel_ids(settings)
         if not voice_channel_ids:
             return False, "출석 음성채널을 먼저 설정해주세요."
@@ -352,7 +355,8 @@ async def persist_attendance_snapshot(
     guild: discord.Guild,
     snapshot: AttendanceSnapshot,
 ) -> int:
-    participants = []
+    participant_drafts: list[dict[str, Any]] = []
+    nickname_alliance_names: set[str] = set()
     alliance_by_role_id = await asyncio.to_thread(_alliance_role_map, guild.id)
     for discord_id in snapshot.participant_ids:
         member = guild.get_member(discord_id)
@@ -361,12 +365,34 @@ async def persist_attendance_snapshot(
             member,
             alliance_by_role_id,
         )
+        nickname_alliance_name = None
         if alliance_id is None:
-            alliance_id = _resolve_alliance_id_from_nickname(nickname)
-        participants.append(
+            nickname_alliance_name = _parse_alliance_name_from_nickname(nickname)
+            if nickname_alliance_name is not None:
+                nickname_alliance_names.add(nickname_alliance_name)
+        participant_drafts.append(
             {
                 "discord_id": discord_id,
                 "discord_nickname": nickname,
+                "alliance_id": alliance_id,
+                "nickname_alliance_name": nickname_alliance_name,
+            }
+        )
+
+    nickname_alliances = await asyncio.to_thread(
+        database.get_or_create_alliances,
+        list(nickname_alliance_names),
+    )
+    participants = []
+    for draft in participant_drafts:
+        alliance_id = draft["alliance_id"]
+        if alliance_id is None and draft["nickname_alliance_name"] is not None:
+            alliance = nickname_alliances.get(draft["nickname_alliance_name"])
+            alliance_id = alliance.alliance_id if alliance is not None else None
+        participants.append(
+            {
+                "discord_id": draft["discord_id"],
+                "discord_nickname": draft["discord_nickname"],
                 "alliance_id": alliance_id,
             }
         )
@@ -389,7 +415,9 @@ async def send_attendance_summary(
     stopped_by_mention: str,
     save_status: str | None,
 ) -> None:
-    settings = database.get_settings(guild.id)
+    settings = cached_guild_settings(bot, guild.id)
+    if settings is None:
+        return
     if settings.log_channel_id is None:
         return
 
@@ -490,8 +518,12 @@ def sync_voice_entry_time(
         else []
     )
     if not tracked_channel_ids:
-        settings = database.get_settings(guild_id)
-        tracked_channel_ids = _settings_voice_channel_ids(settings)
+        settings = cached_guild_settings(bot, guild_id)
+        tracked_channel_ids = (
+            _settings_voice_channel_ids(settings)
+            if settings is not None
+            else []
+        )
     tracked_channel_id_set = set(tracked_channel_ids)
     if not tracked_channel_id_set:
         clear_voice_entry_time(bot, guild_id, member_id)
@@ -507,7 +539,9 @@ def sync_voice_entry_time(
 
 
 def seed_voice_entry_times(bot: discord.Bot, guild: discord.Guild) -> None:
-    settings = database.get_settings(guild.id)
+    settings = cached_guild_settings(bot, guild.id)
+    if settings is None:
+        return
     tracked_channel_ids = _settings_voice_channel_ids(settings)
     if not tracked_channel_ids:
         return
@@ -697,7 +731,7 @@ def _now_kst() -> datetime:
     return datetime.now(KST)
 
 
-def _resolve_alliance_id_from_nickname(nickname: str) -> int | None:
+def _parse_alliance_name_from_nickname(nickname: str) -> str | None:
     match = ALLIANCE_PATTERN.search(nickname)
     if match is None:
         return None
@@ -706,8 +740,7 @@ def _resolve_alliance_id_from_nickname(nickname: str) -> int | None:
     if not alliance_name:
         return None
 
-    alliance = database.get_or_create_alliance(alliance_name)
-    return alliance.alliance_id
+    return alliance_name
 
 
 def _resolve_alliance_id_from_member_roles(

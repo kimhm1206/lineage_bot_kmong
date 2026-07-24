@@ -7,7 +7,7 @@ from typing import Any, Iterator
 
 import psycopg2
 from dotenv import load_dotenv
-from psycopg2.extras import RealDictCursor
+from psycopg2.extras import RealDictCursor, execute_values
 
 
 load_dotenv()
@@ -178,8 +178,9 @@ class BotDatabase:
                     )
                     attendance_id = int(cursor.fetchone()["attendance_id"])
 
-                    for participant in participants:
-                        cursor.execute(
+                    if participants:
+                        execute_values(
+                            cursor,
                             """
                             INSERT INTO users (
                                 alliance_id,
@@ -188,7 +189,7 @@ class BotDatabase:
                                 is_active,
                                 updated_at
                             )
-                            VALUES (%s, %s, %s, TRUE, CURRENT_TIMESTAMP)
+                            VALUES %s
                             ON CONFLICT (discord_id) DO UPDATE SET
                                 alliance_id = COALESCE(
                                     EXCLUDED.alliance_id,
@@ -197,22 +198,38 @@ class BotDatabase:
                                 discord_nickname = EXCLUDED.discord_nickname,
                                 is_active = TRUE,
                                 updated_at = CURRENT_TIMESTAMP
-                            RETURNING user_id
+                            RETURNING user_id, discord_id
                             """,
-                            (
-                                _optional_int(participant.get("alliance_id")),
-                                int(participant["discord_id"]),
-                                str(participant["discord_nickname"]),
-                            ),
+                            [
+                                (
+                                    _optional_int(participant.get("alliance_id")),
+                                    int(participant["discord_id"]),
+                                    str(participant["discord_nickname"]),
+                                )
+                                for participant in participants
+                            ],
+                            template="(%s, %s, %s, TRUE, CURRENT_TIMESTAMP)",
+                            page_size=1000,
                         )
-                        user_id = int(cursor.fetchone()["user_id"])
-                        cursor.execute(
+                        user_ids = {
+                            int(row["discord_id"]): int(row["user_id"])
+                            for row in cursor.fetchall()
+                        }
+                        execute_values(
+                            cursor,
                             """
                             INSERT INTO attendance_entries (attendance_id, user_id)
-                            VALUES (%s, %s)
+                            VALUES %s
                             ON CONFLICT (attendance_id, user_id) DO NOTHING
                             """,
-                            (attendance_id, user_id),
+                            [
+                                (
+                                    attendance_id,
+                                    user_ids[int(participant["discord_id"])],
+                                )
+                                for participant in participants
+                            ],
+                            page_size=1000,
                         )
                 connection.commit()
                 return attendance_id
@@ -255,6 +272,66 @@ class BotDatabase:
             alliance_id=int(row["alliance_id"]),
             alliance_name=str(row["alliance_name"]),
         )
+
+    def get_or_create_alliances(
+        self,
+        alliance_names: list[str],
+    ) -> dict[str, Alliance]:
+        normalized_names = sorted(
+            {
+                str(alliance_name).strip()
+                for alliance_name in alliance_names
+                if str(alliance_name).strip()
+            }
+        )
+        if not normalized_names:
+            return {}
+        with self.connect() as connection:
+            try:
+                with connection.cursor() as cursor:
+                    execute_values(
+                        cursor,
+                        """
+                        INSERT INTO alliances (
+                            alliance_name,
+                            display_name,
+                            tag_name,
+                            color,
+                            sort_order,
+                            is_active,
+                            updated_at
+                        )
+                        VALUES %s
+                        ON CONFLICT (alliance_name) DO UPDATE SET
+                            is_active = TRUE,
+                            updated_at = CURRENT_TIMESTAMP
+                        RETURNING alliance_id, alliance_name
+                        """,
+                        [
+                            (
+                                name,
+                                name,
+                                name,
+                                "#64748b",
+                                0,
+                            )
+                            for name in normalized_names
+                        ],
+                        template="(%s, %s, %s, %s, %s, TRUE, CURRENT_TIMESTAMP)",
+                        page_size=100,
+                    )
+                    rows = cursor.fetchall()
+                connection.commit()
+            except Exception:
+                connection.rollback()
+                raise
+        return {
+            str(row["alliance_name"]): Alliance(
+                alliance_id=int(row["alliance_id"]),
+                alliance_name=str(row["alliance_name"]),
+            )
+            for row in rows
+        }
 
     def get_guild_alliance_role_mappings(
         self,

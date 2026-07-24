@@ -10,7 +10,8 @@ import discord
 from dotenv import load_dotenv
 
 from discord_bot.notifications import start_database_notification_listener
-from discord_bot.reports import start_report_scheduler
+from discord_bot.reports import reload_report_schedules, start_report_scheduler
+from discord_bot.runtime_settings import cache_guild_settings
 from discord_bot.storage import database
 from discord_bot.utils.attendance import (
     AttendanceActionView,
@@ -47,23 +48,19 @@ bot.voice_entry_times_by_guild = {}
 bot.commands_synced = False
 bot.persistent_views_registered = False
 bot.report_scheduler = None
-bot.report_scheduler_reload_task = None
-bot.guild_registry_task = None
 bot.database_notification_task = None
 bot.registered_guild_ids = set()
+bot.guild_settings_by_guild = {}
 bot.runtime_label = build_runtime_label()
 
 ALLIANCE_LABEL_PATTERN = re.compile(r"\[([^\[\]]+)\]")
 ROLE_MATCHING_FETCH_TIMEOUT_SECONDS = 120
-GUILD_REGISTRY_REFRESH_SECONDS = max(
-    15,
-    int(os.getenv("GUILD_REGISTRY_REFRESH_SECONDS", "30")),
-)
-
-
 @bot.event
 async def on_ready() -> None:
     bot.registered_guild_ids = await asyncio.to_thread(database.enabled_guild_ids)
+    for guild_id in sorted(bot.registered_guild_ids):
+        settings = await asyncio.to_thread(database.get_settings, guild_id)
+        cache_guild_settings(bot, settings)
 
     if not bot.persistent_views_registered:
         _register_persistent_views()
@@ -74,8 +71,8 @@ async def on_ready() -> None:
         bot.commands_synced = True
 
     start_report_scheduler(bot)
+    await reload_report_schedules(bot)
     start_database_notification_listener(bot)
-    _start_guild_registry_worker()
 
     for guild in bot.guilds:
         if guild.id not in bot.registered_guild_ids:
@@ -86,41 +83,6 @@ async def on_ready() -> None:
 
     guild_names = ", ".join(guild.name for guild in bot.guilds) or "No Guild"
     print(f"봇 로그인 완료: {bot.user} | 길드: {guild_names}")
-
-
-def _start_guild_registry_worker() -> None:
-    existing_task = getattr(bot, "guild_registry_task", None)
-    if isinstance(existing_task, asyncio.Task) and not existing_task.done():
-        return
-    bot.guild_registry_task = asyncio.create_task(_watch_registered_guilds())
-
-
-async def _watch_registered_guilds() -> None:
-    while not bot.is_closed():
-        await asyncio.sleep(GUILD_REGISTRY_REFRESH_SECONDS)
-        try:
-            enabled_ids = await asyncio.to_thread(database.enabled_guild_ids)
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:
-            print(f"[guild-access] refresh failed: {exc}")
-            continue
-
-        previous_ids = set(bot.registered_guild_ids)
-        bot.registered_guild_ids = enabled_ids
-        for guild_id in sorted(enabled_ids - previous_ids):
-            guild = bot.get_guild(guild_id)
-            if guild is None:
-                continue
-            seed_voice_entry_times(bot, guild)
-            await update_admin_panel(bot, guild_id)
-            print(f"[guild-access] enabled guild: {guild.name} ({guild.id})")
-
-        for guild_id in sorted(previous_ids - enabled_ids):
-            guild = bot.get_guild(guild_id)
-            guild_name = guild.name if guild is not None else str(guild_id)
-            print(f"[guild-access] disabled guild: {guild_name} ({guild_id})")
-
 
 def _register_persistent_views() -> None:
     for guild in bot.guilds:

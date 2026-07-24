@@ -2,7 +2,8 @@
 
 FastAPI와 SQLAlchemy 2.x 기반의 PostgreSQL 전용 새 대시보드입니다.
 Discord 봇과 같은 PostgreSQL 스키마를 사용하며, 구형 `web/` 프로젝트를 대체합니다.
-출석 설정과 통계 알림 변경은 PostgreSQL `LISTEN/NOTIFY`로 봇에 전달하며,
+출석 설정과 통계 알림 변경은 PostgreSQL `LISTEN/NOTIFY`로 봇에 전달하고,
+봇의 처리 ACK까지 확인해 화면에 반영 결과를 표시합니다.
 대시보드 프로세스 자체에서는 Discord 발송 스케줄러를 실행하지 않습니다.
 
 ## 실행
@@ -20,6 +21,14 @@ postgresql+asyncpg://postgres:testest@127.0.0.1:5432/testdb
 ```
 
 필요하면 `dashboard/.env`를 만들어 `dashboard/.env.example` 값을 덮어쓰면 됩니다.
+
+운영 배포 전에는 웹을 실행하기 전에 Alembic 마이그레이션을 적용합니다.
+웹 서버 시작 과정에서는 DDL을 실행하지 않습니다.
+
+```bash
+dashboard/venv/bin/python -m alembic \
+  -c dashboard/alembic.ini upgrade head
+```
 
 Discord 채널·역할·서버 유저 목록은 봇을 별도로 실행하지 않고 REST API로만 조회합니다. 실제 봇 토큰은 Git에 포함되는 `.env.example`에 넣지 말고, Git에서 제외되는 `dashboard/.env`에만 설정합니다.
 
@@ -56,7 +65,8 @@ DISCORD_BOT_TOKEN=실제_봇_토큰
 /operations/audit          운영 작업 로그
 ```
 
-`testdb`에서만 실행되는 스키마 정리는 Discord 역할 저장을 `guild_alliance_role_mappings` 하나로 제한하고, 웹 권한은 `guild_user_assignments`의 유저 지정 방식으로 유지합니다. 사용하지 않는 이전 테이블 12개와 중복 인덱스를 제거하며, 운영 조회용 복합 인덱스를 추가합니다. 호스트가 로컬 주소가 아니거나 DB 이름이 `testdb`가 아니면 이 정리는 실행되지 않습니다.
+기존 `testdb` 정리 함수는 남아 있지만 웹 시작 시 자동 실행하지 않습니다.
+이후 스키마 변경은 Alembic revision으로만 적용합니다.
 
 가계부는 `treasury_accounts.account_scope_code`로 범위를 구분합니다. `1`은 서버별 연합 전체 계정이며 `alliance_id`가 비어 있고, `2`는 기존 혈맹 계정이며 `alliance_id`를 가집니다. 입출금 분류도 `treasury_categories.account_scope_code`로 분리해 연합과 혈맹 선택지가 섞이지 않습니다. 두 계정은 `treasury_entries` 원장을 함께 사용하므로 입금·출금·거래 후 잔액·발생 시각·작성자·취소 연결을 같은 방식으로 기록합니다.
 

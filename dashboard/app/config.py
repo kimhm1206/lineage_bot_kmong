@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     discord_bot_token: str = ""
     discord_api_base: str = "https://discord.com/api/v10"
     discord_cache_ttl_seconds: int = 300
+    bot_event_ack_timeout_seconds: float = 5.0
     discord_client_id: str = ""
     discord_client_secret: str = ""
     discord_redirect_uri: str = "http://127.0.0.1:8000/auth/discord/callback"

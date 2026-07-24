@@ -8,7 +8,8 @@ from pathlib import Path
 
 import discord
 
-from discord_bot.storage import GuildSettings, database
+from discord_bot.storage import GuildSettings
+from discord_bot.runtime_settings import cached_guild_settings
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -99,7 +100,9 @@ async def rebuild_admin_panel(bot: discord.Bot, guild_id: int) -> discord.Messag
     if guild is None:
         return None
 
-    settings = database.get_settings(guild_id)
+    settings = cached_guild_settings(bot, guild_id)
+    if settings is None:
+        return None
     if settings.admin_channel_id is None:
         _clear_panel_state(bot, guild_id)
         return None
@@ -126,7 +129,9 @@ async def update_admin_panel(bot: discord.Bot, guild_id: int) -> discord.Message
     if guild is None:
         return None
 
-    settings = database.get_settings(guild_id)
+    settings = cached_guild_settings(bot, guild_id)
+    if settings is None:
+        return None
     if settings.admin_channel_id is None:
         _clear_panel_state(bot, guild_id)
         return None

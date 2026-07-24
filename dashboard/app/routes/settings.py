@@ -268,7 +268,7 @@ async def save_server(
             owner_discord_id=_optional_snowflake(guild_detail.get("owner_id")),
             icon_hash=guild_detail.get("icon"),
         )
-        await bot_events.publish_bot_event(
+        bot_result = await bot_events.publish_bot_event(
             session,
             "refresh_guild_registry",
             guild_id=guild_id,
@@ -277,7 +277,20 @@ async def save_server(
         return _redirect("/settings/server", error="올바른 서버 ID를 입력해 주세요.")
     except DiscordApiError as exc:
         return _redirect("/settings/server", guild_id=guild_id, error=str(exc))
-    return _redirect("/settings/server", guild_id=guild_id, notice="서버 설정을 저장했습니다.")
+    if not bot_result.applied:
+        return _redirect(
+            "/settings/server",
+            guild_id=guild_id,
+            error=(
+                "서버 설정은 저장했지만 봇 반영을 확인하지 못했습니다. "
+                f"{bot_result.message}"
+            ),
+        )
+    return _redirect(
+        "/settings/server",
+        guild_id=guild_id,
+        notice="서버 설정을 저장하고 봇에 반영했습니다.",
+    )
 
 
 @router.post("/server/select")
@@ -384,7 +397,7 @@ async def save_attendance(request: Request, session: AsyncSession = Depends(get_
             timer=timer,
             attendance_available_timer=available_timer,
         )
-        await bot_events.publish_bot_event(
+        bot_result = await bot_events.publish_bot_event(
             session,
             "refresh_admin_panel",
             guild_id=guild_id,
@@ -396,7 +409,20 @@ async def save_attendance(request: Request, session: AsyncSession = Depends(get_
         return _redirect("/settings/attendance", guild_id=_optional_snowflake(form.get("guild_id")), error="설정값을 확인해 주세요.")
     except DiscordApiError as exc:
         return _redirect("/settings/attendance", guild_id=guild_id, error=str(exc))
-    return _redirect("/settings/attendance", guild_id=guild_id, notice="출석 설정을 저장했습니다.")
+    if not bot_result.applied:
+        return _redirect(
+            "/settings/attendance",
+            guild_id=guild_id,
+            error=(
+                "출석 설정은 저장했지만 봇 반영을 확인하지 못했습니다. "
+                f"{bot_result.message}"
+            ),
+        )
+    return _redirect(
+        "/settings/attendance",
+        guild_id=guild_id,
+        notice="출석 설정을 저장하고 Discord 패널에 반영했습니다.",
+    )
 
 
 @router.get("/alliances")

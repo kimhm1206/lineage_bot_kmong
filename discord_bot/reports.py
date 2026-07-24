@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 from datetime import datetime, time, timedelta, timezone
 from typing import Any
 
@@ -15,10 +14,6 @@ from discord_bot.storage import database
 
 KST = timezone(timedelta(hours=9))
 RETRY_DELAY = timedelta(minutes=10)
-SCHEDULE_REFRESH_SECONDS = max(
-    15,
-    int(os.getenv("REPORT_SCHEDULE_REFRESH_SECONDS", "60")),
-)
 FREQUENCY_DAYS = {
     "daily": 1,
     "every_3_days": 3,
@@ -56,26 +51,6 @@ def start_report_scheduler(bot: discord.Bot) -> None:
 
     if not hasattr(bot, "report_scheduler_reload_lock"):
         bot.report_scheduler_reload_lock = asyncio.Lock()
-
-    existing_task = getattr(bot, "report_scheduler_reload_task", None)
-    if isinstance(existing_task, asyncio.Task) and not existing_task.done():
-        return
-    bot.report_scheduler_reload_task = asyncio.create_task(
-        _watch_report_schedules(bot)
-    )
-
-
-async def _watch_report_schedules(bot: discord.Bot) -> None:
-    await bot.wait_until_ready()
-    while not bot.is_closed():
-        try:
-            await reload_report_schedules(bot)
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:
-            print(f"[report-scheduler] refresh failed: {exc}")
-        await asyncio.sleep(SCHEDULE_REFRESH_SECONDS)
-
 
 async def reload_report_schedules(bot: discord.Bot) -> dict[str, int]:
     await bot.wait_until_ready()
@@ -196,7 +171,9 @@ def _job_id(report_setting_id: int) -> str:
 
 
 def _connected_guild_ids(bot: discord.Bot) -> set[int]:
-    return {int(guild.id) for guild in bot.guilds}
+    connected = {int(guild.id) for guild in bot.guilds}
+    registered = set(getattr(bot, "registered_guild_ids", set()))
+    return connected & registered
 
 
 async def _resolve_channel(bot: discord.Bot, channel_id: int) -> Any:
