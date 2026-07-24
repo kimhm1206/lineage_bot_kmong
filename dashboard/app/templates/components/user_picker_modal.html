@@ -7,7 +7,12 @@
         <span class="panel-kicker">Server members</span>
         <h2 id="user-picker-title" data-user-picker-title>유저 선택</h2>
       </div>
-      <button class="modal-close-button" type="button" data-user-picker-close aria-label="닫기">{{ icon("x") }}</button>
+      <div class="user-picker-header-actions">
+        <button class="secondary-button user-picker-refresh" type="button" data-user-picker-refresh hidden>
+          {{ icon("refresh") }} <span data-user-picker-refresh-label>명단 새로고침</span>
+        </button>
+        <button class="modal-close-button" type="button" data-user-picker-close aria-label="닫기">{{ icon("x") }}</button>
+      </div>
     </header>
 
     <div class="user-picker-search-wrap">

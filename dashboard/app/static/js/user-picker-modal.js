@@ -11,6 +11,8 @@
       this.resultCount = root.querySelector("[data-user-picker-result-count]");
       this.results = root.querySelector("[data-user-picker-results]");
       this.confirmButton = root.querySelector("[data-user-picker-confirm]");
+      this.refreshButton = root.querySelector("[data-user-picker-refresh]");
+      this.refreshLabel = root.querySelector("[data-user-picker-refresh-label]");
       this.cancelButtons = root.querySelectorAll("[data-user-picker-close], [data-user-picker-cancel]");
       this.users = [];
       this.selectedIds = new Set();
@@ -20,11 +22,13 @@
       this.idKey = "discord_id";
       this.allianceId = "";
       this.allianceName = "";
+      this.refreshUsers = null;
       this.resolve = null;
       this.previouslyFocused = null;
 
       this.search.addEventListener("input", () => this.render());
       this.confirmButton.addEventListener("click", () => this.confirm());
+      this.refreshButton?.addEventListener("click", () => this.refresh());
       this.cancelButtons.forEach((button) => button.addEventListener("click", () => this.cancel()));
       this.root.addEventListener("click", (event) => {
         if (event.target === this.root) this.cancel();
@@ -42,6 +46,13 @@
       this.idKey = String(options.idKey || "discord_id");
       this.allianceId = options.allianceId ? String(options.allianceId) : "";
       this.allianceName = String(options.allianceName || "");
+      this.refreshUsers = typeof options.refreshUsers === "function" ? options.refreshUsers : null;
+      if (this.refreshButton) {
+        this.refreshButton.hidden = !this.refreshUsers;
+        if (this.refreshLabel) {
+          this.refreshLabel.textContent = options.refreshLabel || "명단 새로고침";
+        }
+      }
       this.excludedIds = new Set((options.excludedIds || []).map(String));
       this.includeIds = new Set((options.includeIds || []).map(String));
       const selectedIds = (options.selectedIds || [])
@@ -76,6 +87,27 @@
 
     cancel() {
       this.close(null);
+    }
+
+    async refresh() {
+      if (!this.refreshUsers || !this.refreshButton) return;
+      const originalLabel = this.refreshLabel?.textContent || "명단 새로고침";
+      this.refreshButton.disabled = true;
+      if (this.refreshLabel) this.refreshLabel.textContent = "명단 갱신 중";
+      try {
+        const users = await this.refreshUsers();
+        if (!Array.isArray(users)) throw new Error("새 명단을 불러오지 못했습니다.");
+        this.users = users;
+        this.selectedIds = new Set(
+          [...this.selectedIds].filter((id) => this.users.some((user) => this.userId(user) === id)),
+        );
+        this.render();
+      } catch (error) {
+        window.alert(error?.message || "명단을 새로고침하지 못했습니다.");
+      } finally {
+        this.refreshButton.disabled = false;
+        if (this.refreshLabel) this.refreshLabel.textContent = originalLabel;
+      }
     }
 
     confirm() {

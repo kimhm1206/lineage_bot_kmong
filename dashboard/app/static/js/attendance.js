@@ -215,7 +215,25 @@
     showToast(payload.message);
   };
 
-  const addMembers = async (button, forceRefresh = false) => {
+  const loadMemberOptions = async (guildId, refresh = false) => {
+    const params = new URLSearchParams({ guild_id: guildId });
+    if (refresh) params.set("refresh", "true");
+    const response = await fetch(`/api/attendance/member-options?${params}`, {
+      headers: { Accept: "application/json" },
+    });
+    const payload = await response.json();
+    if (!response.ok || !payload.ok) {
+      throw new Error(payload.message || payload.detail || "서버 유저를 불러오지 못했습니다.");
+    }
+    state.memberOptions = payload.users || [];
+    state.memberOptionsGuild = guildId;
+    if (refresh) {
+      showToast(`길드 멤버 ${Number(payload.member_count || 0).toLocaleString("ko-KR")}명을 갱신했습니다.`);
+    }
+    return state.memberOptions;
+  };
+
+  const addMembers = async (button) => {
     if (!state.attendance || !window.dashboardUserPicker) {
       showToast("유저 선택기를 준비하지 못했습니다.", "error");
       return;
@@ -223,24 +241,11 @@
     const root = editor();
     const guildId = root?.dataset.guildId;
     const original = button.innerHTML;
-    if (forceRefresh || state.memberOptionsGuild !== guildId) {
+    if (state.memberOptionsGuild !== guildId) {
       button.disabled = true;
-      button.textContent = forceRefresh ? "길드 명단 갱신 중" : "유저 불러오는 중";
+      button.textContent = "유저 불러오는 중";
       try {
-        const params = new URLSearchParams({ guild_id: guildId });
-        if (forceRefresh) params.set("refresh", "true");
-        const response = await fetch(`/api/attendance/member-options?${params}`, {
-          headers: { Accept: "application/json" },
-        });
-        const payload = await response.json();
-        if (!response.ok || !payload.ok) {
-          throw new Error(payload.message || payload.detail || "서버 유저를 불러오지 못했습니다.");
-        }
-        state.memberOptions = payload.users || [];
-        state.memberOptionsGuild = guildId;
-        if (forceRefresh) {
-          showToast(`길드 멤버 ${Number(payload.member_count || 0).toLocaleString("ko-KR")}명을 갱신했습니다.`);
-        }
+        await loadMemberOptions(guildId);
       } catch (error) {
         showToast(error.message, "error");
         return;
@@ -255,6 +260,8 @@
       multiple: true,
       title: `#${state.attendance.attendance_id} 누락 인원 추가`,
       excludedIds: members().map((member) => member.user_id),
+      refreshLabel: "길드 명단 새로고침",
+      refreshUsers: () => loadMemberOptions(guildId, true),
     });
     if (!selected?.length) return;
 
@@ -309,11 +316,6 @@
     const addButton = event.target.closest("[data-attendance-member-add]");
     if (addButton) {
       addMembers(addButton);
-      return;
-    }
-    const refreshButton = event.target.closest("[data-attendance-member-refresh]");
-    if (refreshButton) {
-      addMembers(refreshButton, true);
       return;
     }
     const deleteButton = event.target.closest("[data-attendance-member-delete]");
