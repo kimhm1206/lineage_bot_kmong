@@ -23,7 +23,7 @@ from dashboard.app.security import (
     require_developer,
     require_selected_guild,
 )
-from dashboard.app.services import settings_store
+from dashboard.app.services import bot_events, settings_store
 from dashboard.app.services.discord_api import DiscordApiError, discord_api
 from dashboard.app.ui.context import build_template_context
 
@@ -268,6 +268,11 @@ async def save_server(
             owner_discord_id=_optional_snowflake(guild_detail.get("owner_id")),
             icon_hash=guild_detail.get("icon"),
         )
+        await bot_events.publish_bot_event(
+            session,
+            "refresh_guild_registry",
+            guild_id=guild_id,
+        )
     except (ValueError, TypeError):
         return _redirect("/settings/server", error="올바른 서버 ID를 입력해 주세요.")
     except DiscordApiError as exc:
@@ -370,7 +375,7 @@ async def save_attendance(request: Request, session: AsyncSession = Depends(get_
             if voice_channel_id and by_id.get(voice_channel_id, {}).get("type") not in VOICE_CHANNEL_TYPES:
                 raise ValueError
 
-        await settings_store.save_attendance_settings(
+        previous_admin_channel_id = await settings_store.save_attendance_settings(
             session,
             guild_id=guild_id,
             admin_channel_id=admin_channel_id,
@@ -378,6 +383,14 @@ async def save_attendance(request: Request, session: AsyncSession = Depends(get_
             log_channel_id=log_channel_id,
             timer=timer,
             attendance_available_timer=available_timer,
+        )
+        await bot_events.publish_bot_event(
+            session,
+            "refresh_admin_panel",
+            guild_id=guild_id,
+            data={
+                "previous_admin_channel_id": previous_admin_channel_id,
+            },
         )
     except (ValueError, TypeError):
         return _redirect("/settings/attendance", guild_id=_optional_snowflake(form.get("guild_id")), error="설정값을 확인해 주세요.")

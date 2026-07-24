@@ -9,17 +9,20 @@ from datetime import datetime, timedelta, timezone
 import discord
 from dotenv import load_dotenv
 
-from common import database
-from discord_bot.bridge import start_web_bridge
-from discord_bot.queue import start_command_queue_worker
+from discord_bot.notifications import start_database_notification_listener
 from discord_bot.reports import start_report_scheduler
+from discord_bot.storage import database
 from discord_bot.utils.attendance import (
     AttendanceActionView,
     register_attendance,
     seed_voice_entry_times,
     sync_voice_entry_time,
 )
-from discord_bot.utils.guild import is_admin_member, is_supported_guild
+from discord_bot.utils.guild import (
+    is_admin_member,
+    is_supported_guild,
+    unregistered_guild_message,
+)
 from discord_bot.utils.panel import build_runtime_label, update_admin_panel
 from discord_bot.views.admin_panel import AdminPanelView
 
@@ -43,20 +46,25 @@ bot.attendance_locks = {}
 bot.voice_entry_times_by_guild = {}
 bot.commands_synced = False
 bot.persistent_views_registered = False
-bot.command_queue_task = None
 bot.report_scheduler = None
 bot.report_scheduler_reload_task = None
-bot.web_bridge_task = None
-bot.web_bridge_ws = None
-bot.attendance_state_publisher = None
+bot.guild_registry_task = None
+bot.database_notification_task = None
+bot.registered_guild_ids = set()
 bot.runtime_label = build_runtime_label()
 
 ALLIANCE_LABEL_PATTERN = re.compile(r"\[([^\[\]]+)\]")
 ROLE_MATCHING_FETCH_TIMEOUT_SECONDS = 120
+GUILD_REGISTRY_REFRESH_SECONDS = max(
+    15,
+    int(os.getenv("GUILD_REGISTRY_REFRESH_SECONDS", "30")),
+)
 
 
 @bot.event
 async def on_ready() -> None:
+    bot.registered_guild_ids = await asyncio.to_thread(database.enabled_guild_ids)
+
     if not bot.persistent_views_registered:
         _register_persistent_views()
         bot.persistent_views_registered = True
@@ -65,11 +73,14 @@ async def on_ready() -> None:
         await bot.sync_commands()
         bot.commands_synced = True
 
-    start_command_queue_worker(bot)
     start_report_scheduler(bot)
-    start_web_bridge(bot)
+    start_database_notification_listener(bot)
+    _start_guild_registry_worker()
 
     for guild in bot.guilds:
+        if guild.id not in bot.registered_guild_ids:
+            print(f"[guild-access] skipped unregistered guild: {guild.name} ({guild.id})")
+            continue
         seed_voice_entry_times(bot, guild)
         await update_admin_panel(bot, guild.id)
 
@@ -77,8 +88,44 @@ async def on_ready() -> None:
     print(f"봇 로그인 완료: {bot.user} | 길드: {guild_names}")
 
 
+def _start_guild_registry_worker() -> None:
+    existing_task = getattr(bot, "guild_registry_task", None)
+    if isinstance(existing_task, asyncio.Task) and not existing_task.done():
+        return
+    bot.guild_registry_task = asyncio.create_task(_watch_registered_guilds())
+
+
+async def _watch_registered_guilds() -> None:
+    while not bot.is_closed():
+        await asyncio.sleep(GUILD_REGISTRY_REFRESH_SECONDS)
+        try:
+            enabled_ids = await asyncio.to_thread(database.enabled_guild_ids)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            print(f"[guild-access] refresh failed: {exc}")
+            continue
+
+        previous_ids = set(bot.registered_guild_ids)
+        bot.registered_guild_ids = enabled_ids
+        for guild_id in sorted(enabled_ids - previous_ids):
+            guild = bot.get_guild(guild_id)
+            if guild is None:
+                continue
+            seed_voice_entry_times(bot, guild)
+            await update_admin_panel(bot, guild_id)
+            print(f"[guild-access] enabled guild: {guild.name} ({guild.id})")
+
+        for guild_id in sorted(previous_ids - enabled_ids):
+            guild = bot.get_guild(guild_id)
+            guild_name = guild.name if guild is not None else str(guild_id)
+            print(f"[guild-access] disabled guild: {guild_name} ({guild_id})")
+
+
 def _register_persistent_views() -> None:
     for guild in bot.guilds:
+        if guild.id not in bot.registered_guild_ids:
+            continue
         bot.add_view(AdminPanelView(bot, guild.id))
         bot.add_view(AttendanceActionView(bot, guild.id))
 
@@ -92,6 +139,9 @@ async def attend(ctx: discord.ApplicationContext) -> None:
     author = ctx.author
     if guild is None or not isinstance(author, discord.Member):
         await ctx.respond("서버에서만 사용할 수 있습니다.", ephemeral=True)
+        return
+    if not is_supported_guild(bot, guild.id):
+        await ctx.respond(unregistered_guild_message(), ephemeral=True)
         return
 
     _, message = await register_attendance(bot, guild.id, author)
@@ -109,7 +159,7 @@ async def weekly_ranking(ctx: discord.ApplicationContext) -> None:
         return
 
     if not is_supported_guild(bot, guild.id):
-        await ctx.respond("이 서버에서는 사용할 수 없습니다.", ephemeral=True)
+        await ctx.respond(unregistered_guild_message(), ephemeral=True)
         return
 
     await ctx.defer()
@@ -146,7 +196,7 @@ async def role_matching(ctx: discord.ApplicationContext) -> None:
         return
 
     if not is_supported_guild(bot, guild.id):
-        await ctx.respond("이 서버에서는 사용할 수 없습니다.", ephemeral=True)
+        await ctx.respond(unregistered_guild_message(), ephemeral=True)
         return
 
     if not is_admin_member(author):
@@ -223,6 +273,8 @@ async def on_voice_state_update(
     before: discord.VoiceState,
     after: discord.VoiceState,
 ) -> None:
+    if member.guild.id not in bot.registered_guild_ids:
+        return
     sync_voice_entry_time(
         bot,
         member.guild.id,
@@ -393,7 +445,7 @@ def _clip_text(value: str, limit: int) -> str:
 
 
 def main() -> None:
-    database.init_schema()
+    database.validate_schema()
     bot.run(TOKEN)
 
 

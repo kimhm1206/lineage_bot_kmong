@@ -1,5 +1,4 @@
--r ../common/requirements.txt
+python-dotenv
+psycopg2-binary
 py-cord
-aiohttp
-requests
 apscheduler

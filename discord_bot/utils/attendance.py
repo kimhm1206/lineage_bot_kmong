@@ -12,7 +12,7 @@ from typing import Any
 
 import discord
 
-from common import database
+from discord_bot.storage import database
 from discord_bot.utils.panel import (
     build_attendance_embed,
     clear_attendance_state,
@@ -38,7 +38,6 @@ RANKER_POST_URL = "https://script.google.com/macros/s/AKfycby3I-Vo8A8WKYm9dLrexq
 class AttendanceSnapshot:
     guild_id: int
     started_at: str
-    ended_at: str
     started_by_discord_id: int | None
     stopped_by_discord_id: int | None
     participant_ids: list[int]
@@ -236,7 +235,6 @@ async def start_attendance(
             voice_channel_ids=voice_channel_ids,
             attendance_available_timer=settings.attendance_available_timer,
         )
-        _schedule_attendance_state_publish(bot, guild.id)
     await update_admin_panel(bot, guild.id)
     return True, f"출석을 시작했습니다. {attendance_channel.mention}에 안내 메시지를 보냈습니다."
 
@@ -259,7 +257,6 @@ async def stop_attendance(
         snapshot = AttendanceSnapshot(
             guild_id=guild.id,
             started_at=_coerce_timestamp(state.get("started_at")),
-            ended_at=_now_kst().strftime(TIME_FORMAT),
             started_by_discord_id=_optional_int(state.get("started_by")),
             stopped_by_discord_id=stopped_by.id if stopped_by is not None else None,
             participant_ids=sorted(_participant_ids(state)),
@@ -267,7 +264,6 @@ async def stop_attendance(
         channel_id = _optional_int(state.get("channel_id"))
         message_id = _optional_int(state.get("message_id"))
         clear_attendance_state(bot, guild.id)
-        _schedule_attendance_state_publish(bot, guild.id)
 
     await delete_attendance_message(
         bot,
@@ -339,7 +335,6 @@ async def register_attendance(
         attended_at = _now_kst()
         participant_times[member.id] = attended_at.strftime(TIME_FORMAT)
         set_voice_entry_time(bot, guild_id, member.id, attended_at)
-        _schedule_attendance_state_publish(bot, guild_id)
 
     return True, "출석이 완료되었습니다."
 
@@ -380,7 +375,6 @@ async def persist_attendance_snapshot(
         database.save_attendance_session,
         guild_id=snapshot.guild_id,
         started_at=snapshot.started_at,
-        ended_at=snapshot.ended_at,
         started_by_discord_id=snapshot.started_by_discord_id,
         participants=participants,
     )
@@ -437,7 +431,6 @@ async def _expire_attendance_after_timeout(
         guild = bot.get_guild(guild_id)
         if guild is None:
             clear_attendance_state(bot, guild_id)
-            _schedule_attendance_state_publish(bot, guild_id)
             await update_admin_panel(bot, guild_id)
             return
 
@@ -481,67 +474,6 @@ def _participant_times(state: dict[str, Any]) -> dict[int, str]:
     participant_times = {}
     state["participant_times"] = participant_times
     return participant_times
-
-
-def build_live_attendance_state(bot: discord.Bot, guild_id: int) -> dict[str, Any]:
-    guild = bot.get_guild(guild_id)
-    state = get_attendance_state(bot, guild_id)
-    if not bool(state.get("active")):
-        return {
-            "active": False,
-            "participant_count": 0,
-            "server_now": _now_kst().strftime(TIME_FORMAT),
-            "session": None,
-            "participants": [],
-        }
-
-    participant_times = _participant_times(state)
-    alliance_by_role_id = _alliance_role_map(guild_id)
-    participants: list[dict[str, Any]] = []
-    for discord_id in sorted(_participant_ids(state)):
-        member = guild.get_member(discord_id) if guild is not None else None
-        display_name = member.display_name if member is not None else str(discord_id)
-        participants.append(
-            {
-                "discord_id": discord_id,
-                "display_name": display_name,
-                "alliance_name": _resolve_alliance_name_from_member(
-                    member,
-                    display_name,
-                    alliance_by_role_id,
-                ),
-                "joined_voice_at": "",
-                "attended_at": participant_times.get(discord_id, ""),
-                "source": "discord",
-            }
-        )
-
-    return {
-        "active": True,
-        "participant_count": len(participants),
-        "server_now": _now_kst().strftime(TIME_FORMAT),
-        "session": {
-            "live_session_id": state.get("live_session_id"),
-            "started_at": state.get("started_at") or "",
-            "expires_at": state.get("expires_at") or "",
-            "started_by_discord_id": state.get("started_by"),
-            "discord_channel_id": state.get("channel_id"),
-            "discord_message_id": state.get("message_id"),
-            "status": "active",
-        },
-        "participants": participants,
-    }
-
-
-def _schedule_attendance_state_publish(bot: discord.Bot, guild_id: int) -> None:
-    publisher = getattr(bot, "attendance_state_publisher", None)
-    if not callable(publisher):
-        return
-
-    try:
-        asyncio.create_task(publisher(guild_id))
-    except RuntimeError:
-        return
 
 
 def sync_voice_entry_time(

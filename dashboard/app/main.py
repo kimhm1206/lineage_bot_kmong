@@ -27,7 +27,6 @@ from dashboard.app.routes import (
 from dashboard.app.session import RememberMeSessionMiddleware
 from dashboard.app.services import settlement_service
 from dashboard.app.services.discord_api import discord_api
-from dashboard.app.services.report_service import report_scheduler
 from dashboard.app.services.settlement_service import SettlementError
 
 
@@ -40,11 +39,9 @@ async def lifespan(app: FastAPI):
         async with SessionLocal() as session:
             await settlement_service.normalize_all_open_settlements(session)
             await session.commit()
-    await report_scheduler.start()
     try:
         yield
     finally:
-        await report_scheduler.stop()
         await discord_api.close()
         await close_database()
 

@@ -1,25 +1,17 @@
 from __future__ import annotations
 
-import asyncio
 import json
-import logging
 from collections import defaultdict
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
 
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.date import DateTrigger
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dashboard.app.services import audit_service
 
-from dashboard.app.database import SessionLocal
-from dashboard.app.services.discord_api import discord_api
-
 
 KST = timezone(timedelta(hours=9))
-RETRY_DELAY = timedelta(minutes=10)
 FREQUENCY_DAYS = {"daily": 1, "every_3_days": 3, "weekly": 7}
 FREQUENCY_LABELS = {
     "daily": "매일",
@@ -45,7 +37,6 @@ ALLOWED_GROUPS = set(GROUP_LABELS)
 ALLOWED_TARGETS = set(TARGET_LABELS)
 ALLOWED_METRICS = set(METRIC_LABELS)
 ALLOWED_OUTPUTS = set(OUTPUT_LABELS)
-logger = logging.getLogger(__name__)
 
 
 def _json_dict(value: Any) -> dict[str, Any]:
@@ -655,184 +646,3 @@ async def preview_report(
             "empty": config["empty_text"],
         },
     )
-
-
-class ReportScheduler:
-    def __init__(self) -> None:
-        self.scheduler: AsyncIOScheduler | None = None
-        self.reload_lock = asyncio.Lock()
-
-    async def start(self) -> None:
-        if self.scheduler is None:
-            self.scheduler = AsyncIOScheduler(
-                timezone=KST,
-                job_defaults={
-                    "coalesce": True,
-                    "max_instances": 1,
-                    "misfire_grace_time": 300,
-                },
-            )
-            self.scheduler.start()
-        await self.reload()
-
-    async def stop(self) -> None:
-        if self.scheduler is not None:
-            self.scheduler.shutdown(wait=False)
-            self.scheduler = None
-
-    async def reload(self) -> int:
-        if self.scheduler is None:
-            return 0
-        async with self.reload_lock:
-            for job in self.scheduler.get_jobs():
-                if job.id.startswith("dashboard-report:"):
-                    job.remove()
-            async with SessionLocal() as session:
-                rows = (
-                    await session.execute(
-                        text("""
-                            SELECT report_setting_id, frequency, run_time,
-                                   next_run_at
-                            FROM scheduled_report_settings
-                            WHERE status = 'on'
-                        """)
-                    )
-                ).mappings().all()
-                for row in rows:
-                    await self._schedule_row(session, dict(row))
-                await session.commit()
-            return len(rows)
-
-    async def _schedule_row(self, session: AsyncSession, row: dict[str, Any]) -> None:
-        if self.scheduler is None:
-            return
-        run_at = _parse_datetime(row.get("next_run_at"))
-        now = datetime.now(KST)
-        if run_at is None or run_at <= now:
-            run_at = next_run_from(now, str(row["run_time"]), str(row["frequency"]))
-            await session.execute(
-                text("""
-                    UPDATE scheduled_report_settings
-                    SET next_run_at = :next_run_at
-                    WHERE report_setting_id = :report_setting_id
-                """),
-                {
-                    "next_run_at": _format_datetime(run_at),
-                    "report_setting_id": int(row["report_setting_id"]),
-                },
-            )
-        self.scheduler.add_job(
-            self._run,
-            trigger=DateTrigger(run_date=run_at, timezone=KST),
-            id=f"dashboard-report:{int(row['report_setting_id'])}",
-            replace_existing=True,
-            args=[int(row["report_setting_id"])],
-        )
-
-    async def _run(self, report_setting_id: int) -> None:
-        lock_key = 734_000_000 + report_setting_id
-        async with SessionLocal() as session:
-            locked = bool(
-                await session.scalar(
-                    text("SELECT pg_try_advisory_lock(:lock_key)"),
-                    {"lock_key": lock_key},
-                )
-            )
-            if not locked:
-                return
-            try:
-                row = (
-                    await session.execute(
-                        text("""
-                            SELECT r.*, COALESCE(g.guild_name, g.guild_id::TEXT) AS guild_name
-                            FROM scheduled_report_settings r
-                            JOIN guilds g ON g.guild_id = r.guild_id
-                            WHERE r.report_setting_id = :report_setting_id
-                              AND r.status = 'on'
-                        """),
-                        {"report_setting_id": report_setting_id},
-                    )
-                ).mappings().one_or_none()
-                if row is None:
-                    return
-                report = dict(row)
-                schedule = _json_dict(report["schedule_json"])
-                query = _json_dict(report["query_json"])
-                render = _json_dict(report["render_json"])
-                now = datetime.now(KST)
-                message = await build_message(
-                    session,
-                    guild_id=int(report["guild_id"]),
-                    guild_name=str(report["guild_name"]),
-                    schedule=schedule,
-                    query=query,
-                    render=render,
-                    now=now,
-                )
-                for chunk in message_chunks(message):
-                    await discord_api.send_message(int(report["channel_id"]), chunk)
-                next_run_at = next_run_from(
-                    now,
-                    str(schedule.get("time") or report["run_time"]),
-                    str(schedule.get("type") or report["frequency"]),
-                )
-                await session.execute(
-                    text("""
-                        UPDATE scheduled_report_settings
-                        SET last_sent_at = :last_sent_at,
-                            next_run_at = :next_run_at,
-                            updated_at = NOW()
-                        WHERE report_setting_id = :report_setting_id
-                    """),
-                    {
-                        "last_sent_at": _format_datetime(now),
-                        "next_run_at": _format_datetime(next_run_at),
-                        "report_setting_id": report_setting_id,
-                    },
-                )
-                await session.commit()
-                await self._schedule_row(
-                    session,
-                    {
-                        "report_setting_id": report_setting_id,
-                        "frequency": report["frequency"],
-                        "run_time": report["run_time"],
-                        "next_run_at": _format_datetime(next_run_at),
-                    },
-                )
-            except Exception:
-                logger.exception(
-                    "Scheduled report %s failed; retrying in %s minutes",
-                    report_setting_id,
-                    int(RETRY_DELAY.total_seconds() // 60),
-                )
-                await session.rollback()
-                retry_at = datetime.now(KST) + RETRY_DELAY
-                await session.execute(
-                    text("""
-                        UPDATE scheduled_report_settings
-                        SET next_run_at = :next_run_at
-                        WHERE report_setting_id = :report_setting_id
-                    """),
-                    {
-                        "next_run_at": _format_datetime(retry_at),
-                        "report_setting_id": report_setting_id,
-                    },
-                )
-                await session.commit()
-                if self.scheduler is not None:
-                    self.scheduler.add_job(
-                        self._run,
-                        trigger=DateTrigger(run_date=retry_at, timezone=KST),
-                        id=f"dashboard-report:{report_setting_id}",
-                        replace_existing=True,
-                        args=[report_setting_id],
-                    )
-            finally:
-                await session.execute(
-                    text("SELECT pg_advisory_unlock(:lock_key)"),
-                    {"lock_key": lock_key},
-                )
-
-
-report_scheduler = ReportScheduler()

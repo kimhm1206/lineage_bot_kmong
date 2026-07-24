@@ -1,218 +1,103 @@
-# Lineage Ops Console 실행 가이드
+# Lineage Dashboard + Discord Bot
 
-이 문서는 리눅스 운영 서버에서 현재 프로젝트를 실행하기 위한 최소 절차입니다.
-
-중요: 운영 PostgreSQL은 이미 준비되어 있고, 기존 데이터도 운영 DB에 들어가 있습니다. DB 초기화, SQLite 마이그레이션, 테스트 데이터 생성 작업은 실행하지 마세요.
+이 브랜치는 새 `dashboard/`와 Discord 봇만 사용한다. 구형 `web/`,
+WebSocket 브리지, DB 명령 큐는 제거됐다.
 
 ## 구성
 
-- `web/`: FastAPI 웹 콘솔
-- `discord_bot/`: Discord 봇
-- `common/`: 공통 PostgreSQL DB 접근 코드
-- 운영 DB: `.env`의 PostgreSQL 접속값으로 연결
+- `dashboard/`: FastAPI + SQLAlchemy async + PostgreSQL 운영 대시보드
+- `discord_bot/`: Discord 출석 및 통계 알림 봇
+- `discord_bot/storage.py`: 봇 전용 PostgreSQL 저장 계층
+- `common/`: 이전 데이터 변환 스크립트가 참조하는 공통 코드
 
-## 1. 소스 준비
+봇과 대시보드는 반드시 동일한 PostgreSQL 데이터베이스를 사용한다.
 
-```bash
-cd /path/to/lineage_bot_kmong
-git pull
+## 환경 설정
+
+대시보드는 `dashboard/.env`, 봇은 루트 `.env`를 읽는다.
+
+봇의 최소 설정:
+
+```dotenv
+DISCORD_BOT_TOKEN=
+DEVELOPER_DISCORD_ID=238978205078388747
+BOT_DATABASE_URL=postgresql://postgres:password@127.0.0.1:5432/lineage_antalas
+DASHBOARD_BASE_URL=https://dashboard.example.com
+REPORT_SCHEDULE_REFRESH_SECONDS=60
+GUILD_REGISTRY_REFRESH_SECONDS=30
 ```
 
-## 2. Python venv 준비
+대시보드의 최소 설정:
 
-웹과 봇 venv를 분리해서 사용합니다.
+```dotenv
+ENVIRONMENT=production
+DATABASE_URL=postgresql+asyncpg://postgres:password@127.0.0.1:5432/lineage_antalas
+DISCORD_BOT_TOKEN=
+DISCORD_CLIENT_ID=
+DISCORD_CLIENT_SECRET=
+DISCORD_REDIRECT_URI=https://dashboard.example.com/auth/discord/callback
+SESSION_SECRET=
+AUTH_LOCAL_BYPASS=false
+```
+
+## 설치
 
 ```bash
-python3 -m venv web/venv
-web/venv/bin/pip install --upgrade pip
-web/venv/bin/pip install -r web/requirements.txt
+python3 -m venv dashboard/venv
+dashboard/venv/bin/pip install -r dashboard/requirements.txt
 
 python3 -m venv discord_bot/venv
-discord_bot/venv/bin/pip install --upgrade pip
 discord_bot/venv/bin/pip install -r discord_bot/requirements.txt
 ```
 
-## 3. `.env` 설정
+## 실행
 
-프로젝트 루트에 `.env`를 둡니다.
-
-운영 DB는 `LINEAGE_DB_TARGET=test` 또는 `--test` 없이도 운영 DB를 보도록 서버 환경에 맞게 정리하세요. 이 프로젝트의 DB 코드는 기본 실행 시 `LOCAL_DATABASE_URL` 또는 `PGLOCAL*`를 먼저 봅니다. 운영 서버에서 원격/운영 DB를 바로 쓰려면 아래 둘 중 하나를 선택합니다.
-
-방법 A: `LOCAL_DATABASE_URL` 사용
-
-```env
-LOCAL_DATABASE_URL=postgresql://USER:PASSWORD@HOST:5432/DBNAME
-```
-
-방법 B: `PGLOCAL*` 사용
-
-```env
-PGLOCALHOST=HOST
-PGLOCALPORT=5432
-PGLOCALDATABASE=DBNAME
-PGLOCALUSER=USER
-PGLOCALPASSWORD=PASSWORD
-```
-
-Discord/OAuth 관련 값:
-
-```env
-DISCORD_BOT_TOKEN=...
-DISCORD_CLIENT_ID=...
-DISCORD_CLIENT_SECRET=...
-DISCORD_REDIRECT_URI=https://xn--950bk80bh7an33asc.site/auth/discord/callback
-WEB_SESSION_SECRET=충분히_긴_랜덤_문자열
-BOT_BRIDGE_TOKEN=충분히_긴_랜덤_문자열
-BOT_BRIDGE_WS_URL=ws://127.0.0.1:8000/internal/bot/ws
-WEB_BASE_URL=https://xn--950bk80bh7an33asc.site
-GLOBAL_DEVELOPER_DISCORD_ID=개발자_DISCORD_ID
-```
-
-`BOT_BRIDGE_TOKEN`은 웹과 봇이 내부 WebSocket으로 통신할 때 쓰는 토큰입니다. `WEB_SESSION_SECRET`과 같은 값으로 둬도 됩니다.
-
-로컬/테스트용 `LINEAGE_DB_TARGET=test`는 운영 실행에 넣지 마세요.
-
-## 4. 실행
-
-웹:
+대시보드:
 
 ```bash
-cd /path/to/lineage_bot_kmong
-web/venv/bin/python -m uvicorn web.app:app --host 0.0.0.0 --port 8000
+dashboard/venv/bin/python -m uvicorn dashboard.app.main:app \
+  --host 0.0.0.0 --port 8000
 ```
 
 봇:
 
 ```bash
-cd /path/to/lineage_bot_kmong
 discord_bot/venv/bin/python -m discord_bot.main
 ```
 
-봇 프로세스에는 아래 기능이 같이 붙어 있습니다.
+봇은 시작할 때 필요한 새 스키마가 있는지만 검증한다. 테이블을 자동 생성하거나
+길드를 자동 등록하지 않는다.
 
-- 웹과 내부 WebSocket 브리지 연결
-- 웹에서 보낸 출석 시작/종료 명령 처리
-- Discord 관리자 패널 갱신
-- 통계 알림 APScheduler Worker
+## 서버 등록 정책
 
-## 5. Cloudflare 도메인 연결
+`guilds` 테이블이 봇의 허용 목록이다.
 
-운영 도메인:
+1. 개발자가 대시보드의 `/settings/server`에서 Discord 서버 ID를 등록한다.
+2. `is_enabled=true`인 서버에서만 봇 명령과 출석 패널이 동작한다.
+3. 봇을 다른 서버에 초대하는 것만으로는 DB 행이나 설정이 생성되지 않는다.
+4. 미등록 서버에서 명령을 실행하면 개발자 문의 안내만 표시한다.
 
-```text
-https://xn--950bk80bh7an33asc.site
-```
+기존 마이그레이션으로 들어온 서버는 등록 상태를 그대로 유지한다.
+서버 등록/비활성화는 DB 알림으로 즉시 반영되고, 알림 유실 시에도 기본 30초
+안에 다시 동기화된다. 출석 버튼을 누를 때마다 DB를 조회하지 않는다.
 
-Cloudflare Tunnel을 쓰는 경우 public hostname을 아래처럼 연결합니다.
+## 통신 구조
 
-```text
-Hostname: xn--950bk80bh7an33asc.site
-Service: http://localhost:8000
-```
+- 브라우저와 대시보드: 일반 HTTP
+- 봇과 Discord: Discord Gateway
+- 대시보드에서 봇: PostgreSQL `LISTEN/NOTIFY` 제어 이벤트
+- 공통 상태: PostgreSQL
 
-일반 Nginx/리버스 프록시를 쓰는 경우에도 외부 HTTPS 요청이 내부 웹 프로세스 `http://127.0.0.1:8000`으로 전달되게 설정합니다.
+실시간 출석 참여자는 봇 프로세스 메모리에서만 관리하고, 출석 종료 후 한 번
+PostgreSQL에 저장한다. 알림/출석 설정 저장 시 대시보드가 DB 알림을 보내므로
+APScheduler 재등록과 패널 수정은 즉시 처리된다. 봇 재접속이나 알림 유실에
+대비해 통계 알림 설정은 기본 60초마다, 등록 서버는 30초마다 다시 확인한다.
 
-Discord Developer Portal의 OAuth2 Redirect URI에는 반드시 아래 값을 등록합니다.
-
-```text
-https://xn--950bk80bh7an33asc.site/auth/discord/callback
-```
-
-## 6. systemd 예시
-
-경로와 사용자명은 서버에 맞게 바꾸세요.
-
-`/etc/systemd/system/lineage-web.service`
-
-```ini
-[Unit]
-Description=Lineage Ops Web
-After=network.target
-
-[Service]
-User=ubuntu
-WorkingDirectory=/path/to/lineage_bot_kmong
-EnvironmentFile=/path/to/lineage_bot_kmong/.env
-ExecStart=/path/to/lineage_bot_kmong/web/venv/bin/python -m uvicorn web.app:app --host 0.0.0.0 --port 8000
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-```
-
-`/etc/systemd/system/lineage-bot.service`
-
-```ini
-[Unit]
-Description=Lineage Discord Bot
-After=network.target
-
-[Service]
-User=ubuntu
-WorkingDirectory=/path/to/lineage_bot_kmong
-EnvironmentFile=/path/to/lineage_bot_kmong/.env
-ExecStart=/path/to/lineage_bot_kmong/discord_bot/venv/bin/python -m discord_bot.main
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-```
-
-적용:
+## 점검
 
 ```bash
-sudo systemctl daemon-reload
-sudo systemctl enable lineage-web lineage-bot
-sudo systemctl restart lineage-web lineage-bot
-sudo systemctl status lineage-web lineage-bot
-```
-
-로그 확인:
-
-```bash
-journalctl -u lineage-web -f
-journalctl -u lineage-bot -f
-```
-
-## 7. 실행 확인
-
-웹:
-
-```bash
-curl -I https://xn--950bk80bh7an33asc.site/login
-```
-
-봇:
-
-- Discord 봇이 온라인인지 확인
-- 관리자 패널 메시지가 설정 채널에 갱신되는지 확인
-- 웹 출석 페이지에서 실시간 연결이 되는지 확인
-- 웹에서 설정 저장 시 봇 큐가 처리되는지 확인
-
-## 8. 하면 안 되는 작업
-
-운영 서버에서 아래 작업은 하지 마세요.
-
-```bash
-python scripts/migrate_sqlite_to_postgres.py
-python scripts/migrate_sqlite_to_postgres.py --test
-```
-
-SQLite 파일(`*.sqlite3`, `data/`)은 운영 원본으로 쓰지 않습니다. 현재 운영 기준 데이터는 PostgreSQL입니다.
-
-## 9. 자주 쓰는 중지 명령
-
-systemd 사용 시:
-
-```bash
-sudo systemctl stop lineage-web lineage-bot
-```
-
-수동 실행 프로세스 정리 시:
-
-```bash
-pkill -f "uvicorn web.app:app"
-pkill -f "discord_bot.main"
+discord_bot/venv/bin/python -m compileall -q discord_bot
+dashboard/venv/bin/python -m compileall -q dashboard/app
+dashboard/venv/bin/python -m pytest -q dashboard/tests
+git diff --check
 ```

@@ -10,7 +10,11 @@ from discord_bot.utils.attendance import (
     start_attendance,
     stop_attendance,
 )
-from discord_bot.utils.guild import is_admin_member, is_supported_guild
+from discord_bot.utils.guild import (
+    is_admin_member,
+    is_supported_guild,
+    unregistered_guild_message,
+)
 from discord_bot.utils.panel import get_attendance_state
 
 
@@ -24,7 +28,7 @@ class AdminPanelView(discord.ui.View):
             discord.ui.Button(
                 label="드랍&분배",
                 style=discord.ButtonStyle.link,
-                url=_build_web_loot_url(guild_id),
+                url=_build_dashboard_url("/alliance/drops", guild_id),
                 row=0,
             )
         )
@@ -32,7 +36,7 @@ class AdminPanelView(discord.ui.View):
             discord.ui.Button(
                 label="통계",
                 style=discord.ButtonStyle.link,
-                url=_build_web_statistics_url(guild_id),
+                url=_build_dashboard_url("/attendance/statistics", guild_id),
                 row=0,
             )
         )
@@ -40,7 +44,7 @@ class AdminPanelView(discord.ui.View):
             discord.ui.Button(
                 label="설정",
                 style=discord.ButtonStyle.link,
-                url=_build_web_settings_url(guild_id),
+                url=_build_dashboard_url("/settings/attendance", guild_id),
                 row=0,
             )
         )
@@ -48,7 +52,7 @@ class AdminPanelView(discord.ui.View):
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         guild = interaction.guild
         if guild is None or not is_supported_guild(self.bot, guild.id):
-            await _safe_response(interaction, "권한이 없습니다.")
+            await _safe_response(interaction, unregistered_guild_message())
             return False
 
         if not is_admin_member(interaction.user):
@@ -129,16 +133,6 @@ async def _safe_response(
         return
 
 
-def _build_web_statistics_url(guild_id: int) -> str:
-    base_url = os.getenv("WEB_BASE_URL", "https://xn--950bk80bh7an33asc.site").rstrip("/")
-    return f"{base_url}/dashboard?{urlencode({'guild_id': str(guild_id)})}"
-
-
-def _build_web_loot_url(guild_id: int) -> str:
-    base_url = os.getenv("WEB_BASE_URL", "https://xn--950bk80bh7an33asc.site").rstrip("/")
-    return f"{base_url}/loot?{urlencode({'guild_id': str(guild_id)})}"
-
-
-def _build_web_settings_url(guild_id: int) -> str:
-    base_url = os.getenv("WEB_BASE_URL", "https://xn--950bk80bh7an33asc.site").rstrip("/")
-    return f"{base_url}/settings?{urlencode({'guild_id': str(guild_id)})}#channels"
+def _build_dashboard_url(path: str, guild_id: int) -> str:
+    base_url = os.getenv("DASHBOARD_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
+    return f"{base_url}{path}?{urlencode({'guild_id': str(guild_id)})}"

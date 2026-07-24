@@ -110,7 +110,15 @@ async def save_attendance_settings(
     log_channel_id: int | None,
     timer: int,
     attendance_available_timer: int,
-) -> None:
+) -> int | None:
+    previous_admin_channel_id = await session.scalar(
+        text("""
+            SELECT admin_channel_id
+            FROM guild_settings
+            WHERE guild_id = :guild_id
+        """),
+        {"guild_id": guild_id},
+    )
     await session.execute(
         text("""
             INSERT INTO guild_settings (
@@ -144,6 +152,11 @@ async def save_attendance_settings(
         target_id=guild_id,
     )
     await session.commit()
+    return (
+        int(previous_admin_channel_id)
+        if previous_admin_channel_id is not None
+        else None
+    )
 
 
 async def list_guild_alliances(session: AsyncSession, guild_id: int) -> list[dict[str, Any]]:

@@ -1,7 +1,9 @@
 # Dashboard V2
 
 FastAPI와 SQLAlchemy 2.x 기반의 PostgreSQL 전용 새 대시보드입니다.
-기존 `web/`와 SQLite 코드는 건드리지 않고, 새 정산/혈비 가계부 구조만 바라봅니다.
+Discord 봇과 같은 PostgreSQL 스키마를 사용하며, 구형 `web/` 프로젝트를 대체합니다.
+출석 설정과 통계 알림 변경은 PostgreSQL `LISTEN/NOTIFY`로 봇에 전달하며,
+대시보드 프로세스 자체에서는 Discord 발송 스케줄러를 실행하지 않습니다.
 
 ## 실행
 

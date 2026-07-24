@@ -16,7 +16,7 @@ from dashboard.app.security import (
     current_guild_id,
     require_selected_guild,
 )
-from dashboard.app.services import report_service, workspace_store
+from dashboard.app.services import bot_events, report_service, workspace_store
 from dashboard.app.services.discord_api import DiscordApiError, discord_api
 from dashboard.app.ui.context import build_template_context
 
@@ -87,7 +87,6 @@ async def notifications_page(
             "reports_json": [report["form_data"] for report in reports],
             "channels": channels,
             "channel_error": channel_error,
-            "scheduler_ready": report_service.report_scheduler.scheduler is not None,
             "active_count": sum(1 for report in reports if report["status"] == "on"),
         }
     )
@@ -139,7 +138,11 @@ async def save_report(
             form=values,
             report_setting_id=report_setting_id,
         )
-        await report_service.report_scheduler.reload()
+        await bot_events.publish_bot_event(
+            session,
+            "refresh_report_schedules",
+            guild_id=guild_id,
+        )
     except ValueError as exc:
         return JSONResponse({"ok": False, "message": str(exc)}, status_code=422)
     return JSONResponse(
@@ -209,7 +212,11 @@ async def report_status(
             actor_discord_id=current_discord_user_id(request) or 0,
             status=target_status,
         )
-        await report_service.report_scheduler.reload()
+        await bot_events.publish_bot_event(
+            session,
+            "refresh_report_schedules",
+            guild_id=guild_id,
+        )
     except ValueError as exc:
         return JSONResponse({"ok": False, "message": str(exc)}, status_code=422)
     if not updated:

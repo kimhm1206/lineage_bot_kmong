@@ -1,2 +1,2 @@
 -r discord_bot/requirements.txt
--r web/requirements.txt
+-r dashboard/requirements.txt

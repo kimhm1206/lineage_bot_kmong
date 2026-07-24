@@ -8,7 +8,7 @@ from pathlib import Path
 
 import discord
 
-from common.db import GuildSettings, database
+from discord_bot.storage import GuildSettings, database
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -161,8 +161,22 @@ async def clear_old_admin_panel(
         return
 
     channel = guild.get_channel(channel_id)
-    if isinstance(channel, discord.TextChannel):
-        await delete_bot_messages(channel, bot.user.id if bot.user else 0)
+    if not isinstance(channel, discord.TextChannel):
+        return
+
+    panel_state = _get_panel_state(bot, guild.id)
+    message_id = panel_state.get("message_id")
+    panel_channel_id = panel_state.get("channel_id")
+    if not isinstance(message_id, int) or panel_channel_id != channel_id:
+        return
+
+    try:
+        message = await channel.fetch_message(message_id)
+        await message.delete()
+    except (discord.Forbidden, discord.NotFound, discord.HTTPException):
+        pass
+    finally:
+        _clear_panel_state(bot, guild.id)
 
 
 async def delete_bot_messages(
