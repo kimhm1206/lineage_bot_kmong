@@ -14,3 +14,4 @@ aitest/
 .vscode/tasks.json
 deploy.sh
 scripts/sync_guild_roles_from_nicknames.py
+scripts/migrate_temp_db_to_lineage_antalas.py
