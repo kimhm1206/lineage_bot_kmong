@@ -645,37 +645,10 @@ async def save_manager(request: Request, session: AsyncSession = Depends(get_ses
         )
         if scope_code == settings_store.SCOPE_CLAN_MANAGER and alliance_id is None:
             raise ValueError
-        # The shared picker already receives only members of the selected guild.
-        # A second REST lookup here can reject a valid selected member when the
-        # Discord member cache changes between rendering the page and submitting.
-        # Clan managers still need the additional role-to-alliance validation.
-        if scope_code == settings_store.SCOPE_CLAN_MANAGER and discord_api.configured:
-            members = await discord_api.members(guild_id)
-            selected_member = next(
-                (
-                    row
-                    for row in members
-                    if int(row.get("user", {}).get("id", 0)) == discord_user_id
-                ),
-                None,
-            )
-            if selected_member is None:
-                raise ValueError
-            discord_display_name = _member_display_name(selected_member) or discord_display_name
-            mappings = await settings_store.list_role_mappings(session, guild_id)
-            has_matching_role = _member_has_alliance_role(
-                selected_member,
-                alliance_id=alliance_id,
-                role_alliance_map=_role_alliance_map(mappings),
-            )
-            is_alliance_manager = await settings_store.has_assignment_scope(
-                session,
-                guild_id=guild_id,
-                discord_user_id=discord_user_id,
-                scope_code=settings_store.SCOPE_ALLIANCE_MANAGER,
-            )
-            if not has_matching_role and not is_alliance_manager:
-                raise ValueError
+        # The picker limits each clan to role-mapped members and additionally
+        # includes existing alliance managers so they can hold both duties.
+        # Do not repeat that live Discord role validation here: it can reject a
+        # correct picker selection when Discord's member cache changes mid-flow.
         await settings_store.add_assignment(
             session,
             guild_id=guild_id,

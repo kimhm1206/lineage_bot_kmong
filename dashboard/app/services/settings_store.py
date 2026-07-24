@@ -367,31 +367,6 @@ async def refresh_assignment_display_names(
     await session.commit()
 
 
-async def has_assignment_scope(
-    session: AsyncSession,
-    *,
-    guild_id: int,
-    discord_user_id: int,
-    scope_code: int,
-) -> bool:
-    assignment_id = await session.scalar(
-        text("""
-            SELECT assignment_id
-            FROM guild_user_assignments
-            WHERE guild_id = :guild_id
-              AND discord_user_id = :discord_user_id
-              AND scope_code = :scope_code
-            LIMIT 1
-        """),
-        {
-            "guild_id": guild_id,
-            "discord_user_id": discord_user_id,
-            "scope_code": scope_code,
-        },
-    )
-    return assignment_id is not None
-
-
 async def delete_assignment(session: AsyncSession, *, guild_id: int, assignment_id: int) -> None:
     deleted = (
         await session.execute(
