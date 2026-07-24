@@ -25,7 +25,11 @@ from discord_bot.utils.guild import (
     is_supported_guild,
     unregistered_guild_message,
 )
-from discord_bot.utils.panel import build_runtime_label, update_admin_panel
+from discord_bot.utils.panel import (
+    build_runtime_label,
+    clear_duplicate_admin_panels,
+    update_admin_panel,
+)
 from discord_bot.views.admin_panel import AdminPanelView
 
 
@@ -45,6 +49,7 @@ bot = discord.Bot(intents=intents)
 bot.panel_state_by_guild = {}
 bot.attendance_state_by_guild = {}
 bot.attendance_locks = {}
+bot.panel_locks = {}
 bot.voice_entry_times_by_guild = {}
 bot.commands_synced = False
 bot.persistent_views_registered = False
@@ -73,14 +78,21 @@ async def on_ready() -> None:
 
     start_report_scheduler(bot)
     await reload_report_schedules(bot)
-    start_database_notification_listener(bot)
 
     for guild in bot.guilds:
         if guild.id not in bot.registered_guild_ids:
             print(f"[guild-access] skipped unregistered guild: {guild.name} ({guild.id})")
             continue
         seed_voice_entry_times(bot, guild)
-        await update_admin_panel(bot, guild.id)
+        message = await update_admin_panel(bot, guild.id)
+        if message is not None:
+            await clear_duplicate_admin_panels(
+                message.channel,
+                bot.user.id if bot.user else 0,
+                keep_message_id=message.id,
+            )
+
+    start_database_notification_listener(bot)
 
     guild_names = ", ".join(guild.name for guild in bot.guilds) or "No Guild"
     print(f"봇 로그인 완료: {bot.user} | 길드: {guild_names}")

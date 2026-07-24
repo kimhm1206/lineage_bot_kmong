@@ -94,6 +94,11 @@ def build_attendance_embed(
 
 
 async def rebuild_admin_panel(bot: discord.Bot, guild_id: int) -> discord.Message | None:
+    async with _get_panel_lock(bot, guild_id):
+        return await _rebuild_admin_panel(bot, guild_id)
+
+
+async def _rebuild_admin_panel(bot: discord.Bot, guild_id: int) -> discord.Message | None:
     from discord_bot.views.admin_panel import AdminPanelView
 
     guild = bot.get_guild(guild_id)
@@ -123,6 +128,11 @@ async def rebuild_admin_panel(bot: discord.Bot, guild_id: int) -> discord.Messag
 
 
 async def update_admin_panel(bot: discord.Bot, guild_id: int) -> discord.Message | None:
+    async with _get_panel_lock(bot, guild_id):
+        return await _update_admin_panel(bot, guild_id)
+
+
+async def _update_admin_panel(bot: discord.Bot, guild_id: int) -> discord.Message | None:
     from discord_bot.views.admin_panel import AdminPanelView
 
     guild = bot.get_guild(guild_id)
@@ -146,12 +156,12 @@ async def update_admin_panel(bot: discord.Bot, guild_id: int) -> discord.Message
     panel_channel_id = panel_state.get("channel_id")
 
     if panel_message_id is None or panel_channel_id != channel.id:
-        return await rebuild_admin_panel(bot, guild_id)
+        return await _rebuild_admin_panel(bot, guild_id)
 
     try:
         message = await channel.fetch_message(panel_message_id)
     except (discord.NotFound, discord.Forbidden, discord.HTTPException):
-        return await rebuild_admin_panel(bot, guild_id)
+        return await _rebuild_admin_panel(bot, guild_id)
 
     embed = build_admin_panel_embed(bot, guild, settings)
     view = AdminPanelView(bot, guild_id)
@@ -189,6 +199,24 @@ async def delete_bot_messages(
 ) -> None:
     async for message in channel.history(limit=limit):
         if message.author.id != bot_user_id:
+            continue
+        try:
+            await message.delete()
+        except (discord.Forbidden, discord.NotFound, discord.HTTPException):
+            continue
+
+
+async def clear_duplicate_admin_panels(
+    channel: discord.TextChannel,
+    bot_user_id: int,
+    *,
+    keep_message_id: int,
+    limit: int = 100,
+) -> None:
+    async for message in channel.history(limit=limit):
+        if message.id == keep_message_id or message.author.id != bot_user_id:
+            continue
+        if not any(embed.title == "출석 패널" for embed in message.embeds):
             continue
         try:
             await message.delete()
@@ -269,6 +297,18 @@ def _get_panel_state(bot: discord.Bot, guild_id: int) -> dict[str, int | None]:
         }
         panel_state_by_guild[guild_id] = state
     return state
+
+
+def _get_panel_lock(bot: discord.Bot, guild_id: int) -> asyncio.Lock:
+    locks = getattr(bot, "panel_locks", None)
+    if not isinstance(locks, dict):
+        locks = {}
+        bot.panel_locks = locks
+    lock = locks.get(guild_id)
+    if not isinstance(lock, asyncio.Lock):
+        lock = asyncio.Lock()
+        locks[guild_id] = lock
+    return lock
 
 
 def _set_panel_state(
