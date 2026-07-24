@@ -15,6 +15,7 @@
       this.users = [];
       this.selectedIds = new Set();
       this.excludedIds = new Set();
+      this.includeIds = new Set();
       this.multiple = false;
       this.idKey = "discord_id";
       this.allianceId = "";
@@ -42,6 +43,7 @@
       this.allianceId = options.allianceId ? String(options.allianceId) : "";
       this.allianceName = String(options.allianceName || "");
       this.excludedIds = new Set((options.excludedIds || []).map(String));
+      this.includeIds = new Set((options.includeIds || []).map(String));
       const selectedIds = (options.selectedIds || [])
         .map(String)
         .filter((id) => !this.excludedIds.has(id));
@@ -87,6 +89,7 @@
     }
 
     belongsToAlliance(user) {
+      if (this.includeIds.has(this.userId(user))) return true;
       if (!this.allianceId) return true;
       const allianceIds = Array.isArray(user.alliance_ids)
         ? user.alliance_ids

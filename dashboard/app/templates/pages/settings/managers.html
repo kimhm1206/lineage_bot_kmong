@@ -35,7 +35,7 @@
         <input type="hidden" name="guild_id" value="{{ guild_id or '' }}">
         <input type="hidden" name="scope_code" value="1">
         <div class="manager-add-heading"><span>{{ icon("plus-square") }}</span><div><strong>연합 관리자 추가</strong><small>서버 유저 검색</small></div></div>
-        {{ user_picker_field() }}
+        {{ user_picker_field(display_name_input_name="discord_display_name") }}
         <button class="primary-button manager-submit" type="submit" {% if not guild_id or not members %}disabled{% endif %}>담당자로 추가</button>
       </form>
     </div>
@@ -84,7 +84,7 @@
             {% endfor %}
           </div>
         </fieldset>
-        {{ user_picker_field() }}
+        {{ user_picker_field(display_name_input_name="discord_display_name") }}
         <button class="primary-button manager-submit" type="submit" {% if not guild_id or not members or not alliances %}disabled{% endif %}>담당자로 추가</button>
       </form>
     </div>

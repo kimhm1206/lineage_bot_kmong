@@ -42,6 +42,11 @@ class DiscordRestClient:
             if key.startswith(prefix):
                 self._cache.pop(key, None)
 
+    def clear_members_cache(self, guild_id: int) -> None:
+        """Clear both the merged member list and its paginated REST responses."""
+        self.clear_cache(f"members:{guild_id}")
+        self.clear_cache(f"members-page:{guild_id}:")
+
     def _http_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
             self._client = httpx.AsyncClient(

@@ -259,8 +259,8 @@ async def delete_role_mapping(session: AsyncSession, *, guild_id: int, mapping_i
 async def list_assignments(session: AsyncSession, guild_id: int) -> list[dict[str, Any]]:
     result = await session.execute(
         text("""
-            SELECT ua.assignment_id, ua.discord_user_id, ua.scope_code,
-                   ua.alliance_id, a.alliance_name
+            SELECT ua.assignment_id, ua.discord_user_id, ua.discord_display_name,
+                   ua.scope_code, ua.alliance_id, a.alliance_name
             FROM guild_user_assignments ua
             LEFT JOIN alliances a ON a.alliance_id = ua.alliance_id
             WHERE ua.guild_id = :guild_id
@@ -276,20 +276,51 @@ async def add_assignment(
     *,
     guild_id: int,
     discord_user_id: int,
+    discord_display_name: str | None,
     scope_code: int,
     alliance_id: int | None,
 ) -> None:
+    existing_assignment_id = await session.scalar(
+        text("""
+            UPDATE guild_user_assignments
+            SET discord_display_name = COALESCE(
+                    :discord_display_name,
+                    discord_display_name
+                ),
+                updated_at = NOW()
+            WHERE guild_id = :guild_id
+              AND discord_user_id = :discord_user_id
+              AND scope_code = :scope_code
+              AND alliance_id IS NOT DISTINCT FROM :alliance_id
+            RETURNING assignment_id
+        """),
+        {
+            "guild_id": guild_id,
+            "discord_user_id": discord_user_id,
+            "discord_display_name": discord_display_name,
+            "scope_code": scope_code,
+            "alliance_id": alliance_id,
+        },
+    )
+    if existing_assignment_id is not None:
+        await session.commit()
+        return
+
     assignment_id = await session.scalar(
         text("""
             INSERT INTO guild_user_assignments (
-                guild_id, discord_user_id, scope_code, alliance_id, updated_at
-            ) VALUES (:guild_id, :discord_user_id, :scope_code, :alliance_id, NOW())
+                guild_id, discord_user_id, discord_display_name, scope_code, alliance_id, updated_at
+            ) VALUES (
+                :guild_id, :discord_user_id, :discord_display_name,
+                :scope_code, :alliance_id, NOW()
+            )
             ON CONFLICT DO NOTHING
             RETURNING assignment_id
         """),
         {
             "guild_id": guild_id,
             "discord_user_id": discord_user_id,
+            "discord_display_name": discord_display_name,
             "scope_code": scope_code,
             "alliance_id": alliance_id,
         },
@@ -303,6 +334,62 @@ async def add_assignment(
             alliance_id=alliance_id,
         )
     await session.commit()
+
+
+async def refresh_assignment_display_names(
+    session: AsyncSession,
+    *,
+    guild_id: int,
+    names_by_discord_id: dict[int, str],
+) -> None:
+    values = [
+        {
+            "guild_id": guild_id,
+            "discord_user_id": discord_user_id,
+            "discord_display_name": display_name,
+        }
+        for discord_user_id, display_name in names_by_discord_id.items()
+        if display_name
+    ]
+    if not values:
+        return
+    await session.execute(
+        text("""
+            UPDATE guild_user_assignments
+            SET discord_display_name = :discord_display_name,
+                updated_at = NOW()
+            WHERE guild_id = :guild_id
+              AND discord_user_id = :discord_user_id
+              AND discord_display_name IS DISTINCT FROM :discord_display_name
+        """),
+        values,
+    )
+    await session.commit()
+
+
+async def has_assignment_scope(
+    session: AsyncSession,
+    *,
+    guild_id: int,
+    discord_user_id: int,
+    scope_code: int,
+) -> bool:
+    assignment_id = await session.scalar(
+        text("""
+            SELECT assignment_id
+            FROM guild_user_assignments
+            WHERE guild_id = :guild_id
+              AND discord_user_id = :discord_user_id
+              AND scope_code = :scope_code
+            LIMIT 1
+        """),
+        {
+            "guild_id": guild_id,
+            "discord_user_id": discord_user_id,
+            "scope_code": scope_code,
+        },
+    )
+    return assignment_id is not None
 
 
 async def delete_assignment(session: AsyncSession, *, guild_id: int, assignment_id: int) -> None:

@@ -22,6 +22,7 @@ def upgrade() -> None:
             assignment_id BIGSERIAL PRIMARY KEY,
             guild_id BIGINT NOT NULL REFERENCES guilds(guild_id) ON DELETE CASCADE,
             discord_user_id BIGINT NOT NULL,
+            discord_display_name TEXT,
             scope_code SMALLINT NOT NULL CHECK (scope_code IN (1, 2, 3)),
             alliance_id BIGINT REFERENCES alliances(alliance_id) ON DELETE CASCADE,
             assigned_by_discord_user_id BIGINT,
