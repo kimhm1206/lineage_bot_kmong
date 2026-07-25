@@ -431,7 +431,7 @@ async def _build_alliance_payouts(session: AsyncSession, *, drop_id: int) -> Non
     drop = (
         await session.execute(
             text("""
-                SELECT d.guild_id, d.gross_adena, s.buyer_alliance_id
+                SELECT d.guild_id, d.gross_adena
                 FROM settlement_drops d
                 JOIN settlement_drop_sales s ON s.drop_id = d.drop_id
                 WHERE d.drop_id = :drop_id AND s.status_code = 1
@@ -475,7 +475,6 @@ async def _build_alliance_payouts(session: AsyncSession, *, drop_id: int) -> Non
                 FROM settlement_drop_participants p
                 WHERE p.drop_id = :drop_id
                   AND p.alliance_id IS NOT NULL
-                  AND p.alliance_id <> :buyer_alliance_id
                   AND NOT EXISTS (
                       SELECT 1
                       FROM settlement_drop_excluded_alliances excluded
@@ -485,12 +484,12 @@ async def _build_alliance_payouts(session: AsyncSession, *, drop_id: int) -> Non
                 GROUP BY p.alliance_id
                 ORDER BY p.alliance_id
             """),
-            {"drop_id": drop_id, "buyer_alliance_id": int(drop["buyer_alliance_id"])},
+            {"drop_id": drop_id},
         )
     ).mappings().all()
     eligible_count = sum(int(row["member_count"]) for row in groups)
     if eligible_count == 0:
-        raise SettlementError("구매·제외 혈맹을 빼면 분배할 참여자가 없습니다.")
+        raise SettlementError("분배 제외 혈맹을 빼면 분배할 참여자가 없습니다.")
     per_member = distributable // eligible_count
     for group in groups:
         amount = per_member * int(group["member_count"])

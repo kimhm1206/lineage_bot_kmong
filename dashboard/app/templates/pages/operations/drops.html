@@ -71,9 +71,9 @@
         <summary><span>참여 혈맹과 분배 제외 확인</span>{{ icon("chevron-right") }}</summary>
         <div class="drop-alliance-grid">
           {% for alliance in drop.participants %}
-          <div class="drop-alliance-chip{% if alliance.is_excluded or alliance.alliance_id == drop.buyer_alliance_id %} is-excluded{% endif %}">
+          <div class="drop-alliance-chip{% if alliance.is_excluded %} is-excluded{% endif %}">
             <strong>{{ alliance.alliance_name }}</strong><span>{{ alliance.member_label }}</span>
-            {% if alliance.alliance_id == drop.buyer_alliance_id %}<small>구매 혈맹</small>{% elif alliance.is_excluded %}<small>분배 제외</small>{% else %}<small>분배 대상</small>{% endif %}
+            {% if alliance.is_excluded %}<small>분배 제외</small>{% elif alliance.alliance_id == drop.buyer_alliance_id %}<small>구매 혈맹 · 분배 대상</small>{% else %}<small>분배 대상</small>{% endif %}
           </div>
           {% endfor %}
         </div>
