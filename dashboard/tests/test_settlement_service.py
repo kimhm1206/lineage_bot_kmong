@@ -81,6 +81,62 @@ class _ClanChildSession:
         return 0
 
 
+class _DistributionStateSession:
+    def __init__(self, rows):
+        self.rows = rows
+
+    async def execute(self, statement, params):
+        sql = str(statement)
+        assert "FOR UPDATE OF po" in sql
+        assert params == {"drop_id": 9, "guild_id": 100}
+        return _MappingsResult(rows=self.rows)
+
+
+def test_initial_sale_payouts_are_not_distribution_activity() -> None:
+    session = _DistributionStateSession(
+        [
+            {"status_code": 0, "parent_payout_object_id": None},
+            {"status_code": 0, "parent_payout_object_id": None},
+        ]
+    )
+
+    assert not asyncio.run(
+        settlement_service._distribution_started(
+            session,
+            drop_id=9,
+            guild_id=100,
+        )
+    )
+
+
+def test_processed_payout_blocks_sale_changes() -> None:
+    session = _DistributionStateSession(
+        [{"status_code": 1, "parent_payout_object_id": None}]
+    )
+
+    assert asyncio.run(
+        settlement_service._distribution_started(
+            session,
+            drop_id=9,
+            guild_id=100,
+        )
+    )
+
+
+def test_generated_member_payout_blocks_sale_changes() -> None:
+    session = _DistributionStateSession(
+        [{"status_code": 0, "parent_payout_object_id": 77}]
+    )
+
+    assert asyncio.run(
+        settlement_service._distribution_started(
+            session,
+            drop_id=9,
+            guild_id=100,
+        )
+    )
+
+
 def test_buyer_alliance_is_included_in_alliance_payouts(monkeypatch) -> None:
     async def no_fee_rules(*_args, **_kwargs):
         return []

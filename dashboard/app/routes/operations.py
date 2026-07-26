@@ -827,17 +827,21 @@ async def drop_sale_history(
         date_from,
         date_to,
     )
+    page_data = await operations_store.drop_sale_history_page(
+        session,
+        guild_id=guild_id,
+        period_days=selected_period,
+        date_from_epoch=date_from_epoch,
+        date_to_epoch=date_to_epoch,
+        query=_query(q),
+        page=max(page, 1),
+    )
+    if not can_manage_alliance_operations(request):
+        for record in page_data["history"]:
+            record["can_reopen"] = False
     return {
         "ok": True,
-        **await operations_store.drop_sale_history_page(
-            session,
-            guild_id=guild_id,
-            period_days=selected_period,
-            date_from_epoch=date_from_epoch,
-            date_to_epoch=date_to_epoch,
-            query=_query(q),
-            page=max(page, 1),
-        ),
+        **page_data,
     }
 
 

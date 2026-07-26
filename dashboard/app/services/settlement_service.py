@@ -111,6 +111,33 @@ async def _audit(
     )
 
 
+async def _distribution_started(
+    session: AsyncSession,
+    *,
+    drop_id: int,
+    guild_id: int,
+) -> bool:
+    """Lock payout rows and detect any work beyond initial sale calculation."""
+    rows = (
+        await session.execute(
+            text("""
+                SELECT po.status_code, po.parent_payout_object_id
+                FROM settlement_payout_objects po
+                JOIN settlement_drops d ON d.drop_id = po.drop_id
+                WHERE po.drop_id = :drop_id
+                  AND d.guild_id = :guild_id
+                FOR UPDATE OF po
+            """),
+            {"drop_id": drop_id, "guild_id": guild_id},
+        )
+    ).mappings().all()
+    return any(
+        int(row["status_code"]) != STATUS_PENDING
+        or row["parent_payout_object_id"] is not None
+        for row in rows
+    )
+
+
 async def _catalog_version(session: AsyncSession, item_id: int, guild_id: int) -> int:
     item = (
         await session.execute(
@@ -355,21 +382,25 @@ async def update_drop(
 
 
 async def delete_drop(session: AsyncSession, *, drop_id: int, guild_id: int) -> OperationResult:
-    non_pending = int(
-        await session.scalar(
+    drop = (
+        await session.execute(
             text("""
-                SELECT COUNT(*)
-                FROM settlement_payout_objects po
-                JOIN settlement_drops d ON d.drop_id = po.drop_id
-                WHERE po.drop_id = :drop_id AND d.guild_id = :guild_id
-                  AND po.status_code <> 0
+                SELECT attendance_id
+                FROM settlement_drops
+                WHERE drop_id = :drop_id AND guild_id = :guild_id
+                FOR UPDATE
             """),
             {"drop_id": drop_id, "guild_id": guild_id},
         )
-        or 0
-    )
-    if non_pending:
-        raise SettlementError("이미 정산된 내역이 있어 드랍을 삭제할 수 없습니다.")
+    ).mappings().one_or_none()
+    if drop is None:
+        raise SettlementError("드랍 기록을 찾을 수 없습니다.")
+    if await _distribution_started(
+        session,
+        drop_id=drop_id,
+        guild_id=guild_id,
+    ):
+        raise SettlementError("분배가 시작된 판매 기록은 삭제할 수 없습니다.")
     deleted = await session.scalar(
         text("""
             DELETE FROM settlement_drops
@@ -379,7 +410,7 @@ async def delete_drop(session: AsyncSession, *, drop_id: int, guild_id: int) -> 
         {"drop_id": drop_id, "guild_id": guild_id},
     )
     if deleted is None:
-        raise SettlementError("드랍 기록을 찾을 수 없습니다.")
+        raise SettlementError("드랍 기록 삭제에 실패했습니다.")
     await _audit(
         session,
         guild_id=guild_id,
@@ -558,14 +589,11 @@ async def complete_sale(
         )
         if valid_buyer is None:
             raise SettlementError("구매자는 구매 혈맹의 활성 유저여야 합니다.")
-    non_pending = int(
-        await session.scalar(
-            text("SELECT COUNT(*) FROM settlement_payout_objects WHERE drop_id = :drop_id AND status_code <> 0"),
-            {"drop_id": drop_id},
-        )
-        or 0
-    )
-    if non_pending:
+    if await _distribution_started(
+        session,
+        drop_id=drop_id,
+        guild_id=guild_id,
+    ):
         raise SettlementError("이미 정산이 시작된 판매 정보는 변경할 수 없습니다.")
     await session.execute(
         text("DELETE FROM settlement_payout_objects WHERE drop_id = :drop_id"),
@@ -621,20 +649,27 @@ async def complete_sale(
 
 
 async def reopen_sale(session: AsyncSession, *, drop_id: int, guild_id: int) -> OperationResult:
-    non_pending = int(
-        await session.scalar(
+    sale = (
+        await session.execute(
             text("""
-                SELECT COUNT(*)
-                FROM settlement_payout_objects po
-                JOIN settlement_drops d ON d.drop_id = po.drop_id
-                WHERE po.drop_id = :drop_id AND d.guild_id = :guild_id
-                  AND po.status_code <> 0
+                SELECT s.status_code
+                FROM settlement_drop_sales s
+                JOIN settlement_drops d ON d.drop_id = s.drop_id
+                WHERE s.drop_id = :drop_id AND d.guild_id = :guild_id
+                FOR UPDATE
             """),
             {"drop_id": drop_id, "guild_id": guild_id},
         )
-        or 0
-    )
-    if non_pending:
+    ).mappings().one_or_none()
+    if sale is None:
+        raise SettlementError("판매 기록을 찾을 수 없습니다.")
+    if int(sale["status_code"]) != 1:
+        raise SettlementError("이미 판매 대기 상태인 기록입니다.")
+    if await _distribution_started(
+        session,
+        drop_id=drop_id,
+        guild_id=guild_id,
+    ):
         raise SettlementError("정산이 시작되어 판매 상태를 되돌릴 수 없습니다.")
     await session.execute(
         text("DELETE FROM settlement_payout_objects WHERE drop_id = :drop_id"),

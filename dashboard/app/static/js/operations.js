@@ -185,6 +185,7 @@
     }
     const keepModalOpen = form.hasAttribute("data-keep-modal");
     const refreshAllianceHistory = form.hasAttribute("data-alliance-history-cancel");
+    const refreshDropHistory = form.hasAttribute("data-drop-history-refresh");
     const submitter = form.querySelector("button[type=submit]");
     const originalHtml = submitter?.innerHTML;
     if (submitter) {
@@ -203,6 +204,7 @@
       showToast(payload.message || "처리했습니다.");
       await refreshLivePage();
       if (refreshAllianceHistory) await loadAllianceHistory({ reset: true });
+      if (refreshDropHistory) await loadDropHistory({ reset: true });
     } catch (error) {
       showToast(error.message || "작업 중 오류가 발생했습니다.", "error");
     } finally {
@@ -392,6 +394,30 @@
     const completedAt = document.createElement("time");
     completedAt.textContent = `판매 완료 ${record.completed_at_label || "-"}`;
     footer.append(buyer, completedAt);
+    if (record.can_reopen) {
+      const form = document.createElement("form");
+      form.method = "post";
+      form.action = `/api/drops/${record.drop_id}/reopen`;
+      form.dataset.asyncForm = "";
+      form.dataset.keepModal = "";
+      form.dataset.dropHistoryRefresh = "";
+      form.dataset.confirm = "이 판매를 취소하고 판매 대기 상태로 되돌리시겠습니까?";
+      form.dataset.confirmTitle = "판매 취소 확인";
+      form.dataset.confirmAction = "판매 취소";
+
+      const guildId = document.createElement("input");
+      guildId.type = "hidden";
+      guildId.name = "guild_id";
+      guildId.value = dropHistoryState.guildId;
+
+      const cancelButton = document.createElement("button");
+      cancelButton.className = "secondary-button drop-history-cancel";
+      cancelButton.type = "submit";
+      cancelButton.textContent = "판매 취소";
+
+      form.append(guildId, cancelButton);
+      footer.append(form);
+    }
 
     card.append(heading, metrics, footer);
     return card;

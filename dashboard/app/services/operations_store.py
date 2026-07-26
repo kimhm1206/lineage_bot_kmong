@@ -427,6 +427,15 @@ async def drop_sale_history_page(
                                TO_TIMESTAMP(sale.completed_at),
                                'YYYY-MM-DD HH24:MI'
                            ) AS completed_at_label,
+                           NOT EXISTS (
+                               SELECT 1
+                               FROM settlement_payout_objects payout
+                               WHERE payout.drop_id = drop_row.drop_id
+                                 AND (
+                                     payout.status_code <> 0
+                                     OR payout.parent_payout_object_id IS NOT NULL
+                                 )
+                           ) AS can_reopen,
                            (
                                SELECT COUNT(*)
                                FROM settlement_drop_participants participant
@@ -455,6 +464,7 @@ async def drop_sale_history_page(
             "participant_count",
         ):
             row[key] = int(row[key] or 0)
+        row["can_reopen"] = bool(row["can_reopen"])
         row["cash_label"] = f"{_money(row['cash_price_krw'])}원"
         row["adena_label"] = _money(row["gross_adena"])
         row["rate_label"] = (

@@ -8499,6 +8499,17 @@ body.modal-open {
   white-space: nowrap;
 }
 
+.drop-history-card > footer form {
+  width: 100%;
+}
+
+.drop-history-cancel {
+  width: 100%;
+  min-height: 34px;
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--line));
+  color: var(--danger);
+}
+
 .drop-history-empty,
 .clan-item-history-empty {
   height: 100%;
