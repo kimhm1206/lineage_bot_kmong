@@ -140,7 +140,7 @@ def get_navigation(
                     and can_manage_alliance
                 ) or (
                     item.id == "operations.delegation"
-                    and access_role in {"developer", "owner"}
+                    and access_role in {"developer", "owner", "alliance_manager"}
                 )
                 if not allowed:
                     continue

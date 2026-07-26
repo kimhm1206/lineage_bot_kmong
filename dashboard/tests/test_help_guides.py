@@ -59,6 +59,6 @@ def test_help_guides_expose_minimum_access_labels() -> None:
     }
 
     assert guides["home.personal"]["access_label"] == "유저"
-    assert guides["operations.delegation"]["access_label"] == "오너"
+    assert guides["operations.delegation"]["access_label"] == "연합관리자"
     assert guides["developer.system"]["access_label"] == "디벨로퍼"
     assert "access_suffix" not in guides["developer.system"]

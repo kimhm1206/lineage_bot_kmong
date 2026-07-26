@@ -15,6 +15,7 @@ ROLE_CODES = {
     "clan_manager": 4,
     "clan_accountant": 5,
     "user": 6,
+    "alliance_accountant": 7,
 }
 
 

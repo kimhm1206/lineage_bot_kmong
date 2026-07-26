@@ -12,6 +12,9 @@
 
     function excludedIdsFor(form) {
       if (form.dataset.pickerScope === "alliance") return assignments.alliance || [];
+      if (form.dataset.pickerScope === "alliance-accountant") {
+        return assignments.alliance_accountants || [];
+      }
       if (form.dataset.pickerScope === "clan") {
         const allianceId = form.querySelector('input[name="alliance_id"]:checked')?.value;
         return assignments.clans?.[allianceId] || [];
@@ -57,7 +60,11 @@
         const result = await window.dashboardUserPicker.open({
           users,
           multiple: false,
-          title: form.dataset.pickerScope === "static" ? "혈맹 경리 선택" : "운영 담당자 선택",
+          title: form.dataset.pickerScope === "static"
+            ? "혈맹 경리 선택"
+            : form.dataset.pickerScope === "alliance-accountant"
+              ? "연합 경리 선택"
+              : "운영 담당자 선택",
           selectedIds: hiddenInput.value ? [hiddenInput.value] : [],
           excludedIds: excludedIdsFor(form),
           allianceId: clanScoped ? allianceId : "",

@@ -15,7 +15,8 @@
   const roleDescriptions = {
     developer: "모든 서버와 개발자 도구",
     owner: "서버 전체 운영과 모든 혈맹",
-    alliance_manager: "연합 운영과 선택 혈맹 조회",
+    alliance_manager: "서버 운영 전체와 담당자 관리",
+    alliance_accountant: "연합 운영과 1차 분배",
     clan_manager: "선택 혈맹 운영과 설정",
     clan_accountant: "선택 혈맹 정산과 가계부",
     user: "개인 조회와 선택 혈맹 정보",

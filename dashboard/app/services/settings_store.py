@@ -10,6 +10,7 @@ from dashboard.app.services import audit_service
 SCOPE_ALLIANCE_MANAGER = 1
 SCOPE_CLAN_MANAGER = 2
 SCOPE_CLAN_ACCOUNTANT = 3
+SCOPE_ALLIANCE_ACCOUNTANT = 4
 
 
 async def list_guilds(session: AsyncSession) -> list[dict[str, Any]]:
@@ -269,6 +270,26 @@ async def list_assignments(session: AsyncSession, guild_id: int) -> list[dict[st
         {"guild_id": guild_id},
     )
     return [dict(row) for row in result.mappings()]
+
+
+async def get_assignment(
+    session: AsyncSession,
+    *,
+    guild_id: int,
+    assignment_id: int,
+) -> dict[str, Any] | None:
+    row = (
+        await session.execute(
+            text("""
+                SELECT assignment_id, discord_user_id, scope_code, alliance_id
+                FROM guild_user_assignments
+                WHERE guild_id = :guild_id
+                  AND assignment_id = :assignment_id
+            """),
+            {"guild_id": guild_id, "assignment_id": assignment_id},
+        )
+    ).mappings().one_or_none()
+    return dict(row) if row is not None else None
 
 
 async def add_assignment(

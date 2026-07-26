@@ -14,7 +14,7 @@
       <span class="manager-count">{{ alliance_managers|length }}명</span>
     </header>
 
-    <div class="manager-section-body">
+    <div class="manager-section-body{% if not can_manage_alliance_managers %} manager-section-body-readonly{% endif %}">
       <div class="manager-current-area">
         <h3>현재 담당자</h3>
         <div class="manager-roster">
@@ -22,19 +22,57 @@
           <article class="manager-person-row">
             <span class="user-avatar">{{ manager.display_name[:1] }}</span>
             <div><strong>{{ manager.display_name }}</strong><small>{{ manager.discord_user_id }}</small></div>
+            {% if can_manage_alliance_managers %}
             <form method="post" action="/settings/assignments/{{ manager.assignment_id }}/delete">
               <input type="hidden" name="guild_id" value="{{ guild_id }}"><input type="hidden" name="return_path" value="/settings/managers">
               <button class="danger-icon-button" type="submit" title="지정 해제">{{ icon("trash") }}</button>
             </form>
+            {% endif %}
           </article>
           {% else %}<div class="manager-empty">지정된 연합 관리자가 없습니다.</div>{% endfor %}
         </div>
       </div>
 
+      {% if can_manage_alliance_managers %}
       <form class="manager-add-area" method="post" action="/settings/managers" data-manager-form data-picker-scope="alliance">
         <input type="hidden" name="guild_id" value="{{ guild_id or '' }}">
         <input type="hidden" name="scope_code" value="1">
         <div class="manager-add-heading"><span>{{ icon("plus-square") }}</span><div><strong>연합 관리자 추가</strong><small>서버 유저 검색</small></div></div>
+        {{ user_picker_field() }}
+        <button class="primary-button manager-submit" type="submit" {% if not guild_id or not members %}disabled{% endif %}>담당자로 추가</button>
+      </form>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="panel manager-section manager-section-accountant">
+    <header class="manager-section-header">
+      <span class="manager-section-icon">{{ icon("receipt") }}</span>
+      <div><span class="panel-kicker">Alliance accounting</span><h2>연합 경리</h2></div>
+      <span class="manager-count">{{ alliance_accountants|length }}명</span>
+    </header>
+
+    <div class="manager-section-body">
+      <div class="manager-current-area">
+        <h3>현재 담당자</h3>
+        <div class="manager-roster">
+          {% for accountant in alliance_accountants %}
+          <article class="manager-person-row">
+            <span class="user-avatar">{{ accountant.display_name[:1] }}</span>
+            <div><strong>{{ accountant.display_name }}</strong><small>{{ accountant.discord_user_id }}</small></div>
+            <form method="post" action="/settings/assignments/{{ accountant.assignment_id }}/delete">
+              <input type="hidden" name="guild_id" value="{{ guild_id }}"><input type="hidden" name="return_path" value="/settings/managers">
+              <button class="danger-icon-button" type="submit" title="지정 해제">{{ icon("trash") }}</button>
+            </form>
+          </article>
+          {% else %}<div class="manager-empty">지정된 연합 경리가 없습니다.</div>{% endfor %}
+        </div>
+      </div>
+
+      <form class="manager-add-area" method="post" action="/settings/managers" data-manager-form data-picker-scope="alliance-accountant">
+        <input type="hidden" name="guild_id" value="{{ guild_id or '' }}">
+        <input type="hidden" name="scope_code" value="4">
+        <div class="manager-add-heading"><span>{{ icon("plus-square") }}</span><div><strong>연합 경리 추가</strong><small>연합 운영 담당자 지정</small></div></div>
         {{ user_picker_field() }}
         <button class="primary-button manager-submit" type="submit" {% if not guild_id or not members %}disabled{% endif %}>담당자로 추가</button>
       </form>

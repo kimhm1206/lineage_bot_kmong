@@ -457,7 +457,11 @@ async def personal_distribution_page(
         page_badge="USER",
     )
     selected_period = workspace_store.normalize_period(period)
-    can_select_personal_user = current_access_role(request) in {"developer", "owner"}
+    can_select_personal_user = current_access_role(request) in {
+        "developer",
+        "owner",
+        "alliance_manager",
+    }
     if workspace["guild_id"] is not None and not can_select_personal_user:
         signed_in_user = await home_store.current_user(
             session,

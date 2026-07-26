@@ -14,8 +14,10 @@ from dashboard.app.database import get_session
 from dashboard.app.identifiers import snowflake_text
 from dashboard.app.security import (
     allowed_guild_ids,
+    can_manage_alliance_managers,
     can_manage_alliance_operations,
     can_manage_clan_configuration,
+    can_manage_operational_assignments,
     can_select_alliances,
     current_access_role,
     current_guild_id,
@@ -139,10 +141,23 @@ async def _require_owner_configuration(
     guild_id: int,
 ) -> None:
     require_selected_guild(request, guild_id)
-    if not await can_select_alliances(request, session, guild_id):
+    if not can_manage_alliance_managers(request):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="서버 오너 또는 개발자만 설정할 수 있습니다.",
+        )
+
+
+async def _require_operational_assignment_configuration(
+    request: Request,
+    session: AsyncSession,
+    guild_id: int,
+) -> None:
+    require_selected_guild(request, guild_id)
+    if not can_manage_operational_assignments(request):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="연합 관리자 이상만 담당자를 설정할 수 있습니다.",
         )
 
 
@@ -521,7 +536,7 @@ async def manager_settings(
 ):
     guild_data = await _guild_context(request, session)
     if guild_data["guild_id"] is not None:
-        await _require_owner_configuration(
+        await _require_operational_assignment_configuration(
             request,
             session,
             int(guild_data["guild_id"]),
@@ -553,6 +568,11 @@ async def manager_settings(
     alliance_managers = [
         row for row in assignments if row["scope_code"] == settings_store.SCOPE_ALLIANCE_MANAGER
     ]
+    alliance_accountants = [
+        row
+        for row in assignments
+        if row["scope_code"] == settings_store.SCOPE_ALLIANCE_ACCOUNTANT
+    ]
     clan_manager_groups = []
     mapped_alliance_ids = {row["alliance_id"] for row in alliances}
     for alliance in alliances:
@@ -583,6 +603,9 @@ async def manager_settings(
         )
     assigned_member_ids = {
         "alliance": [str(row["discord_user_id"]) for row in alliance_managers],
+        "alliance_accountants": [
+            str(row["discord_user_id"]) for row in alliance_accountants
+        ],
         "clans": {
             str(group["alliance_id"]): [
                 str(row["discord_user_id"])
@@ -596,9 +619,13 @@ async def manager_settings(
         request,
         active_nav="operations.delegation",
         page_title="운영 담당자 설정",
-        page_description="서버 구성원 중 연합 관리자와 각혈 관리자를 유저 단위로 지정합니다.",
+        page_description="연합 관리자, 연합 경리와 각혈 관리자를 유저 단위로 지정합니다.",
         page_kicker="User assignments",
-        page_badge="OWNER",
+        page_badge=(
+            "OWNER"
+            if can_manage_alliance_managers(request)
+            else "ALLIANCE MANAGER"
+        ),
     )
     context.update(guild_data)
     context.update(
@@ -606,8 +633,10 @@ async def manager_settings(
             "members": members,
             "alliances": alliances,
             "alliance_managers": alliance_managers,
+            "alliance_accountants": alliance_accountants,
             "clan_manager_groups": clan_manager_groups,
             "assigned_member_ids": assigned_member_ids,
+            "can_manage_alliance_managers": can_manage_alliance_managers(request),
             "discord_error": api_error or guild_data["discord_error"],
             "notice": request.query_params.get("notice", ""),
             "error": request.query_params.get("error", ""),
@@ -623,9 +652,22 @@ async def save_manager(request: Request, session: AsyncSession = Depends(get_ses
     form = await request.form()
     try:
         guild_id = _int_value(form.get("guild_id"), minimum=1)
-        await _require_owner_configuration(request, session, guild_id)
         discord_user_id = _int_value(form.get("discord_user_id"), minimum=1)
-        scope_code = _int_value(form.get("scope_code"), minimum=1, maximum=2)
+        scope_code = _int_value(form.get("scope_code"), minimum=1, maximum=4)
+        if scope_code not in {
+            settings_store.SCOPE_ALLIANCE_MANAGER,
+            settings_store.SCOPE_CLAN_MANAGER,
+            settings_store.SCOPE_ALLIANCE_ACCOUNTANT,
+        }:
+            raise ValueError
+        if scope_code == settings_store.SCOPE_ALLIANCE_MANAGER:
+            await _require_owner_configuration(request, session, guild_id)
+        else:
+            await _require_operational_assignment_configuration(
+                request,
+                session,
+                guild_id,
+            )
         alliance_id = (
             _optional_snowflake(form.get("alliance_id"))
             if scope_code == settings_store.SCOPE_CLAN_MANAGER
@@ -662,7 +704,23 @@ async def remove_assignment(assignment_id: int, request: Request, session: Async
     if guild_id is None:
         return _redirect(return_path, error="서버를 선택해 주세요.")
     if return_path == "/settings/managers":
-        await _require_owner_configuration(request, session, guild_id)
+        assignment = await settings_store.get_assignment(
+            session,
+            guild_id=guild_id,
+            assignment_id=assignment_id,
+        )
+        if (
+            assignment is not None
+            and int(assignment["scope_code"])
+            == settings_store.SCOPE_ALLIANCE_MANAGER
+        ):
+            await _require_owner_configuration(request, session, guild_id)
+        else:
+            await _require_operational_assignment_configuration(
+                request,
+                session,
+                guild_id,
+            )
     elif alliance_id is not None:
         await _require_clan_configuration(
             request,

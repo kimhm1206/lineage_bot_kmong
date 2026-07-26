@@ -50,6 +50,7 @@ def build_template_context(
             "developer": "디벨로퍼",
             "owner": "오너",
             "alliance_manager": "연합관리자",
+            "alliance_accountant": "연합경리",
             "clan_manager": "혈맹관리자",
             "clan_accountant": "혈맹경리",
         }.get(access_role, "유저"),

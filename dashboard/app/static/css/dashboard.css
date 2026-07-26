@@ -2946,6 +2946,11 @@ a {
   --manager-soft: var(--clan-soft);
 }
 
+.manager-section-accountant {
+  --manager-tone: var(--accent);
+  --manager-soft: var(--accent-soft);
+}
+
 .manager-section-header {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
@@ -2995,6 +3000,10 @@ a {
   display: grid;
   grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.65fr);
   min-height: 260px;
+}
+
+.manager-section-body-readonly {
+  grid-template-columns: 1fr;
 }
 
 .manager-current-area,

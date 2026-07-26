@@ -33,11 +33,17 @@ ROLE_PRIORITY = {
     "user": 0,
     "clan_accountant": 1,
     "clan_manager": 2,
-    "alliance_manager": 3,
-    "owner": 4,
-    "developer": 5,
+    "alliance_accountant": 3,
+    "alliance_manager": 4,
+    "owner": 5,
+    "developer": 6,
 }
-SCOPE_ROLES = {1: "alliance_manager", 2: "clan_manager", 3: "clan_accountant"}
+SCOPE_ROLES = {
+    1: "alliance_manager",
+    2: "clan_manager",
+    3: "clan_accountant",
+    4: "alliance_accountant",
+}
 GLOBAL_DEVELOPER_DISCORD_ID = 238978205078388747
 DEVELOPER_VIEW_MODE_SESSION_KEY = "developer_view_mode"
 DEVELOPER_VIEW_ALLIANCE_SESSION_KEY = "developer_view_alliance_id"
@@ -46,19 +52,25 @@ DEVELOPER_VIEW_MODES = {
     "developer": {
         "label": "디벨로퍼",
         "role": "developer",
-        "scopes": (1, 2, 3),
+        "scopes": (1, 2, 3, 4),
         "requires_alliance": False,
     },
     "owner": {
         "label": "오너",
         "role": "owner",
-        "scopes": (1, 2, 3),
+        "scopes": (1, 2, 3, 4),
         "requires_alliance": False,
     },
     "alliance_manager": {
         "label": "연합관리자",
         "role": "alliance_manager",
         "scopes": (1,),
+        "requires_alliance": True,
+    },
+    "alliance_accountant": {
+        "label": "연합경리",
+        "role": "alliance_accountant",
+        "scopes": (4,),
         "requires_alliance": True,
     },
     "clan_manager": {
@@ -211,10 +223,10 @@ async def _enabled_guild_access(
         guild_id = int(row["guild_id"])
         if is_developer:
             roles[guild_id] = "developer"
-            scopes[guild_id] = {1, 2, 3}
+            scopes[guild_id] = {1, 2, 3, 4}
         elif row["owner_discord_id"] is not None and int(row["owner_discord_id"]) == discord_user_id:
             roles[guild_id] = "owner"
-            scopes[guild_id] = {1, 2, 3}
+            scopes[guild_id] = {1, 2, 3, 4}
     for assignment in assignments:
         guild_id = int(assignment["guild_id"])
         scope_code = int(assignment["scope_code"])

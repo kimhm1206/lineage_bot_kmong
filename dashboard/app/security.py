@@ -9,7 +9,7 @@ from dashboard.app.services import settings_store
 
 
 DEVELOPER_ENVIRONMENTS = {"local", "development", "test"}
-ALLIANCE_OVERVIEW_ROLES = {"developer", "owner"}
+ALLIANCE_OVERVIEW_ROLES = {"developer", "owner", "alliance_manager"}
 CLAN_ACCESS_DETAIL = "detail"
 CLAN_ACCESS_OWN = "own"
 CLAN_ACCESS_MANAGE = "manage"
@@ -90,7 +90,10 @@ async def can_select_alliances(
     session: AsyncSession,
     guild_id: int | None,
 ) -> bool:
-    if current_access_role(request) in {"developer", "owner"}:
+    if (
+        current_access_role(request) in {"developer", "owner", "alliance_manager"}
+        or has_assignment_scope(request, 1)
+    ):
         return True
     discord_user_id = current_discord_user_id(request)
     if guild_id is None or discord_user_id is None:
@@ -293,8 +296,9 @@ async def require_clan_visibility(
 
 def can_manage_alliance_operations(request: Request) -> bool:
     return (
-        current_access_role(request) in {"developer", "owner"}
-        or has_assignment_scope(request, 1)
+        current_access_role(request)
+        in {"developer", "owner", "alliance_manager", "alliance_accountant"}
+        or has_assignment_scope(request, 1, 4)
     )
 
 
@@ -304,15 +308,28 @@ def can_manage_alliance_treasury(request: Request) -> bool:
 
 def can_manage_clan_treasury(request: Request) -> bool:
     return (
-        current_access_role(request) in {"developer", "owner"}
-        or has_assignment_scope(request, 2, 3)
+        current_access_role(request) in {"developer", "owner", "alliance_manager"}
+        or has_assignment_scope(request, 1, 2, 3)
     )
 
 
 def can_manage_clan_configuration(request: Request) -> bool:
     return (
-        current_access_role(request) in {"developer", "owner"}
-        or has_assignment_scope(request, 2)
+        current_access_role(request) in {"developer", "owner", "alliance_manager"}
+        or has_assignment_scope(request, 1, 2)
+    )
+
+
+def can_manage_alliance_managers(request: Request) -> bool:
+    """Only the server owner (and the global developer) may grant scope 1."""
+    return current_access_role(request) in {"developer", "owner"}
+
+
+def can_manage_operational_assignments(request: Request) -> bool:
+    """Owner-equivalent delegation, excluding alliance-manager grants."""
+    return (
+        current_access_role(request) in {"developer", "owner", "alliance_manager"}
+        or has_assignment_scope(request, 1)
     )
 
 
