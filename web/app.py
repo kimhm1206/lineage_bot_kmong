@@ -6187,6 +6187,12 @@ def _loot_template_context(
         "alliance-payouts",
         "my-alliance-payouts",
     }
+    load_all_open_my_payouts = (
+        active_loot_tab == "my-alliance-payouts"
+        and active_my_payout_scope == "open"
+    )
+    loot_event_start = None if load_all_open_my_payouts else period_start
+    loot_event_limit = None if load_all_open_my_payouts else 5000
     loot_events: list[dict[str, Any]] = []
     if needs_loot_events:
         try:
@@ -6205,14 +6211,14 @@ def _loot_template_context(
         all_events = _decorate_loot_events(
             database.get_loot_drop_events(
                 guild_id,
-                limit=5000,
-                start_at=period_start,
+                limit=loot_event_limit,
+                start_at=loot_event_start,
             ),
             viewer_discord_id,
             guild_id,
             viewer_current_alliance_ids,
         )
-        loot_events = _filter_loot_events_by_period(all_events, period_start)
+        loot_events = _filter_loot_events_by_period(all_events, loot_event_start)
 
     distribution_events_all: list[dict[str, Any]] = []
     distribution_events: list[dict[str, Any]] = []

@@ -622,7 +622,7 @@ class Database:
     def get_loot_drop_events(
         self,
         guild_id: int,
-        limit: int = 30,
+        limit: int | None = 30,
         start_at: str | datetime | None = None,
         end_at: str | datetime | None = None,
     ) -> list[dict[str, Any]]:
@@ -3547,7 +3547,7 @@ def delete_loot_drop(guild_id: int, loot_event_id: int) -> None:
 
 def get_loot_drop_events(
     guild_id: int,
-    limit: int = 30,
+    limit: int | None = 30,
     start_at: str | datetime | None = None,
     end_at: str | datetime | None = None,
 ) -> list[dict[str, Any]]:
@@ -3561,7 +3561,10 @@ def get_loot_drop_events(
     if end_bound:
         conditions.append("s.started_at <= %s")
         params.append(end_bound)
-    params.append(int(limit))
+    limit_clause = ""
+    if limit is not None:
+        params.append(max(1, int(limit)))
+        limit_clause = "LIMIT %s"
     event_rows = _fetchall(
         f"""
         SELECT
@@ -3615,7 +3618,7 @@ def get_loot_drop_events(
             le.event_date DESC,
             le.event_time_label DESC NULLS LAST,
             le.loot_event_id DESC
-        LIMIT %s
+        {limit_clause}
         """,
         tuple(params),
     )
