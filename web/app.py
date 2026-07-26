@@ -3458,6 +3458,49 @@ def _filter_loot_events_by_period(
     ]
 
 
+def _filter_loot_events_for_settlement_period(
+    events: list[dict[str, Any]],
+    *,
+    active_tab: str,
+    active_status: str,
+    my_payout_scope: str,
+    start_at: datetime | None,
+) -> list[dict[str, Any]]:
+    if start_at is None:
+        return events
+
+    def is_recent(event: dict[str, Any]) -> bool:
+        return (_loot_event_datetime(event) or datetime.min) >= start_at
+
+    if active_tab == "distribution":
+        if active_status == "unpaid":
+            return events
+        if active_status == "all":
+            return [
+                event
+                for event in events
+                if is_recent(event)
+                or (
+                    event.get("viewer_participated")
+                    and Decimal(str(event.get("viewer_unpaid_amount") or "0")) > 0
+                )
+            ]
+        return [event for event in events if is_recent(event)]
+
+    if active_tab == "alliance-payouts":
+        return [
+            event
+            for event in events
+            if is_recent(event)
+            or str(event.get("payout_summary_class") or "") == "is-unpaid"
+        ]
+
+    if active_tab == "my-alliance-payouts" and my_payout_scope == "open":
+        return events
+
+    return [event for event in events if is_recent(event)]
+
+
 def _filter_loot_events_by_viewer(
     events: list[dict[str, Any]],
     mine_only: bool,
@@ -6187,12 +6230,19 @@ def _loot_template_context(
         "alliance-payouts",
         "my-alliance-payouts",
     }
-    load_all_open_my_payouts = (
-        active_loot_tab == "my-alliance-payouts"
-        and active_my_payout_scope == "open"
+    load_unbounded_settlement_events = (
+        (
+            active_loot_tab == "distribution"
+            and active_status in {"all", "unpaid"}
+        )
+        or active_loot_tab == "alliance-payouts"
+        or (
+            active_loot_tab == "my-alliance-payouts"
+            and active_my_payout_scope == "open"
+        )
     )
-    loot_event_start = None if load_all_open_my_payouts else period_start
-    loot_event_limit = None if load_all_open_my_payouts else 5000
+    loot_event_start = None if load_unbounded_settlement_events else period_start
+    loot_event_limit = None if load_unbounded_settlement_events else 5000
     loot_events: list[dict[str, Any]] = []
     if needs_loot_events:
         try:
@@ -6218,7 +6268,13 @@ def _loot_template_context(
             guild_id,
             viewer_current_alliance_ids,
         )
-        loot_events = _filter_loot_events_by_period(all_events, loot_event_start)
+        loot_events = _filter_loot_events_for_settlement_period(
+            all_events,
+            active_tab=active_loot_tab,
+            active_status=active_status,
+            my_payout_scope=active_my_payout_scope,
+            start_at=period_start,
+        )
 
     distribution_events_all: list[dict[str, Any]] = []
     distribution_events: list[dict[str, Any]] = []
