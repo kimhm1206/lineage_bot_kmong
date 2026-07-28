@@ -986,16 +986,30 @@
         throw new Error(payload.detail || payload.message || "아이템별 정산 기록을 불러오지 못했습니다.");
       }
       if (requestNumber !== clanItemHistoryState.request) return;
-      modal.querySelector("[data-clan-item-count]").textContent =
-        `${Number(payload.summary?.total_count || 0).toLocaleString("ko-KR")}건`;
-      modal.querySelector("[data-clan-item-distribution]").textContent =
-        payload.summary?.distribution_amount_label || "0";
-      modal.querySelector("[data-clan-item-pending]").textContent =
-        payload.summary?.pending_amount_label || "0";
-      modal.querySelector("[data-clan-item-fund]").textContent =
-        payload.summary?.clan_fund_amount_label || "0";
-      modal.querySelector("[data-clan-item-fee]").textContent =
-        payload.summary?.custom_fee_amount_label || "0";
+      const setSummaryText = (selector, value) => {
+        const target = modal.querySelector(selector);
+        if (target) target.textContent = value;
+      };
+      setSummaryText(
+        "[data-clan-item-count]",
+        `${Number(payload.summary?.total_count || 0).toLocaleString("ko-KR")}건`,
+      );
+      setSummaryText(
+        "[data-clan-item-distribution]",
+        payload.summary?.distribution_amount_label || "0",
+      );
+      setSummaryText(
+        "[data-clan-item-pending]",
+        payload.summary?.pending_amount_label || "0",
+      );
+      setSummaryText(
+        "[data-clan-item-fund]",
+        payload.summary?.clan_fund_amount_label || "0",
+      );
+      setSummaryText(
+        "[data-clan-item-fee]",
+        payload.summary?.custom_fee_amount_label || "0",
+      );
 
       const records = Array.isArray(payload.history) ? payload.history : [];
       const fragment = document.createDocumentFragment();
