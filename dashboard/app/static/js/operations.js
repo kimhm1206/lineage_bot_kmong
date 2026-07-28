@@ -914,7 +914,6 @@
     [
       ["총 분배금", record.distribution_amount_label || "0", "is-primary"],
       ["미분배", record.pending_amount_label || "0", "is-pending"],
-      ["지급 완료", record.paid_amount_label || "0", ""],
       ["총 혈비", record.clan_fund_amount_label || "0", "is-fund"],
       ["기타 수수료", record.custom_fee_amount_label || "0", ""],
     ].forEach(([label, value, tone]) => {
