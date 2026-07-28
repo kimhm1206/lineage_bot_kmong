@@ -959,6 +959,7 @@
     const loading = modal.querySelector("[data-clan-item-loading]");
     const empty = modal.querySelector("[data-clan-item-empty]");
     const more = modal.querySelector("[data-clan-item-more]");
+    if (!list || !loading || !empty || !more) return;
     clanItemHistoryState.loading = true;
     loading.hidden = false;
     loading.textContent = "아이템별 정산 기록을 불러오는 중입니다.";
