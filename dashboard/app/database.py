@@ -1597,6 +1597,27 @@ async def apply_local_schema_cleanup() -> bool:
                 """)
             )
             changed = True
+
+        settlement_rounding_source_applied = await connection.scalar(
+            text("SELECT 1 FROM schema_migrations WHERE version = 23")
+        )
+        if not settlement_rounding_source_applied:
+            await connection.execute(
+                text("""
+                    INSERT INTO treasury_source_types(source_type_id, source_code)
+                    SELECT COALESCE(MAX(source_type_id), 0) + 1,
+                           'settlement_rounding'
+                    FROM treasury_source_types
+                    ON CONFLICT (source_code) DO NOTHING
+                """)
+            )
+            await connection.execute(
+                text("""
+                    INSERT INTO schema_migrations(version, applied_at)
+                    VALUES (23, EXTRACT(EPOCH FROM NOW())::BIGINT)
+                """)
+            )
+            changed = True
     return changed
 
 

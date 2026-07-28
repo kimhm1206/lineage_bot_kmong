@@ -893,7 +893,7 @@
 
   const renderClanItemHistoryCard = (record) => {
     const card = document.createElement("article");
-    card.className = "clan-item-history-card";
+    card.className = `clan-item-history-card${Number(record.pending_amount || 0) > 0 ? " is-pending" : ""}`;
 
     const heading = document.createElement("header");
     const identity = document.createElement("div");
@@ -903,14 +903,17 @@
     context.textContent =
       `출석 #${record.attendance_id || "-"} · ${record.occurred_at_label || "-"}`;
     identity.append(itemName, context);
-    const completed = document.createElement("time");
-    completed.textContent = `완료 ${record.completed_at_label || "-"}`;
-    heading.append(identity, completed);
+    const progress = document.createElement("time");
+    progress.textContent = Number(record.pending_amount || 0) > 0
+      ? "정산 진행 중"
+      : `정산 완료 ${record.completed_at_label || "-"}`;
+    heading.append(identity, progress);
 
     const metrics = document.createElement("div");
     metrics.className = "clan-item-history-metrics";
     [
       ["총 분배금", record.distribution_amount_label || "0", "is-primary"],
+      ["미분배", record.pending_amount_label || "0", "is-pending"],
       ["지급 완료", record.paid_amount_label || "0", ""],
       ["총 혈비", record.clan_fund_amount_label || "0", "is-fund"],
       ["기타 수수료", record.custom_fee_amount_label || "0", ""],
@@ -930,7 +933,7 @@
     const footer = document.createElement("footer");
     const paid = document.createElement("span");
     paid.textContent =
-      `지급 ${Number(record.paid_member_count || 0).toLocaleString("ko-KR")}명`;
+      `미분배 ${Number(record.pending_member_count || 0).toLocaleString("ko-KR")}명 · 지급 ${Number(record.paid_member_count || 0).toLocaleString("ko-KR")}명`;
     const forfeited = document.createElement("span");
     forfeited.textContent =
       `귀속 ${Number(record.forfeited_member_count || 0).toLocaleString("ko-KR")}명 · ${record.forfeited_amount_label || "0"} 아데나`;
@@ -958,7 +961,7 @@
     const more = modal.querySelector("[data-clan-item-more]");
     clanItemHistoryState.loading = true;
     loading.hidden = false;
-    loading.textContent = "완료 기록을 불러오는 중입니다.";
+    loading.textContent = "아이템별 정산 기록을 불러오는 중입니다.";
     empty.hidden = true;
     more.hidden = true;
     if (reset) {
@@ -980,13 +983,15 @@
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !payload.ok) {
-        throw new Error(payload.detail || payload.message || "완료 기록을 불러오지 못했습니다.");
+        throw new Error(payload.detail || payload.message || "아이템별 정산 기록을 불러오지 못했습니다.");
       }
       if (requestNumber !== clanItemHistoryState.request) return;
       modal.querySelector("[data-clan-item-count]").textContent =
         `${Number(payload.summary?.total_count || 0).toLocaleString("ko-KR")}건`;
       modal.querySelector("[data-clan-item-distribution]").textContent =
         payload.summary?.distribution_amount_label || "0";
+      modal.querySelector("[data-clan-item-pending]").textContent =
+        payload.summary?.pending_amount_label || "0";
       modal.querySelector("[data-clan-item-fund]").textContent =
         payload.summary?.clan_fund_amount_label || "0";
       modal.querySelector("[data-clan-item-fee]").textContent =
@@ -1004,7 +1009,7 @@
     } catch (error) {
       if (requestNumber !== clanItemHistoryState.request) return;
       loading.hidden = false;
-      loading.textContent = error.message || "완료 기록을 불러오지 못했습니다.";
+      loading.textContent = error.message || "아이템별 정산 기록을 불러오지 못했습니다.";
     } finally {
       if (requestNumber === clanItemHistoryState.request) {
         clanItemHistoryState.loading = false;
@@ -1067,31 +1072,12 @@
     amount.append(amountValue, amountUnit);
 
     const progress = document.createElement("div");
-    progress.className = `alliance-history-progress${record.can_cancel ? " is-cancellable" : ""}`;
+    progress.className = "alliance-history-progress";
     const progressLabel = document.createElement("strong");
     progressLabel.textContent = record.progress_label || "혈맹 분배 상태 확인";
     progress.append(progressLabel);
 
     row.append(recordCopy, amount, progress);
-    if (record.can_cancel) {
-      const form = document.createElement("form");
-      form.method = "post";
-      form.action = `/api/payouts/${record.payout_object_id}/status`;
-      form.dataset.asyncForm = "";
-      form.dataset.keepModal = "";
-      form.dataset.allianceHistoryCancel = "";
-      form.dataset.confirm = "이 혈맹 분배 완료를 취소하시겠습니까?";
-      const status = document.createElement("input");
-      status.type = "hidden";
-      status.name = "status_code";
-      status.value = "0";
-      const button = document.createElement("button");
-      button.className = "secondary-button";
-      button.type = "submit";
-      button.textContent = "완료 취소";
-      form.append(status, button);
-      row.append(form);
-    }
     return row;
   };
 

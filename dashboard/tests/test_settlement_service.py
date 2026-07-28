@@ -168,3 +168,99 @@ def test_buyer_is_included_when_listed_as_attendance_participant(monkeypatch) ->
 
     assert [row["user_id"] for row in session.inserted] == [101, 102]
     assert [row["amount"] for row in session.inserted] == [500, 500]
+
+
+def test_alliance_rounding_remainder_is_credited_to_alliance_treasury(monkeypatch) -> None:
+    class Session:
+        async def scalar(self, statement, params):
+            assert "d.gross_adena" in str(statement)
+            assert params == {"guild_id": 100, "drop_id": 9}
+            return 3
+
+    calls = []
+
+    async def source_type_id(*_args, **_kwargs):
+        return 10
+
+    async def credit(*_args, **kwargs):
+        calls.append(kwargs)
+
+    monkeypatch.setattr(settlement_service, "_treasury_source_type_id", source_type_id)
+    monkeypatch.setattr(settlement_service, "_treasury_credit", credit)
+
+    asyncio.run(
+        settlement_service._credit_alliance_rounding_remainder(
+            Session(), guild_id=100, drop_id=9
+        )
+    )
+
+    assert calls == [{
+        "guild_id": 100,
+        "alliance_id": None,
+        "scope_code": 1,
+        "source_type_id": 10,
+        "source_id": 9,
+        "amount": 3,
+        "category_name": "분배 후 나머지[Drop#9]",
+        "memo": "분배 후 나머지 Drop#9",
+    }]
+
+
+def test_clan_rounding_remainder_is_credited_to_clan_treasury(monkeypatch) -> None:
+    class Session:
+        async def execute(self, statement, params):
+            assert "parent.amount_adena" in str(statement)
+            assert params == {"parent_id": 77}
+            return _MappingsResult(one={
+                "guild_id": 100,
+                "drop_id": 9,
+                "recipient_alliance_id": 7,
+                "remainder": 2,
+            })
+
+    calls = []
+
+    async def source_type_id(*_args, **_kwargs):
+        return 10
+
+    async def credit(*_args, **kwargs):
+        calls.append(kwargs)
+
+    monkeypatch.setattr(settlement_service, "_treasury_source_type_id", source_type_id)
+    monkeypatch.setattr(settlement_service, "_treasury_credit", credit)
+
+    asyncio.run(
+        settlement_service._credit_clan_rounding_remainder(
+            Session(), parent_payout_object_id=77
+        )
+    )
+
+    assert calls == [{
+        "guild_id": 100,
+        "alliance_id": 7,
+        "scope_code": 2,
+        "source_type_id": 10,
+        "source_id": 77,
+        "amount": 2,
+        "category_name": "분배 후 나머지[Drop#9]",
+        "memo": "분배 후 나머지 Drop#9",
+    }]
+
+
+def test_processed_payout_cannot_be_reverted_to_pending() -> None:
+    class Session:
+        async def execute(self, statement, params):
+            assert "FOR UPDATE OF po" in str(statement)
+            assert params == {"payout_id": 77}
+            return _MappingsResult(one={"object_code": 1, "status_code": 1})
+
+    try:
+        asyncio.run(
+            settlement_service.set_payout_status(
+                Session(), payout_object_id=77, status_code=0
+            )
+        )
+    except settlement_service.SettlementError as exc:
+        assert str(exc) == "각혈 분배 이후 완료·귀속 정산은 취소할 수 없습니다."
+    else:
+        raise AssertionError("완료된 정산의 취소를 차단해야 합니다.")

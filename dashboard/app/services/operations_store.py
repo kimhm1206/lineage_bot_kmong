@@ -926,19 +926,14 @@ async def alliance_settlement_history_page(
         row["amount_adena"] = int(row["amount_adena"])
         row["amount_label"] = _money(row["amount_adena"])
         row["started_child_count"] = int(row["started_child_count"] or 0)
-        row["can_cancel"] = (
-            row["source_type"] == "drop"
-            and row["started_child_count"] == 0
-        )
+        row["can_cancel"] = False
         row["context_label"] = (
             f"출석 #{row['attendance_id']}"
             if row["attendance_id"] is not None
             else "연합비 가계부"
         )
         row["progress_label"] = (
-            "완료 취소 가능"
-            if row["can_cancel"]
-            else "혈맹 분배 진행됨"
+            "완료됨"
             if row["source_type"] == "drop"
             else "혈비 가계부 반영"
         )
@@ -1420,7 +1415,7 @@ async def clan_completed_item_history_page(
     date_to_epoch: int | None = None,
 ) -> dict[str, Any]:
     period_clause = _history_period_clause(
-        "completed_items.completed_at",
+        "item_records.occurred_at",
         period_days,
         date_from_epoch,
         date_to_epoch,
@@ -1428,8 +1423,8 @@ async def clan_completed_item_history_page(
     search_clause = (
         """
             AND (
-                completed_items.item_name ILIKE :query
-                OR CAST(completed_items.attendance_id AS TEXT) ILIKE :query
+                item_records.item_name ILIKE :query
+                OR CAST(item_records.attendance_id AS TEXT) ILIKE :query
             )
         """
         if query
@@ -1445,8 +1440,8 @@ async def clan_completed_item_history_page(
             date_to_epoch,
         ),
     }
-    completed_cte = """
-        WITH completed_items AS (
+    item_records_cte = """
+        WITH item_records AS (
             SELECT parent.payout_object_id AS parent_payout_object_id,
                    drop_row.drop_id,
                    drop_row.attendance_id,
@@ -1488,10 +1483,20 @@ async def clan_completed_item_history_page(
                        ),
                        0
                    ) AS custom_fee_amount,
+                   COALESCE(
+                       SUM(child.amount_adena) FILTER (
+                           WHERE child.status_code = 0
+                       ),
+                       0
+                   ) AS pending_amount,
                    COUNT(*) FILTER (
                        WHERE child.object_code = 2
                          AND child.status_code = 1
                    ) AS paid_member_count,
+                   COUNT(*) FILTER (
+                       WHERE child.object_code = 2
+                         AND child.status_code = 0
+                   ) AS pending_member_count,
                    COUNT(*) FILTER (
                        WHERE child.object_code = 2
                          AND child.status_code = 2
@@ -1518,11 +1523,10 @@ async def clan_completed_item_history_page(
                      drop_row.attendance_id, item.item_name,
                      drop_row.occurred_at, parent.amount_adena
             HAVING COUNT(child.payout_object_id) > 0
-               AND COUNT(*) FILTER (WHERE child.status_code = 0) = 0
         )
     """
     from_sql = f"""
-        FROM completed_items
+        FROM item_records
         WHERE TRUE
           {period_clause}
           {search_clause}
@@ -1530,10 +1534,12 @@ async def clan_completed_item_history_page(
     summary = (
         await session.execute(
             text(f"""
-                {completed_cte}
+                {item_records_cte}
                 SELECT COUNT(*) AS total_count,
                        COALESCE(SUM(distribution_amount), 0)
                            AS distribution_amount,
+                       COALESCE(SUM(pending_amount), 0)
+                           AS pending_amount,
                        COALESCE(SUM(clan_fund_amount), 0)
                            AS clan_fund_amount,
                        COALESCE(SUM(custom_fee_amount), 0)
@@ -1550,12 +1556,13 @@ async def clan_completed_item_history_page(
         for row in (
             await session.execute(
                 text(f"""
-                    {completed_cte}
+                    {item_records_cte}
                     SELECT parent_payout_object_id, drop_id,
                            attendance_id, item_name,
                            distribution_amount, paid_amount,
                            forfeited_amount, clan_fund_amount,
-                           custom_fee_amount, paid_member_count,
+                           custom_fee_amount, pending_amount,
+                           paid_member_count, pending_member_count,
                            forfeited_member_count,
                            TO_CHAR(
                                TO_TIMESTAMP(occurred_at),
@@ -1588,7 +1595,9 @@ async def clan_completed_item_history_page(
             "forfeited_amount",
             "clan_fund_amount",
             "custom_fee_amount",
+            "pending_amount",
             "paid_member_count",
+            "pending_member_count",
             "forfeited_member_count",
         ):
             row[key] = int(row[key] or 0)
@@ -1598,6 +1607,7 @@ async def clan_completed_item_history_page(
             "forfeited_amount",
             "clan_fund_amount",
             "custom_fee_amount",
+            "pending_amount",
         ):
             row[f"{key}_label"] = _money(row[key])
 
@@ -1609,6 +1619,7 @@ async def clan_completed_item_history_page(
             "distribution_amount_label": _money(
                 summary["distribution_amount"]
             ),
+            "pending_amount_label": _money(summary["pending_amount"]),
             "clan_fund_amount_label": _money(summary["clan_fund_amount"]),
             "custom_fee_amount_label": _money(
                 summary["custom_fee_amount"]

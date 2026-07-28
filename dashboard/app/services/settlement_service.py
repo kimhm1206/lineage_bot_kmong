@@ -20,6 +20,8 @@ OBJECT_MEMBER = 2
 OBJECT_FEE = 3
 FIXED_ALLIANCE_FEE = "alliance_fee"
 FIXED_CLAN_FUND = "clan_fund"
+SETTLEMENT_ROUNDING_SOURCE = "settlement_rounding"
+SETTLEMENT_ROUNDING_CATEGORY = "분배 후 나머지"
 FIXED_FEE_NAMES = {
     FIXED_ALLIANCE_FEE: "연합 수수료",
     FIXED_CLAN_FUND: "혈비",
@@ -671,6 +673,11 @@ async def reopen_sale(session: AsyncSession, *, drop_id: int, guild_id: int) -> 
         guild_id=guild_id,
     ):
         raise SettlementError("정산이 시작되어 판매 상태를 되돌릴 수 없습니다.")
+    await _reverse_alliance_rounding_for_sale_reopen(
+        session,
+        guild_id=guild_id,
+        drop_id=drop_id,
+    )
     await session.execute(
         text("DELETE FROM settlement_payout_objects WHERE drop_id = :drop_id"),
         {"drop_id": drop_id},
@@ -897,6 +904,209 @@ async def _treasury_credit(
     )
 
 
+async def _treasury_source_type_id(
+    session: AsyncSession, *, source_code: str
+) -> int:
+    source_type_id = await session.scalar(
+        text("""
+            SELECT source_type_id
+            FROM treasury_source_types
+            WHERE source_code = :source_code
+        """),
+        {"source_code": source_code},
+    )
+    if source_type_id is None:
+        raise SettlementError("가계부 분배 원본 유형을 찾을 수 없습니다.")
+    return int(source_type_id)
+
+
+async def _reverse_alliance_rounding_for_sale_reopen(
+    session: AsyncSession, *, guild_id: int, drop_id: int
+) -> None:
+    original_entries = (
+        await session.execute(
+            text("""
+                SELECT entry.treasury_entry_id, entry.treasury_account_id,
+                       entry.treasury_category_id, entry.amount_adena,
+                       category.category_name
+                FROM treasury_entries entry
+                JOIN treasury_accounts account
+                  ON account.treasury_account_id = entry.treasury_account_id
+                JOIN treasury_source_types source_type
+                  ON source_type.source_type_id = entry.source_type_id
+                JOIN treasury_categories category
+                  ON category.treasury_category_id = entry.treasury_category_id
+                WHERE account.guild_id = :guild_id
+                  AND account.account_scope_code = 1
+                  AND source_type.source_code = :source_code
+                  AND entry.source_id = :drop_id
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM treasury_entries reversal
+                      WHERE reversal.reversal_of_entry_id = entry.treasury_entry_id
+                  )
+                ORDER BY entry.treasury_entry_id
+                FOR UPDATE OF entry, account
+            """),
+            {
+                "guild_id": guild_id,
+                "drop_id": drop_id,
+                "source_code": SETTLEMENT_ROUNDING_SOURCE,
+            },
+        )
+    ).mappings().all()
+    if not original_entries:
+        return
+    reversal_source_type_id = await _treasury_source_type_id(
+        session, source_code="reversal"
+    )
+    for entry in original_entries:
+        account = (
+            await session.execute(
+                text("""
+                    SELECT current_balance
+                    FROM treasury_accounts
+                    WHERE treasury_account_id = :account_id
+                    FOR UPDATE
+                """),
+                {"account_id": entry["treasury_account_id"]},
+            )
+        ).mappings().one()
+        category_id = await session.scalar(
+            text("""
+                SELECT treasury_category_id
+                FROM treasury_categories
+                WHERE guild_id = :guild_id
+                  AND account_scope_code = 1
+                  AND direction = -1
+                  AND category_name = :category_name
+            """),
+            {
+                "guild_id": guild_id,
+                "category_name": entry["category_name"],
+            },
+        )
+        if category_id is None:
+            category_id = await session.scalar(
+                text("""
+                    INSERT INTO treasury_categories (
+                        guild_id, account_scope_code, direction,
+                        category_name, is_active
+                    ) VALUES (:guild_id, 1, -1, :category_name, TRUE)
+                    RETURNING treasury_category_id
+                """),
+                {
+                    "guild_id": guild_id,
+                    "category_name": entry["category_name"],
+                },
+            )
+        now = _now()
+        await session.execute(
+            text("""
+                INSERT INTO treasury_entries (
+                    treasury_account_id, treasury_category_id, direction,
+                    amount_adena, balance_after, source_type_id, source_id,
+                    memo, occurred_at, created_at, created_by_user_id,
+                    reversal_of_entry_id
+                ) VALUES (
+                    :account_id, :category_id, -1, :amount,
+                    :balance_after, :source_type_id, :source_id,
+                    :memo, :now, :now, NULL, :reversal_of_entry_id
+                )
+            """),
+            {
+                "account_id": entry["treasury_account_id"],
+                "category_id": category_id,
+                "amount": entry["amount_adena"],
+                "balance_after": int(account["current_balance"])
+                - int(entry["amount_adena"]),
+                "source_type_id": reversal_source_type_id,
+                "source_id": entry["treasury_entry_id"],
+                "memo": f"분배 후 나머지 Drop#{drop_id} 취소",
+                "now": now,
+                "reversal_of_entry_id": entry["treasury_entry_id"],
+            },
+        )
+
+
+async def _credit_alliance_rounding_remainder(
+    session: AsyncSession, *, guild_id: int, drop_id: int
+) -> None:
+    remainder = await session.scalar(
+        text("""
+            SELECT d.gross_adena
+                   - COALESCE(SUM(po.amount_adena) FILTER (
+                       WHERE po.object_code = 1
+                         AND po.parent_payout_object_id IS NULL
+                   ), 0)
+                   - COALESCE(SUM(po.amount_adena) FILTER (
+                       WHERE po.object_code = 3
+                         AND po.parent_payout_object_id IS NULL
+                   ), 0)
+            FROM settlement_drops d
+            LEFT JOIN settlement_payout_objects po ON po.drop_id = d.drop_id
+            WHERE d.drop_id = :drop_id AND d.guild_id = :guild_id
+            GROUP BY d.drop_id, d.gross_adena
+        """),
+        {"guild_id": guild_id, "drop_id": drop_id},
+    )
+    source_type_id = await _treasury_source_type_id(
+        session, source_code=SETTLEMENT_ROUNDING_SOURCE
+    )
+    await _treasury_credit(
+        session,
+        guild_id=guild_id,
+        alliance_id=None,
+        scope_code=1,
+        source_type_id=source_type_id,
+        source_id=drop_id,
+        amount=int(remainder or 0),
+        category_name=f"{SETTLEMENT_ROUNDING_CATEGORY}[Drop#{drop_id}]",
+        memo=f"{SETTLEMENT_ROUNDING_CATEGORY} Drop#{drop_id}",
+    )
+
+
+async def _credit_clan_rounding_remainder(
+    session: AsyncSession, *, parent_payout_object_id: int
+) -> None:
+    row = (
+        await session.execute(
+            text("""
+                SELECT d.guild_id, d.drop_id, parent.recipient_alliance_id,
+                       parent.amount_adena
+                       - COALESCE(SUM(child.amount_adena), 0) AS remainder
+                FROM settlement_payout_objects parent
+                JOIN settlement_drops d ON d.drop_id = parent.drop_id
+                LEFT JOIN settlement_payout_objects child
+                  ON child.parent_payout_object_id = parent.payout_object_id
+                WHERE parent.payout_object_id = :parent_id
+                  AND parent.object_code = 1
+                GROUP BY d.guild_id, d.drop_id, parent.recipient_alliance_id,
+                         parent.amount_adena
+            """),
+            {"parent_id": parent_payout_object_id},
+        )
+    ).mappings().one_or_none()
+    if row is None or row["recipient_alliance_id"] is None:
+        return
+    source_type_id = await _treasury_source_type_id(
+        session, source_code=SETTLEMENT_ROUNDING_SOURCE
+    )
+    await _treasury_credit(
+        session,
+        guild_id=int(row["guild_id"]),
+        alliance_id=int(row["recipient_alliance_id"]),
+        scope_code=2,
+        source_type_id=source_type_id,
+        source_id=parent_payout_object_id,
+        amount=int(row["remainder"] or 0),
+        category_name=(
+            f"{SETTLEMENT_ROUNDING_CATEGORY}[Drop#{int(row['drop_id'])}]"
+        ),
+        memo=f"{SETTLEMENT_ROUNDING_CATEGORY} Drop#{int(row['drop_id'])}",
+    )
+
+
 async def set_payout_status(
     session: AsyncSession,
     *,
@@ -937,36 +1147,10 @@ async def set_payout_status(
         return OperationResult("이미 같은 상태로 처리되어 있습니다.", (payout_object_id,))
     if status_code == STATUS_FORFEITED and object_code != OBJECT_MEMBER:
         raise SettlementError("귀속은 혈맹원 분배금에만 사용할 수 있습니다.")
+    if status_code == STATUS_PENDING and current_status != STATUS_PENDING:
+        raise SettlementError("각혈 분배 이후 완료·귀속 정산은 취소할 수 없습니다.")
     if status_code == STATUS_COMPLETE and object_code == OBJECT_ALLIANCE:
         await _build_clan_children(session, parent_payout_object_id=payout_object_id)
-    if status_code == STATUS_PENDING and object_code == OBJECT_ALLIANCE:
-        child_status_count = int(
-            await session.scalar(
-                text("""
-                    SELECT COUNT(*) FROM settlement_payout_objects
-                    WHERE parent_payout_object_id = :parent_id AND status_code <> 0
-                """),
-                {"parent_id": payout_object_id},
-            )
-            or 0
-        )
-        if child_status_count:
-            raise SettlementError("혈맹원 또는 수수료 정산이 시작되어 완료를 취소할 수 없습니다.")
-        await session.execute(
-            text("DELETE FROM settlement_payout_objects WHERE parent_payout_object_id = :parent_id"),
-            {"parent_id": payout_object_id},
-        )
-    if status_code == STATUS_PENDING and current_status != STATUS_PENDING and object_code in {OBJECT_MEMBER, OBJECT_FEE}:
-        ledger_exists = await session.scalar(
-            text("""
-                SELECT 1 FROM treasury_entries
-                WHERE source_id = :source_id AND source_type_id IN (2, 3, 4)
-                LIMIT 1
-            """),
-            {"source_id": payout_object_id},
-        )
-        if ledger_exists:
-            raise SettlementError("가계부에 반영된 정산은 가계부에서 취소 기록을 남겨야 합니다.")
     completed_at = None if status_code == STATUS_PENDING else _now()
     await session.execute(
         text("""
@@ -982,6 +1166,16 @@ async def set_payout_status(
             "completed_at": completed_at,
         },
     )
+    if status_code == STATUS_COMPLETE and object_code == OBJECT_ALLIANCE:
+        await _credit_alliance_rounding_remainder(
+            session,
+            guild_id=int(row["guild_id"]),
+            drop_id=int(row["drop_id"]),
+        )
+        await _credit_clan_rounding_remainder(
+            session,
+            parent_payout_object_id=payout_object_id,
+        )
     if status_code == STATUS_COMPLETE and object_code == OBJECT_FEE:
         scope_code = int(row["scope_code"] or 1)
         fixed_code = str(row["fixed_code"] or "")
