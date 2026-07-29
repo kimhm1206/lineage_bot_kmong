@@ -61,18 +61,25 @@ class DiscordRestClient:
             await self._client.aclose()
         self._client = None
 
-    async def _get(self, path: str, *, params: dict[str, Any] | None = None, cache_key: str | None = None) -> Any:
+    async def _get(
+        self,
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+        cache_key: str | None = None,
+        force_refresh: bool = False,
+    ) -> Any:
         if not self._token:
             raise DiscordApiError("루트 .env에 DISCORD_BOT_TOKEN을 설정해 주세요.")
 
         key = cache_key or path
         cached = self._cache.get(key)
-        if cached and cached.expires_at > monotonic():
+        if not force_refresh and cached and cached.expires_at > monotonic():
             return cached.value
 
         async with self._lock:
             cached = self._cache.get(key)
-            if cached and cached.expires_at > monotonic():
+            if not force_refresh and cached and cached.expires_at > monotonic():
                 return cached.value
 
             try:
@@ -101,8 +108,14 @@ class DiscordRestClient:
         data = await self._get(f"/guilds/{guild_id}/channels", cache_key=f"channels:{guild_id}")
         return sorted(data, key=lambda item: (item.get("position", 0), item.get("name", "").casefold()))
 
-    async def roles(self, guild_id: int) -> list[dict[str, Any]]:
-        data = await self._get(f"/guilds/{guild_id}/roles", cache_key=f"roles:{guild_id}")
+    async def roles(
+        self, guild_id: int, *, force_refresh: bool = False
+    ) -> list[dict[str, Any]]:
+        data = await self._get(
+            f"/guilds/{guild_id}/roles",
+            cache_key=f"roles:{guild_id}",
+            force_refresh=force_refresh,
+        )
         return sorted(
             (item for item in data if item.get("name") != "@everyone"),
             key=lambda item: (-item.get("position", 0), item.get("name", "").casefold()),

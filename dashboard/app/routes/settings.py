@@ -462,7 +462,18 @@ async def alliance_settings(
         discord_api.clear_cache(f"roles:{guild_data['guild_id']}")
     alliances = await settings_store.list_guild_alliances(session, guild_data["guild_id"]) if guild_data["guild_id"] else []
     mappings = await settings_store.list_role_mappings(session, guild_data["guild_id"]) if guild_data["guild_id"] else []
-    resources, api_error = await _discord_resources(guild_data["guild_id"], "roles")
+    if refresh and guild_data["guild_id"]:
+        try:
+            roles = await discord_api.roles(
+                guild_data["guild_id"], force_refresh=True
+            )
+            resources, api_error = {"roles": roles}, ""
+        except DiscordApiError as exc:
+            resources, api_error = {"roles": []}, str(exc)
+    else:
+        resources, api_error = await _discord_resources(
+            guild_data["guild_id"], "roles"
+        )
     mapped_role_ids = {row["role_id"] for row in mappings}
     context = build_template_context(
         request,
