@@ -1618,6 +1618,164 @@ async def apply_local_schema_cleanup() -> bool:
                 """)
             )
             changed = True
+
+        normalized_rounding_categories_applied = await connection.scalar(
+            text("SELECT 1 FROM schema_migrations WHERE version = 24")
+        )
+        if not normalized_rounding_categories_applied:
+            await connection.execute(
+                text("""
+                    INSERT INTO treasury_categories (
+                        guild_id, account_scope_code, direction,
+                        category_name, is_active
+                    )
+                    SELECT DISTINCT
+                           guild_id, account_scope_code, direction,
+                           '분배 후 나머지', TRUE
+                    FROM treasury_categories
+                    WHERE category_name LIKE '분배 후 나머지[Drop#%]'
+                    ON CONFLICT (
+                        guild_id, account_scope_code, direction, category_name
+                    ) DO UPDATE SET is_active = TRUE
+                """)
+            )
+            await connection.execute(
+                text("""
+                    ALTER TABLE treasury_entries
+                    DISABLE TRIGGER trg_treasury_entry_no_update
+                """)
+            )
+            await connection.execute(
+                text("""
+                    UPDATE treasury_entries entry
+                    SET treasury_category_id =
+                        canonical.treasury_category_id
+                    FROM treasury_categories legacy,
+                         treasury_categories canonical
+                    WHERE entry.treasury_category_id =
+                          legacy.treasury_category_id
+                      AND legacy.category_name LIKE
+                          '분배 후 나머지[Drop#%]'
+                      AND canonical.guild_id = legacy.guild_id
+                      AND canonical.account_scope_code =
+                          legacy.account_scope_code
+                      AND canonical.direction = legacy.direction
+                      AND canonical.category_name = '분배 후 나머지'
+                """)
+            )
+            await connection.execute(
+                text("""
+                    ALTER TABLE treasury_entries
+                    ENABLE TRIGGER trg_treasury_entry_no_update
+                """)
+            )
+            await connection.execute(
+                text("""
+                    DELETE FROM treasury_categories
+                    WHERE category_name LIKE '분배 후 나머지[Drop#%]'
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM treasury_entries entry
+                          WHERE entry.treasury_category_id =
+                                treasury_categories.treasury_category_id
+                      )
+                """)
+            )
+            await connection.execute(
+                text("""
+                    INSERT INTO schema_migrations(version, applied_at)
+                    VALUES (24, EXTRACT(EPOCH FROM NOW())::BIGINT)
+                """)
+            )
+            changed = True
+
+        normalized_legacy_rounding_categories_applied = (
+            await connection.scalar(
+                text("SELECT 1 FROM schema_migrations WHERE version = 25")
+            )
+        )
+        if not normalized_legacy_rounding_categories_applied:
+            await connection.execute(
+                text("""
+                    INSERT INTO treasury_categories (
+                        guild_id, account_scope_code, direction,
+                        category_name, is_active
+                    )
+                    SELECT DISTINCT
+                           guild_id, account_scope_code, direction,
+                           '분배 후 나머지', TRUE
+                    FROM treasury_categories
+                    WHERE category_name LIKE '분배 후 나머지[%]'
+                    ON CONFLICT (
+                        guild_id, account_scope_code, direction, category_name
+                    ) DO UPDATE SET is_active = TRUE
+                """)
+            )
+            await connection.execute(
+                text("""
+                    ALTER TABLE treasury_entries
+                    DISABLE TRIGGER trg_treasury_entry_no_update
+                """)
+            )
+            await connection.execute(
+                text("""
+                    UPDATE treasury_entries entry
+                    SET treasury_category_id =
+                            canonical.treasury_category_id,
+                        memo = '분배 후 나머지 Drop#'
+                               || REGEXP_REPLACE(
+                                   TRIM(
+                                       TRAILING ']' FROM
+                                       SPLIT_PART(
+                                           legacy.category_name, '[', 2
+                                       )
+                                   ),
+                                   '^Drop#',
+                                   ''
+                               )
+                               || CASE
+                                      WHEN entry.direction = -1
+                                      THEN ' 취소'
+                                      ELSE ''
+                                  END
+                    FROM treasury_categories legacy,
+                         treasury_categories canonical
+                    WHERE entry.treasury_category_id =
+                          legacy.treasury_category_id
+                      AND legacy.category_name LIKE
+                          '분배 후 나머지[%]'
+                      AND canonical.guild_id = legacy.guild_id
+                      AND canonical.account_scope_code =
+                          legacy.account_scope_code
+                      AND canonical.direction = legacy.direction
+                      AND canonical.category_name = '분배 후 나머지'
+                """)
+            )
+            await connection.execute(
+                text("""
+                    ALTER TABLE treasury_entries
+                    ENABLE TRIGGER trg_treasury_entry_no_update
+                """)
+            )
+            await connection.execute(
+                text("""
+                    DELETE FROM treasury_categories
+                    WHERE category_name LIKE '분배 후 나머지[%]'
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM treasury_entries entry
+                          WHERE entry.treasury_category_id =
+                                treasury_categories.treasury_category_id
+                      )
+                """)
+            )
+            await connection.execute(
+                text("""
+                    INSERT INTO schema_migrations(version, applied_at)
+                    VALUES (25, EXTRACT(EPOCH FROM NOW())::BIGINT)
+                """)
+            )
+            changed = True
     return changed
 
 

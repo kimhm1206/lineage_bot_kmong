@@ -201,7 +201,7 @@ def test_alliance_rounding_remainder_is_credited_to_alliance_treasury(monkeypatc
         "source_type_id": 10,
         "source_id": 9,
         "amount": 3,
-        "category_name": "분배 후 나머지[Drop#9]",
+        "category_name": "분배 후 나머지",
         "memo": "분배 후 나머지 Drop#9",
     }]
 
@@ -242,7 +242,7 @@ def test_clan_rounding_remainder_is_credited_to_clan_treasury(monkeypatch) -> No
         "source_type_id": 10,
         "source_id": 77,
         "amount": 2,
-        "category_name": "분배 후 나머지[Drop#9]",
+        "category_name": "분배 후 나머지",
         "memo": "분배 후 나머지 Drop#9",
     }]
 

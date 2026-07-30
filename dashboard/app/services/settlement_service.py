@@ -983,7 +983,7 @@ async def _reverse_alliance_rounding_for_sale_reopen(
             """),
             {
                 "guild_id": guild_id,
-                "category_name": entry["category_name"],
+                "category_name": SETTLEMENT_ROUNDING_CATEGORY,
             },
         )
         if category_id is None:
@@ -997,7 +997,7 @@ async def _reverse_alliance_rounding_for_sale_reopen(
                 """),
                 {
                     "guild_id": guild_id,
-                    "category_name": entry["category_name"],
+                    "category_name": SETTLEMENT_ROUNDING_CATEGORY,
                 },
             )
         now = _now()
@@ -1061,7 +1061,7 @@ async def _credit_alliance_rounding_remainder(
         source_type_id=source_type_id,
         source_id=drop_id,
         amount=int(remainder or 0),
-        category_name=f"{SETTLEMENT_ROUNDING_CATEGORY}[Drop#{drop_id}]",
+        category_name=SETTLEMENT_ROUNDING_CATEGORY,
         memo=f"{SETTLEMENT_ROUNDING_CATEGORY} Drop#{drop_id}",
     )
 
@@ -1100,9 +1100,7 @@ async def _credit_clan_rounding_remainder(
         source_type_id=source_type_id,
         source_id=parent_payout_object_id,
         amount=int(row["remainder"] or 0),
-        category_name=(
-            f"{SETTLEMENT_ROUNDING_CATEGORY}[Drop#{int(row['drop_id'])}]"
-        ),
+        category_name=SETTLEMENT_ROUNDING_CATEGORY,
         memo=f"{SETTLEMENT_ROUNDING_CATEGORY} Drop#{int(row['drop_id'])}",
     )
 
