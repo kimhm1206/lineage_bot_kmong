@@ -18,7 +18,6 @@ UI_STATE_PATH = DATA_DIR / "ui_state.json"
 KST = timezone(timedelta(hours=9))
 VERSION_PATH = BOT_DIR / "version.txt"
 VERSION_PATTERN = re.compile(r"^\d{1,2}\.\d$")
-SUPPORT_DISCORD_ID = 238978205078388747
 
 
 def build_admin_panel_embed(
@@ -77,14 +76,6 @@ def build_attendance_embed(
         inline=False,
     )
     embed.add_field(name="타이머", value=_format_timer(seconds), inline=False)
-    embed.add_field(
-        name="문의",
-        value=(
-            f"<@{SUPPORT_DISCORD_ID}>\n"
-            "출석 중 에러 발생 및 문의사항은 위 유저에게 DM 보내주세요."
-        ),
-        inline=False,
-    )
     if minutes > 0:
         embed.set_footer(text=f"약 {minutes}분 동안 출석이 진행됩니다.")
     else:
