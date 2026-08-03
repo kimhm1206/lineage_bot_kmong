@@ -11,7 +11,7 @@ from discord_bot.utils.attendance import (
     stop_attendance,
 )
 from discord_bot.utils.guild import (
-    is_admin_member,
+    can_manage_attendance,
     is_supported_guild,
     unregistered_guild_message,
 )
@@ -55,7 +55,16 @@ class AdminPanelView(discord.ui.View):
             await _safe_response(interaction, unregistered_guild_message())
             return False
 
-        if not is_admin_member(interaction.user):
+        try:
+            can_manage = await can_manage_attendance(interaction.user)
+        except Exception:
+            await _safe_response(
+                interaction,
+                "권한 정보를 확인하지 못했습니다. 잠시 후 다시 시도해주세요.",
+            )
+            return False
+
+        if not can_manage:
             await _safe_response(interaction, "권한이 없습니다.")
             return False
 

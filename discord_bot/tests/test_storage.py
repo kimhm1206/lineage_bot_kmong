@@ -52,6 +52,29 @@ class FakeConnection:
 
 
 class AttendanceStorageTests(unittest.TestCase):
+    def test_attendance_management_accepts_registered_operator(self):
+        database = BotDatabase.__new__(BotDatabase)
+
+        with patch.object(
+            database,
+            "_fetchone",
+            return_value={"allowed": 1},
+        ) as fetchone:
+            allowed = database.can_manage_attendance(123, 456)
+
+        self.assertTrue(allowed)
+        sql, params = fetchone.call_args.args
+        self.assertIn("assignment.scope_code IN (1, 2, 3, 4)", sql)
+        self.assertEqual(params, (123, 456, 456))
+
+    def test_attendance_management_rejects_unassigned_user(self):
+        database = BotDatabase.__new__(BotDatabase)
+
+        with patch.object(database, "_fetchone", return_value=None):
+            allowed = database.can_manage_attendance(123, 456)
+
+        self.assertFalse(allowed)
+
     def test_attendance_participants_are_saved_with_two_bulk_statements(self):
         connection = FakeConnection()
         database = BotDatabase.__new__(BotDatabase)

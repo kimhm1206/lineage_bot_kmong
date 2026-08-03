@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import os
 
 import discord
+
+from discord_bot.storage import database
 
 
 DEVELOPER_DISCORD_ID = int(
@@ -29,3 +32,15 @@ def is_admin_member(member: discord.Member | None) -> bool:
         return False
     permissions = member.guild_permissions
     return permissions.administrator or permissions.manage_guild
+
+
+async def can_manage_attendance(member: discord.Member | None) -> bool:
+    if member is None:
+        return False
+    if is_admin_member(member) or int(member.id) == DEVELOPER_DISCORD_ID:
+        return True
+    return await asyncio.to_thread(
+        database.can_manage_attendance,
+        member.guild.id,
+        member.id,
+    )

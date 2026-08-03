@@ -19,6 +19,7 @@ REQUIRED_TABLES = {
     "attendance_sessions",
     "guild_alliance_role_mappings",
     "guild_settings",
+    "guild_user_assignments",
     "guilds",
     "scheduled_report_settings",
     "users",
@@ -96,6 +97,37 @@ class BotDatabase:
               AND is_enabled IS TRUE
             """,
             (int(guild_id),),
+        )
+        return row is not None
+
+    def can_manage_attendance(
+        self,
+        guild_id: int,
+        discord_user_id: int,
+    ) -> bool:
+        row = self._fetchone(
+            """
+            SELECT 1 AS allowed
+            FROM guilds g
+            WHERE g.guild_id = %s
+              AND g.is_enabled IS TRUE
+              AND (
+                  g.owner_discord_id = %s
+                  OR EXISTS (
+                      SELECT 1
+                      FROM guild_user_assignments assignment
+                      WHERE assignment.guild_id = g.guild_id
+                        AND assignment.discord_user_id = %s
+                        AND assignment.scope_code IN (1, 2, 3, 4)
+                  )
+              )
+            LIMIT 1
+            """,
+            (
+                int(guild_id),
+                int(discord_user_id),
+                int(discord_user_id),
+            ),
         )
         return row is not None
 
