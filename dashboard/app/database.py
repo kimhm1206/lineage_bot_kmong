@@ -80,14 +80,14 @@ async def ensure_settings_schema() -> None:
             assignment_id BIGSERIAL PRIMARY KEY,
             guild_id BIGINT NOT NULL REFERENCES guilds(guild_id) ON DELETE CASCADE,
             discord_user_id BIGINT NOT NULL,
-            scope_code SMALLINT NOT NULL CHECK (scope_code IN (1, 2, 3, 4)),
+            scope_code SMALLINT NOT NULL CHECK (scope_code IN (1, 2, 3, 4, 5)),
             alliance_id BIGINT REFERENCES alliances(alliance_id) ON DELETE CASCADE,
             assigned_by_discord_user_id BIGINT,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             CONSTRAINT chk_guild_user_assignment_scope
                 CHECK (
-                    (scope_code IN (1, 4) AND alliance_id IS NULL)
+                    (scope_code IN (1, 4, 5) AND alliance_id IS NULL)
                     OR (scope_code IN (2, 3) AND alliance_id IS NOT NULL)
                 )
         )
@@ -101,6 +101,11 @@ async def ensure_settings_schema() -> None:
         CREATE UNIQUE INDEX IF NOT EXISTS uq_guild_alliance_accountant_user
         ON guild_user_assignments (guild_id, discord_user_id, scope_code)
         WHERE scope_code = 4
+        """,
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_guild_attendance_manager_user
+        ON guild_user_assignments (guild_id, discord_user_id, scope_code)
+        WHERE scope_code = 5
         """,
         """
         CREATE UNIQUE INDEX IF NOT EXISTS uq_guild_clan_assignment_user

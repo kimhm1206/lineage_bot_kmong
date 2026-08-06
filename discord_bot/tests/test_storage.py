@@ -64,7 +64,7 @@ class AttendanceStorageTests(unittest.TestCase):
 
         self.assertTrue(allowed)
         sql, params = fetchone.call_args.args
-        self.assertIn("assignment.scope_code IN (1, 2, 3, 4)", sql)
+        self.assertIn("assignment.scope_code IN (1, 2, 3, 4, 5)", sql)
         self.assertEqual(params, (123, 456, 456))
 
     def test_attendance_management_rejects_unassigned_user(self):

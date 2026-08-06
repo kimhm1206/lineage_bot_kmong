@@ -2951,6 +2951,11 @@ a {
   --manager-soft: var(--accent-soft);
 }
 
+.manager-section-attendance {
+  --manager-tone: var(--success);
+  --manager-soft: color-mix(in srgb, var(--success) 10%, var(--panel));
+}
+
 .manager-section-header {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;

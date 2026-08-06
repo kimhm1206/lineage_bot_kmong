@@ -31,18 +31,20 @@ PUBLIC_PREFIXES = (
 )
 ROLE_PRIORITY = {
     "user": 0,
-    "clan_accountant": 1,
-    "clan_manager": 2,
-    "alliance_accountant": 3,
-    "alliance_manager": 4,
-    "owner": 5,
-    "developer": 6,
+    "attendance_manager": 1,
+    "clan_accountant": 2,
+    "clan_manager": 3,
+    "alliance_accountant": 4,
+    "alliance_manager": 5,
+    "owner": 6,
+    "developer": 7,
 }
 SCOPE_ROLES = {
     1: "alliance_manager",
     2: "clan_manager",
     3: "clan_accountant",
     4: "alliance_accountant",
+    5: "attendance_manager",
 }
 GLOBAL_DEVELOPER_DISCORD_ID = 238978205078388747
 DEVELOPER_VIEW_MODE_SESSION_KEY = "developer_view_mode"
@@ -52,13 +54,13 @@ DEVELOPER_VIEW_MODES = {
     "developer": {
         "label": "디벨로퍼",
         "role": "developer",
-        "scopes": (1, 2, 3, 4),
+        "scopes": (1, 2, 3, 4, 5),
         "requires_alliance": False,
     },
     "owner": {
         "label": "오너",
         "role": "owner",
-        "scopes": (1, 2, 3, 4),
+        "scopes": (1, 2, 3, 4, 5),
         "requires_alliance": False,
     },
     "alliance_manager": {
@@ -84,6 +86,12 @@ DEVELOPER_VIEW_MODES = {
         "role": "clan_accountant",
         "scopes": (3,),
         "requires_alliance": True,
+    },
+    "attendance_manager": {
+        "label": "출석관리자",
+        "role": "attendance_manager",
+        "scopes": (5,),
+        "requires_alliance": False,
     },
     "user": {
         "label": "유저",
@@ -223,10 +231,10 @@ async def _enabled_guild_access(
         guild_id = int(row["guild_id"])
         if is_developer:
             roles[guild_id] = "developer"
-            scopes[guild_id] = {1, 2, 3, 4}
+            scopes[guild_id] = {1, 2, 3, 4, 5}
         elif row["owner_discord_id"] is not None and int(row["owner_discord_id"]) == discord_user_id:
             roles[guild_id] = "owner"
-            scopes[guild_id] = {1, 2, 3, 4}
+            scopes[guild_id] = {1, 2, 3, 4, 5}
     for assignment in assignments:
         guild_id = int(assignment["guild_id"])
         scope_code = int(assignment["scope_code"])
@@ -316,7 +324,7 @@ class AuthContextMiddleware(BaseHTTPMiddleware):
                 request.state.developer_view_mode = "developer"
                 request.state.developer_view_alliance_id = None
                 request.state.access_role = "developer"
-                request.state.access_scopes = (1, 2, 3)
+                request.state.access_scopes = (1, 2, 3, 4, 5)
                 request.state.allowed_guild_ids = ()
                 request.state.selected_guild_id = None
                 return await self._call_with_actor(

@@ -14,6 +14,7 @@ from dashboard.app.routes.settings import (
 from dashboard.app.security import (
     can_manage_alliance_managers,
     can_manage_alliance_operations,
+    can_manage_attendance,
     can_manage_clan_configuration,
     can_manage_clan_treasury,
     can_manage_notifications,
@@ -46,6 +47,19 @@ def test_alliance_accountant_scope_and_role_priority_are_registered() -> None:
     assert ROLE_PRIORITY["alliance_accountant"] < ROLE_PRIORITY["alliance_manager"]
     assert DEVELOPER_VIEW_MODES["alliance_accountant"]["scopes"] == (4,)
     assert 4 in DEVELOPER_VIEW_MODES["owner"]["scopes"]
+
+
+def test_attendance_manager_has_only_attendance_management_scope() -> None:
+    manager = _request(role="attendance_manager", scopes=(5,))
+
+    assert SCOPE_ROLES[5] == "attendance_manager"
+    assert DEVELOPER_VIEW_MODES["attendance_manager"]["scopes"] == (5,)
+    assert 5 in DEVELOPER_VIEW_MODES["owner"]["scopes"]
+    assert can_manage_attendance(manager)
+    assert not can_manage_alliance_operations(manager)
+    assert not can_manage_clan_treasury(manager)
+    assert not can_manage_clan_configuration(manager)
+    assert not can_manage_operational_assignments(manager)
 
 
 def test_alliance_management_requires_alliance_manager_or_higher() -> None:

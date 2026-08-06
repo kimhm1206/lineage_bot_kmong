@@ -548,13 +548,15 @@ async def complete_sale(
     guild_id: int,
     buyer_alliance_id: int,
     buyer_user_id: int | None,
+    cash_price_krw: int,
     adena_market_rate: int,
 ) -> OperationResult:
+    cash_price_krw = _positive_int(cash_price_krw, label="판매 원화")
     adena_market_rate = _positive_int(adena_market_rate, label="아데나 시세")
     sale = (
         await session.execute(
             text("""
-                SELECT s.status_code, d.cash_price_krw, i.default_price
+                SELECT s.status_code, i.item_id, i.default_price
                 FROM settlement_drop_sales s
                 JOIN settlement_drops d ON d.drop_id = s.drop_id
                 JOIN catalog_item_versions v ON v.item_version_id = d.item_version_id
@@ -567,9 +569,6 @@ async def complete_sale(
     ).mappings().one_or_none()
     if sale is None:
         raise SettlementError("판매할 드랍 기록을 찾을 수 없습니다.")
-    cash_price_krw = int(sale["cash_price_krw"] or sale["default_price"] or 0)
-    if cash_price_krw <= 0:
-        raise SettlementError("저장된 원화 시세가 없습니다. 아이템 시세를 설정한 뒤 드랍 정보를 다시 저장해 주세요.")
     buyer_exists = await session.scalar(
         text("""
             SELECT 1
@@ -605,6 +604,29 @@ async def complete_sale(
     if gross_adena <= 0:
         raise SettlementError("계산된 판매 아데나가 0입니다. 가격과 시세를 확인해 주세요.")
     now = _now()
+    if cash_price_krw != int(sale["default_price"] or 0):
+        await session.execute(
+            text("""
+                UPDATE items
+                SET default_price = :cash_price,
+                    updated_at = NOW()
+                WHERE item_id = :item_id
+                  AND guild_id = :guild_id
+            """),
+            {
+                "cash_price": cash_price_krw,
+                "item_id": int(sale["item_id"]),
+                "guild_id": guild_id,
+            },
+        )
+        await _audit(
+            session,
+            guild_id=guild_id,
+            action_code="item_update",
+            target_id=int(sale["item_id"]),
+            item_id=int(sale["item_id"]),
+            amount_value=cash_price_krw,
+        )
     await session.execute(
         text("""
             UPDATE settlement_drops

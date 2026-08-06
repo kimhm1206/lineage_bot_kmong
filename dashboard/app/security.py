@@ -302,6 +302,14 @@ def can_manage_alliance_operations(request: Request) -> bool:
     )
 
 
+def can_manage_attendance(request: Request) -> bool:
+    return (
+        can_manage_alliance_operations(request)
+        or current_access_role(request) == "attendance_manager"
+        or has_assignment_scope(request, 5)
+    )
+
+
 def can_manage_alliance_treasury(request: Request) -> bool:
     return can_manage_alliance_operations(request)
 

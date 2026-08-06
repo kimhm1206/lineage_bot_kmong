@@ -118,7 +118,7 @@ class BotDatabase:
                       FROM guild_user_assignments assignment
                       WHERE assignment.guild_id = g.guild_id
                         AND assignment.discord_user_id = %s
-                        AND assignment.scope_code IN (1, 2, 3, 4)
+                        AND assignment.scope_code IN (1, 2, 3, 4, 5)
                   )
               )
             LIMIT 1

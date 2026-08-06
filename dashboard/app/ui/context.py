@@ -53,6 +53,7 @@ def build_template_context(
             "alliance_accountant": "연합경리",
             "clan_manager": "혈맹관리자",
             "clan_accountant": "혈맹경리",
+            "attendance_manager": "출석관리자",
         }.get(access_role, "유저"),
         "is_global_developer": is_global_developer(request),
         "developer_view_mode": getattr(

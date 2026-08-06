@@ -11,6 +11,7 @@ SCOPE_ALLIANCE_MANAGER = 1
 SCOPE_CLAN_MANAGER = 2
 SCOPE_CLAN_ACCOUNTANT = 3
 SCOPE_ALLIANCE_ACCOUNTANT = 4
+SCOPE_ATTENDANCE_MANAGER = 5
 
 
 async def list_guilds(session: AsyncSession) -> list[dict[str, Any]]:

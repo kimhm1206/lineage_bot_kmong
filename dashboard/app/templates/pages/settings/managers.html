@@ -79,6 +79,40 @@
     </div>
   </section>
 
+  <section class="panel manager-section manager-section-attendance">
+    <header class="manager-section-header">
+      <span class="manager-section-icon">{{ icon("calendar-check") }}</span>
+      <div><span class="panel-kicker">Attendance operations</span><h2>출석 관리자</h2></div>
+      <span class="manager-count">{{ attendance_managers|length }}명</span>
+    </header>
+
+    <div class="manager-section-body">
+      <div class="manager-current-area">
+        <h3>현재 담당자</h3>
+        <div class="manager-roster">
+          {% for manager in attendance_managers %}
+          <article class="manager-person-row">
+            <span class="user-avatar">{{ manager.display_name[:1] }}</span>
+            <div><strong>{{ manager.display_name }}</strong><small>{{ manager.discord_user_id }}</small></div>
+            <form method="post" action="/settings/assignments/{{ manager.assignment_id }}/delete">
+              <input type="hidden" name="guild_id" value="{{ guild_id }}"><input type="hidden" name="return_path" value="/settings/managers">
+              <button class="danger-icon-button" type="submit" title="지정 해제">{{ icon("trash") }}</button>
+            </form>
+          </article>
+          {% else %}<div class="manager-empty">지정된 출석 관리자가 없습니다.</div>{% endfor %}
+        </div>
+      </div>
+
+      <form class="manager-add-area" method="post" action="/settings/managers" data-manager-form data-picker-scope="attendance">
+        <input type="hidden" name="guild_id" value="{{ guild_id or '' }}">
+        <input type="hidden" name="scope_code" value="5">
+        <div class="manager-add-heading"><span>{{ icon("plus-square") }}</span><div><strong>출석 관리자 추가</strong><small>출석 시작·종료와 인원 수정</small></div></div>
+        {{ user_picker_field() }}
+        <button class="primary-button manager-submit" type="submit" {% if not guild_id or not members %}disabled{% endif %}>담당자로 추가</button>
+      </form>
+    </div>
+  </section>
+
   <section class="panel manager-section manager-section-clan">
     <header class="manager-section-header">
       <span class="manager-section-icon">{{ icon("landmark") }}</span>

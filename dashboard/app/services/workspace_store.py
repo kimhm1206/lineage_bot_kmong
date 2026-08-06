@@ -65,6 +65,7 @@ ROLE_LABELS = {
     5: "Clan accountant",
     6: "User",
     7: "Alliance accountant",
+    8: "Attendance manager",
 }
 
 AUDIT_FILTERS = {

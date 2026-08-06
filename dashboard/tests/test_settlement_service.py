@@ -92,6 +92,25 @@ class _DistributionStateSession:
         return _MappingsResult(rows=self.rows)
 
 
+class _SalePriceSession:
+    def __init__(self):
+        self.calls = []
+
+    async def execute(self, statement, params):
+        sql = str(statement)
+        self.calls.append((sql, dict(params)))
+        if "SELECT s.status_code, i.item_id, i.default_price" in sql:
+            return _MappingsResult(
+                one={"status_code": 0, "item_id": 77, "default_price": 100_000}
+            )
+        return _MappingsResult()
+
+    async def scalar(self, statement, params):
+        assert "guild_alliance_role_mappings" in str(statement)
+        assert params == {"guild_id": 100, "alliance_id": 7}
+        return 1
+
+
 def test_initial_sale_payouts_are_not_distribution_activity() -> None:
     session = _DistributionStateSession(
         [
@@ -168,6 +187,42 @@ def test_buyer_is_included_when_listed_as_attendance_participant(monkeypatch) ->
 
     assert [row["user_id"] for row in session.inserted] == [101, 102]
     assert [row["amount"] for row in session.inserted] == [500, 500]
+
+
+def test_sale_price_updates_drop_and_latest_item_price(monkeypatch) -> None:
+    async def distribution_not_started(*_args, **_kwargs):
+        return False
+
+    async def no_op(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(settlement_service, "_distribution_started", distribution_not_started)
+    monkeypatch.setattr(settlement_service, "_build_alliance_payouts", no_op)
+    monkeypatch.setattr(settlement_service, "_audit", no_op)
+    session = _SalePriceSession()
+
+    result = asyncio.run(
+        settlement_service.complete_sale(
+            session,
+            drop_id=9,
+            guild_id=100,
+            buyer_alliance_id=7,
+            buyer_user_id=None,
+            cash_price_krw=150_000,
+            adena_market_rate=1_500,
+        )
+    )
+
+    item_update = next(
+        params for sql, params in session.calls if "UPDATE items" in sql
+    )
+    drop_update = next(
+        params for sql, params in session.calls if "UPDATE settlement_drops" in sql
+    )
+    assert item_update == {"cash_price": 150_000, "item_id": 77, "guild_id": 100}
+    assert drop_update["cash_price"] == 150_000
+    assert drop_update["gross_adena"] == 1_000_000
+    assert result.affected_ids == (9,)
 
 
 def test_alliance_rounding_remainder_is_credited_to_alliance_treasury(monkeypatch) -> None:

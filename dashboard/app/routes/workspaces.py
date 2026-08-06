@@ -17,6 +17,7 @@ from dashboard.app.database import get_session
 from dashboard.app.security import (
     allowed_guild_ids,
     can_manage_alliance_operations,
+    can_manage_attendance,
     can_manage_alliance_treasury,
     can_manage_clan_treasury,
     can_select_alliances,
@@ -723,7 +724,7 @@ async def attendance_status(
     if clean_date_from and clean_date_to and clean_date_from > clean_date_to:
         clean_date_from, clean_date_to = clean_date_to, clean_date_from
     effective_period = 0 if clean_date_from or clean_date_to else selected_period
-    can_edit_attendance = can_manage_alliance_operations(request)
+    can_edit_attendance = can_manage_attendance(request)
     if workspace["guild_id"] is None:
         page_data = {
             "sessions": [],
@@ -763,7 +764,7 @@ async def attendance_member_options(
     refresh: bool = False,
     session: AsyncSession = Depends(get_session),
 ):
-    if not can_manage_alliance_operations(request):
+    if not can_manage_attendance(request):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="출석을 수정할 권한이 없습니다.")
     discord_ids: list[int] = []
     if refresh:
@@ -831,7 +832,7 @@ async def attendance_add_members(
     attendance_id: int,
     session: AsyncSession = Depends(get_session),
 ):
-    if not can_manage_alliance_operations(request):
+    if not can_manage_attendance(request):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="출석을 수정할 권한이 없습니다.")
     form = await request.form()
     guild_id = _optional_query_id(form.get("guild_id"))
@@ -871,7 +872,7 @@ async def attendance_delete_member(
     user_id: int,
     session: AsyncSession = Depends(get_session),
 ):
-    if not can_manage_alliance_operations(request):
+    if not can_manage_attendance(request):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="출석을 수정할 권한이 없습니다.")
     form = await request.form()
     guild_id = _optional_query_id(form.get("guild_id"))

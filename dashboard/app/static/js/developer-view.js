@@ -19,6 +19,7 @@
     alliance_accountant: "연합 운영과 1차 분배",
     clan_manager: "선택 혈맹 운영과 설정",
     clan_accountant: "선택 혈맹 정산과 가계부",
+    attendance_manager: "출석 시작·종료와 출석 인원 수정",
     user: "개인 조회와 선택 혈맹 정보",
   };
   let selectedMode = "";

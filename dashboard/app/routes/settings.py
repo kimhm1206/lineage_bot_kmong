@@ -584,6 +584,11 @@ async def manager_settings(
         for row in assignments
         if row["scope_code"] == settings_store.SCOPE_ALLIANCE_ACCOUNTANT
     ]
+    attendance_managers = [
+        row
+        for row in assignments
+        if row["scope_code"] == settings_store.SCOPE_ATTENDANCE_MANAGER
+    ]
     clan_manager_groups = []
     mapped_alliance_ids = {row["alliance_id"] for row in alliances}
     for alliance in alliances:
@@ -617,6 +622,9 @@ async def manager_settings(
         "alliance_accountants": [
             str(row["discord_user_id"]) for row in alliance_accountants
         ],
+        "attendance": [
+            str(row["discord_user_id"]) for row in attendance_managers
+        ],
         "clans": {
             str(group["alliance_id"]): [
                 str(row["discord_user_id"])
@@ -630,7 +638,7 @@ async def manager_settings(
         request,
         active_nav="operations.delegation",
         page_title="운영 담당자 설정",
-        page_description="연합 관리자, 연합 경리와 각혈 관리자를 유저 단위로 지정합니다.",
+        page_description="연합·혈맹 운영 담당자와 출석 관리자를 유저 단위로 지정합니다.",
         page_kicker="User assignments",
         page_badge=(
             "OWNER"
@@ -645,6 +653,7 @@ async def manager_settings(
             "alliances": alliances,
             "alliance_managers": alliance_managers,
             "alliance_accountants": alliance_accountants,
+            "attendance_managers": attendance_managers,
             "clan_manager_groups": clan_manager_groups,
             "assigned_member_ids": assigned_member_ids,
             "can_manage_alliance_managers": can_manage_alliance_managers(request),
@@ -664,11 +673,12 @@ async def save_manager(request: Request, session: AsyncSession = Depends(get_ses
     try:
         guild_id = _int_value(form.get("guild_id"), minimum=1)
         discord_user_id = _int_value(form.get("discord_user_id"), minimum=1)
-        scope_code = _int_value(form.get("scope_code"), minimum=1, maximum=4)
+        scope_code = _int_value(form.get("scope_code"), minimum=1, maximum=5)
         if scope_code not in {
             settings_store.SCOPE_ALLIANCE_MANAGER,
             settings_store.SCOPE_CLAN_MANAGER,
             settings_store.SCOPE_ALLIANCE_ACCOUNTANT,
+            settings_store.SCOPE_ATTENDANCE_MANAGER,
         }:
             raise ValueError
         if scope_code == settings_store.SCOPE_ALLIANCE_MANAGER:
