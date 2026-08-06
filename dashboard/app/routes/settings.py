@@ -7,6 +7,7 @@ from urllib.parse import urlencode
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dashboard.app.config import BASE_DIR
@@ -711,6 +712,13 @@ async def save_manager(request: Request, session: AsyncSession = Depends(get_ses
         return _redirect("/settings/managers", guild_id=_optional_snowflake(form.get("guild_id")), error="담당자와 권한 범위를 확인해 주세요.")
     except DiscordApiError as exc:
         return _redirect("/settings/managers", guild_id=guild_id, error=str(exc))
+    except IntegrityError:
+        await session.rollback()
+        return _redirect(
+            "/settings/managers",
+            guild_id=_optional_snowflake(form.get("guild_id")),
+            error="담당자 설정을 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.",
+        )
     return _redirect("/settings/managers", guild_id=guild_id, notice="운영 담당자를 지정했습니다.")
 
 

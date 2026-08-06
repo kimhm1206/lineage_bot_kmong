@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dashboard.app.config import BASE_DIR
@@ -76,6 +77,15 @@ async def _result(session: AsyncSession, operation: Awaitable[settlement_service
     except settlement_service.SettlementError as exc:
         await session.rollback()
         return JSONResponse({"ok": False, "message": str(exc)}, status_code=422)
+    except IntegrityError:
+        await session.rollback()
+        return JSONResponse(
+            {
+                "ok": False,
+                "message": "다른 작업으로 데이터 상태가 변경되었습니다. 화면을 새로고침한 뒤 다시 시도해 주세요.",
+            },
+            status_code=409,
+        )
     except Exception:
         await session.rollback()
         raise

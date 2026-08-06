@@ -12,6 +12,7 @@ from dashboard.app.services import audit_service
 
 
 PPM_BASE = 1_000_000
+BIGINT_MAX = 9_223_372_036_854_775_807
 STATUS_PENDING = 0
 STATUS_COMPLETE = 1
 STATUS_FORFEITED = 2
@@ -51,7 +52,13 @@ def _clean_name(value: Any, *, label: str, max_length: int = 100) -> str:
     return normalized
 
 
-def _positive_int(value: Any, *, label: str, allow_zero: bool = False) -> int:
+def _positive_int(
+    value: Any,
+    *,
+    label: str,
+    allow_zero: bool = False,
+    maximum: int | None = None,
+) -> int:
     try:
         parsed = int(str(value).replace(",", "").strip())
     except (TypeError, ValueError):
@@ -59,6 +66,8 @@ def _positive_int(value: Any, *, label: str, allow_zero: bool = False) -> int:
     minimum = 0 if allow_zero else 1
     if parsed < minimum:
         raise SettlementError(f"{label}은(는) {minimum:,} 이상이어야 합니다.")
+    if maximum is not None and parsed > maximum:
+        raise SettlementError(f"{label} 값이 허용 범위를 초과했습니다.")
     return parsed
 
 
@@ -551,8 +560,21 @@ async def complete_sale(
     cash_price_krw: int,
     adena_market_rate: int,
 ) -> OperationResult:
-    cash_price_krw = _positive_int(cash_price_krw, label="판매 원화")
-    adena_market_rate = _positive_int(adena_market_rate, label="아데나 시세")
+    cash_price_krw = _positive_int(
+        cash_price_krw,
+        label="판매 원화",
+        maximum=BIGINT_MAX,
+    )
+    adena_market_rate = _positive_int(
+        adena_market_rate,
+        label="아데나 시세",
+        maximum=BIGINT_MAX,
+    )
+    gross_adena = cash_price_krw * 10_000 // adena_market_rate
+    if gross_adena <= 0:
+        raise SettlementError("계산된 판매 아데나가 0입니다. 가격과 시세를 확인해 주세요.")
+    if gross_adena > BIGINT_MAX:
+        raise SettlementError("계산된 판매 아데나가 저장 가능한 범위를 초과했습니다.")
     sale = (
         await session.execute(
             text("""
@@ -600,9 +622,6 @@ async def complete_sale(
         text("DELETE FROM settlement_payout_objects WHERE drop_id = :drop_id"),
         {"drop_id": drop_id},
     )
-    gross_adena = cash_price_krw * 10_000 // adena_market_rate
-    if gross_adena <= 0:
-        raise SettlementError("계산된 판매 아데나가 0입니다. 가격과 시세를 확인해 주세요.")
     now = _now()
     if cash_price_krw != int(sale["default_price"] or 0):
         await session.execute(

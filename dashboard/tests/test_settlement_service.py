@@ -1,5 +1,7 @@
 import asyncio
 
+import pytest
+
 from dashboard.app.services import settlement_service
 
 
@@ -223,6 +225,31 @@ def test_sale_price_updates_drop_and_latest_item_price(monkeypatch) -> None:
     assert drop_update["cash_price"] == 150_000
     assert drop_update["gross_adena"] == 1_000_000
     assert result.affected_ids == (9,)
+
+
+def test_sale_rejects_gross_adena_overflow_before_writes() -> None:
+    class Session:
+        async def execute(self, statement, params):
+            raise AssertionError(f"Unexpected database access: {statement}")
+
+        async def scalar(self, statement, params):
+            raise AssertionError(f"Unexpected database access: {statement}")
+
+    with pytest.raises(
+        settlement_service.SettlementError,
+        match="저장 가능한 범위를 초과",
+    ):
+        asyncio.run(
+            settlement_service.complete_sale(
+                Session(),
+                drop_id=9,
+                guild_id=100,
+                buyer_alliance_id=7,
+                buyer_user_id=None,
+                cash_price_krw=settlement_service.BIGINT_MAX,
+                adena_market_rate=1,
+            )
+        )
 
 
 def test_alliance_rounding_remainder_is_credited_to_alliance_treasury(monkeypatch) -> None:
