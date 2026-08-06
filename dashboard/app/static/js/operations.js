@@ -305,12 +305,80 @@
     if (output) output.textContent = `${adena.toLocaleString("ko-KR")} 아데나`;
   };
 
+  let activeDropItemPickerField = null;
+
+  const dropItemPickerOptions = () => [
+    ...document.querySelectorAll("[data-drop-item-option]"),
+  ];
+
+  const selectedDropItemOption = (itemId) => dropItemPickerOptions().find(
+    (option) => option.dataset.itemId === String(itemId || ""),
+  );
+
+  const syncDropItemPickerField = (field) => {
+    if (!field) return;
+    const input = field.querySelector("[data-drop-item-input]");
+    const trigger = field.querySelector("[data-drop-item-picker-open]");
+    const option = selectedDropItemOption(input?.value);
+    const name = field.querySelector("[data-drop-item-picker-name]");
+    const meta = field.querySelector("[data-drop-item-picker-meta]");
+    if (name) name.textContent = option?.dataset.itemName || "아이템 선택";
+    if (meta) {
+      meta.textContent = option
+        ? `등록 원화 ${option.dataset.itemPrice || "0원"}`
+        : "이름으로 검색해 선택하세요";
+    }
+    trigger?.classList.toggle("has-selection", Boolean(option));
+  };
+
+  const filterDropItemPicker = () => {
+    const modal = document.getElementById("drop-item-picker-modal");
+    if (!modal) return;
+    const query = modal.querySelector("[data-drop-item-search]")?.value.trim().toLocaleLowerCase("ko-KR") || "";
+    let visibleCount = 0;
+    dropItemPickerOptions().forEach((option) => {
+      const matches = !query || (option.dataset.searchText || "").includes(query);
+      option.hidden = !matches;
+      if (matches) visibleCount += 1;
+    });
+    const count = modal.querySelector("[data-drop-item-visible-count]");
+    if (count) count.textContent = `${visibleCount.toLocaleString("ko-KR")}개`;
+    const empty = modal.querySelector("[data-drop-item-empty]");
+    if (empty) empty.hidden = visibleCount > 0;
+  };
+
+  const openDropItemPicker = (trigger) => {
+    const field = trigger.closest("[data-drop-item-picker-field]");
+    if (!field) return;
+    activeDropItemPickerField = field;
+    const selectedId = field.querySelector("[data-drop-item-input]")?.value || "";
+    const modal = document.getElementById("drop-item-picker-modal");
+    const search = modal?.querySelector("[data-drop-item-search]");
+    if (search) search.value = "";
+    dropItemPickerOptions().forEach((option) => {
+      option.classList.toggle("is-selected", option.dataset.itemId === selectedId);
+    });
+    filterDropItemPicker();
+    openModal("drop-item-picker-modal");
+  };
+
+  const selectDropItem = (option) => {
+    if (!activeDropItemPickerField || option.disabled) return;
+    const input = activeDropItemPickerField.querySelector("[data-drop-item-input]");
+    if (input) input.value = option.dataset.itemId || "";
+    syncDropItemPickerField(activeDropItemPickerField);
+    const trigger = activeDropItemPickerField.querySelector("[data-drop-item-picker-open]");
+    closeModal(document.getElementById("drop-item-picker-modal"));
+    trigger?.focus();
+  };
+
   const populateDropEdit = (button) => {
     const drop = JSON.parse(button.dataset.drop);
     const form = document.querySelector("[data-drop-edit-form]");
     form.action = `/api/drops/${drop.drop_id}`;
     form.elements.attendance_id.value = String(drop.attendance_id);
     form.elements.item_id.value = String(drop.item_id);
+    syncDropItemPickerField(form.querySelector("[data-drop-item-picker-field]"));
     const excluded = new Set((drop.excluded_alliance_ids || []).map(String));
     form.querySelectorAll('input[name="excluded_alliance_ids"]').forEach((checkbox) => {
       checkbox.checked = excluded.has(checkbox.value);
@@ -1213,6 +1281,13 @@
     if (!form) return;
     event.preventDefault();
     event.stopPropagation();
+    const dropItemInput = form.querySelector("[data-drop-item-input]");
+    if (dropItemInput && !dropItemInput.value) {
+      showToast("아이템을 선택해 주세요.", "error");
+      const trigger = form.querySelector("[data-drop-item-picker-open]");
+      if (trigger) openDropItemPicker(trigger);
+      return;
+    }
     asyncSubmit(form);
   });
 
@@ -1241,6 +1316,16 @@
         setFeeRuleEditor(form, false, { reset: true });
       });
       closeModal(modalClose);
+    }
+    const dropItemPickerOpen = event.target.closest("[data-drop-item-picker-open]");
+    if (dropItemPickerOpen) {
+      event.preventDefault();
+      openDropItemPicker(dropItemPickerOpen);
+    }
+    const dropItemOption = event.target.closest("[data-drop-item-option]");
+    if (dropItemOption) {
+      event.preventDefault();
+      selectDropItem(dropItemOption);
     }
     const dropEdit = event.target.closest("[data-drop-edit]");
     if (dropEdit) populateDropEdit(dropEdit);
@@ -1392,6 +1477,8 @@
   });
 
   document.addEventListener("input", (event) => {
+    const dropItemSearch = event.target.closest("[data-drop-item-search]");
+    if (dropItemSearch) filterDropItemPicker();
     const clientSearchInput = event.target.closest("[data-client-search-input]");
     if (clientSearchInput) applyClientSearch(clientSearchInput);
     const dropHistorySearch = event.target.closest("[data-drop-history-search]");
@@ -1426,6 +1513,7 @@
 
   const initializeOperationsPage = () => {
     document.querySelectorAll("[data-client-search-input]").forEach(applyClientSearch);
+    document.querySelectorAll("[data-drop-item-picker-field]").forEach(syncDropItemPickerField);
   };
 
   document.addEventListener("dashboard:page-loaded", initializeOperationsPage);
