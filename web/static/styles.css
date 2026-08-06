@@ -82,7 +82,8 @@ body {
   font-size: 15px;
 }
 
-body.has-status-modal-open {
+body.has-status-modal-open,
+body.modal-open {
   overflow: hidden;
 }
 
@@ -1979,6 +1980,29 @@ button:disabled {
   align-items: end;
 }
 
+.item-price-sort-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.item-price-list-toolbar {
+  gap: 12px;
+}
+
+.item-price-sort-control span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.item-price-sort-control select {
+  min-width: 148px;
+  min-height: 36px;
+  padding: 0 34px 0 11px;
+  font-size: 13px;
+}
+
 .item-price-list {
   display: grid;
   gap: 6px;
@@ -3054,6 +3078,146 @@ button:disabled {
 
 .loot-create-actions button {
   width: 100%;
+}
+
+.loot-item-picker-field {
+  min-width: 0;
+}
+
+.loot-item-picker-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 48px;
+  padding: 8px 10px 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--control-bg, var(--panel));
+  color: var(--text);
+  text-align: left;
+}
+
+.loot-item-picker-trigger:hover,
+.loot-item-picker-trigger:focus-visible {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(53, 161, 207, 0.12);
+}
+
+.loot-item-picker-trigger > span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.loot-item-picker-trigger strong,
+.loot-item-picker-trigger small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.loot-item-picker-trigger strong {
+  font-size: 13px;
+}
+
+.loot-item-picker-trigger small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.loot-item-picker-trigger em {
+  flex: 0 0 auto;
+  padding: 6px 9px;
+  border-radius: 6px;
+  background: var(--surface-muted);
+  color: var(--accent);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.loot-item-picker-modal-card {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 0;
+  width: min(720px, 100%);
+  height: min(720px, calc(100dvh - 40px));
+  max-height: calc(100dvh - 40px);
+  padding: 0;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.loot-item-picker-header {
+  padding: 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.loot-item-picker-header > div {
+  display: grid;
+  gap: 3px;
+}
+
+.loot-item-picker-search {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.loot-item-picker-search input {
+  min-height: 44px;
+}
+
+.loot-item-picker-list {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px 18px 18px;
+}
+
+.loot-item-picker-option {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  min-height: 50px;
+  padding: 10px 13px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-muted);
+  color: var(--text);
+  text-align: left;
+}
+
+.loot-item-picker-option:hover,
+.loot-item-picker-option:focus-visible,
+.loot-item-picker-option.is-selected {
+  border-color: var(--accent);
+  background: var(--hover-bg);
+}
+
+.loot-item-picker-option span {
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.loot-item-picker-option strong {
+  color: var(--muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.loot-item-picker-empty {
+  min-height: 180px;
 }
 
 .loot-session-preview {
@@ -5345,6 +5509,24 @@ button:disabled {
 
   .item-price-list-header {
     display: none;
+  }
+
+  .item-price-sort-control {
+    width: 100%;
+  }
+
+  .item-price-sort-control select {
+    flex: 1;
+  }
+
+  .loot-item-picker-modal-card {
+    height: calc(100dvh - 24px);
+    max-height: calc(100dvh - 24px);
+  }
+
+  .loot-item-picker-option {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 3px;
   }
 
   .loot-session-field,

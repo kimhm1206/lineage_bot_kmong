@@ -530,21 +530,35 @@
               </select>
             </label>
 
-            <label class="field">
+            <div class="field loot-item-picker-field">
               <span>아이템</span>
-              <select name="item_id" data-loot-item>
+              <button
+                class="loot-item-picker-trigger"
+                type="button"
+                data-loot-item-picker-open
+                aria-haspopup="dialog"
+                aria-controls="loot-item-picker-modal"
+              >
+                <span>
+                  <strong data-loot-item-selected-name>아이템 선택</strong>
+                  <small data-loot-item-selected-price>등록된 아이템을 검색해 선택하세요</small>
+                </span>
+                <em>선택</em>
+              </button>
+              <select name="item_id" data-loot-item hidden aria-hidden="true" tabindex="-1">
                 <option value="" data-cash-price="">아이템 선택</option>
                 {% for item in item_prices %}
                   <option
                     value="{{ item.item_id }}"
                     data-cash-price="{{ item.default_price_input }}"
+                    data-item-name="{{ item.item_name }}"
                     {% if loot_form.item_id|string == item.item_id|string %}selected{% endif %}
                   >
                     {{ item.item_name }} · {{ item.default_price_text }}원
                   </option>
                 {% endfor %}
               </select>
-            </label>
+            </div>
 
             <label class="field">
               <span>원화 시세</span>
@@ -636,6 +650,39 @@
           </div>
         </article>
       </section>
+
+      <div class="modal-backdrop" id="loot-item-picker-modal" data-loot-item-picker-modal hidden>
+        <section class="modal-card loot-item-picker-modal-card" role="dialog" aria-modal="true" aria-labelledby="loot-item-picker-title">
+          <header class="panel-header loot-item-picker-header">
+            <div>
+              <h2 id="loot-item-picker-title">아이템 선택</h2>
+              <span class="panel-caption">등록할 아이템을 검색한 뒤 선택하세요</span>
+            </div>
+            <button class="icon-button" type="button" aria-label="아이템 선택 닫기" data-loot-item-picker-close>&times;</button>
+          </header>
+          <label class="field loot-item-picker-search">
+            <span>아이템 이름 검색</span>
+            <input type="search" placeholder="아이템 이름을 입력하세요" autocomplete="off" data-loot-item-picker-search>
+          </label>
+          <div class="loot-item-picker-list" data-loot-item-picker-list>
+            {% for item in item_prices %}
+              <button
+                class="loot-item-picker-option"
+                type="button"
+                data-loot-item-picker-option
+                data-item-id="{{ item.item_id }}"
+                data-item-name="{{ item.item_name }}"
+                data-item-price="{{ item.default_price_input }}"
+                data-search-text="{{ item.item_name|lower }}"
+              >
+                <span>{{ item.item_name }}</span>
+                <strong>{{ item.default_price_text }}원</strong>
+              </button>
+            {% endfor %}
+            <div class="empty report-empty loot-item-picker-empty" data-loot-item-picker-empty hidden>검색 결과가 없습니다.</div>
+          </div>
+        </section>
+      </div>
     </section>
   {% endif %}
 
@@ -1685,9 +1732,19 @@
         </article>
 
         <article class="panel">
-          <header class="panel-header">
-            <h2>등록된 아이템</h2>
-            <span class="panel-caption">전 서버 공통 {{ item_prices|length }}개</span>
+          <header class="panel-header item-price-list-toolbar">
+            <div>
+              <h2>등록된 아이템</h2>
+              <span class="panel-caption">전 서버 공통 {{ item_prices|length }}개</span>
+            </div>
+            <label class="item-price-sort-control">
+              <span>정렬</span>
+              <select data-item-price-sort>
+                <option value="name_asc">이름 가나다순</option>
+                <option value="price_desc">가격 높은순</option>
+                <option value="price_asc">가격 낮은순</option>
+              </select>
+            </label>
           </header>
 
           <div class="item-price-list">
@@ -1697,7 +1754,12 @@
               <span>관리</span>
             </div>
             {% for item in item_prices %}
-              <div class="item-price-card">
+              <div
+                class="item-price-card"
+                data-item-price-row
+                data-item-name="{{ item.item_name }}"
+                data-item-price="{{ item.default_price_input }}"
+              >
                 <form class="item-price-edit-form" method="post" action="/settings/items/update?guild_id={{ auth.selected_guild_id }}&return_to=loot">
                   <input type="hidden" name="item_id" value="{{ item.item_id }}">
                   <input
@@ -1749,6 +1811,11 @@
     const attendanceSelect = document.querySelector("[data-loot-attendance]");
     const attendancePreview = document.querySelector("[data-loot-attendance-preview]");
     const itemSelect = document.querySelector("[data-loot-item]");
+    const itemPickerModal = document.querySelector("[data-loot-item-picker-modal]");
+    const itemPickerSearch = document.querySelector("[data-loot-item-picker-search]");
+    const itemPickerOptions = Array.from(document.querySelectorAll("[data-loot-item-picker-option]"));
+    const itemPickerEmpty = document.querySelector("[data-loot-item-picker-empty]");
+    const itemPriceSort = document.querySelector("[data-item-price-sort]");
     const createForm = document.querySelector("[data-loot-form]");
     const excludedAllianceInput = document.querySelector("[data-loot-excluded-alliances]");
     const attendanceDetailRequests = new Map();
@@ -1948,13 +2015,85 @@
     function syncItemPrice() {
       const option = itemSelect?.selectedOptions?.[0];
       const cashInput = createForm?.querySelector("[data-loot-cash-price]");
+      const selectedName = createForm?.querySelector("[data-loot-item-selected-name]");
+      const selectedPrice = createForm?.querySelector("[data-loot-item-selected-price]");
       if (!option || !cashInput) {
         return;
+      }
+      if (selectedName && selectedPrice) {
+        selectedName.textContent = option.value
+          ? option.dataset.itemName || option.textContent.split("·")[0].trim()
+          : "아이템 선택";
+        selectedPrice.textContent = option.value
+          ? `${Number(option.dataset.cashPrice || 0).toLocaleString("ko-KR")}원`
+          : "등록된 아이템을 검색해 선택하세요";
       }
       if (option.value && option.dataset.cashPrice) {
         cashInput.value = option.dataset.cashPrice;
       }
       syncLootPrice(createForm);
+    }
+
+    function filterItemPickerOptions() {
+      const query = String(itemPickerSearch?.value || "").trim().toLocaleLowerCase("ko-KR");
+      let visibleCount = 0;
+      itemPickerOptions.forEach((option) => {
+        const visible = !query || String(option.dataset.searchText || "").includes(query);
+        option.hidden = !visible;
+        visibleCount += visible ? 1 : 0;
+      });
+      if (itemPickerEmpty) {
+        itemPickerEmpty.hidden = visibleCount > 0;
+      }
+    }
+
+    function setItemPickerOpen(isOpen) {
+      if (!itemPickerModal) {
+        return;
+      }
+      itemPickerModal.hidden = !isOpen;
+      document.body.classList.toggle("modal-open", isOpen);
+      if (isOpen) {
+        if (itemPickerSearch) {
+          itemPickerSearch.value = "";
+        }
+        filterItemPickerOptions();
+        const selectedId = String(itemSelect?.value || "");
+        itemPickerOptions.forEach((option) => {
+          option.classList.toggle("is-selected", option.dataset.itemId === selectedId);
+        });
+        requestAnimationFrame(() => itemPickerSearch?.focus());
+      }
+    }
+
+    function selectLootItem(option) {
+      if (!itemSelect) {
+        return;
+      }
+      itemSelect.value = String(option.dataset.itemId || "");
+      itemSelect.dispatchEvent(new Event("change", { bubbles: true }));
+      setItemPickerOpen(false);
+      document.querySelector("[data-loot-item-picker-open]")?.focus();
+    }
+
+    function sortItemPriceRows(mode) {
+      const list = document.querySelector(".item-price-list");
+      const rows = Array.from(list?.querySelectorAll("[data-item-price-row]") || []);
+      if (!list || rows.length < 2) {
+        return;
+      }
+      const collator = new Intl.Collator("ko-KR", { numeric: true, sensitivity: "base" });
+      rows.sort((left, right) => {
+        const nameOrder = collator.compare(left.dataset.itemName || "", right.dataset.itemName || "");
+        if (mode === "price_desc" || mode === "price_asc") {
+          const leftPrice = Number(left.dataset.itemPrice || 0);
+          const rightPrice = Number(right.dataset.itemPrice || 0);
+          const priceOrder = mode === "price_desc" ? rightPrice - leftPrice : leftPrice - rightPrice;
+          return priceOrder || nameOrder;
+        }
+        return nameOrder;
+      });
+      rows.forEach((row) => list.appendChild(row));
     }
 
     function normalizeLootTab(tabName) {
@@ -4148,6 +4287,9 @@
       if (event.key === "Escape" && feeRuleModal && !feeRuleModal.hidden) {
         setFeeRuleModalOpen(false);
       }
+      if (event.key === "Escape" && itemPickerModal && !itemPickerModal.hidden) {
+        setItemPickerOpen(false);
+      }
     });
 
     document.querySelectorAll("[data-loot-delete-form]").forEach((form) => {
@@ -4190,6 +4332,16 @@
 
     attendanceSelect?.addEventListener("change", renderAttendancePreview);
     itemSelect?.addEventListener("change", syncItemPrice);
+    document.querySelector("[data-loot-item-picker-open]")?.addEventListener("click", () => setItemPickerOpen(true));
+    document.querySelector("[data-loot-item-picker-close]")?.addEventListener("click", () => setItemPickerOpen(false));
+    itemPickerModal?.addEventListener("click", (event) => {
+      if (event.target === itemPickerModal) {
+        setItemPickerOpen(false);
+      }
+    });
+    itemPickerSearch?.addEventListener("input", filterItemPickerOptions);
+    itemPickerOptions.forEach((option) => option.addEventListener("click", () => selectLootItem(option)));
+    itemPriceSort?.addEventListener("change", () => sortItemPriceRows(itemPriceSort.value));
     createForm?.querySelectorAll("[data-loot-cash-price], [data-loot-adena-rate]").forEach((input) => {
       input.addEventListener("input", () => syncLootPrice(createForm));
     });
@@ -4201,6 +4353,7 @@
 
     renderAttendancePreview();
     syncItemPrice();
+    sortItemPriceRows(itemPriceSort?.value || "name_asc");
     setupDistributionRowDetails();
     document.querySelectorAll("[data-loot-event-form]").forEach(syncLootPrice);
     activateLootTab(location.hash.replace("#", "") || "{{ active_loot_tab }}");
