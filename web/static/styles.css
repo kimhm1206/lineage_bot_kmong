@@ -3139,7 +3139,7 @@ button:disabled {
   font-weight: 900;
 }
 
-.loot-item-picker-modal-card {
+.modal-card.loot-item-picker-modal-card {
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr);
   gap: 0;
@@ -3171,11 +3171,14 @@ button:disabled {
   background: var(--surface);
 }
 
-.loot-item-picker-search input {
-  min-height: 44px;
+.loot-item-picker-controls .field {
+  min-width: 0;
 }
 
+.loot-item-picker-search input,
 .loot-item-picker-sort select {
+  width: 100%;
+  min-width: 0;
   min-height: 44px;
 }
 
@@ -5527,7 +5530,7 @@ button:disabled {
     flex: 1;
   }
 
-  .loot-item-picker-modal-card {
+  .modal-card.loot-item-picker-modal-card {
     height: calc(100dvh - 24px);
     max-height: calc(100dvh - 24px);
   }
