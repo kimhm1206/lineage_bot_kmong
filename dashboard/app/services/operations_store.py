@@ -249,7 +249,7 @@ async def drop_management_page(
                     FROM items
                     WHERE guild_id = :guild_id
                       AND status_code = 1
-                    ORDER BY item_name
+                    ORDER BY default_price DESC NULLS LAST, item_name
                 """),
                 {"guild_id": guild_id},
             )
@@ -1640,7 +1640,7 @@ async def item_management_page(session: AsyncSession, *, guild_id: int, query: s
                     FROM items
                     WHERE guild_id = :guild_id
                       AND status_code = 1 {search}
-                    ORDER BY item_name
+                    ORDER BY default_price DESC NULLS LAST, item_name
                 """),
                 {"guild_id": guild_id, "query": f"%{query}%"},
             )

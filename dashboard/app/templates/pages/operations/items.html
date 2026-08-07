@@ -7,7 +7,13 @@
 <div data-live-page>
   {{ toolbar(guilds, guild_id, query, search_label='아이템 검색', search_placeholder='아이템 이름 검색', client_search=True) }}
   <section class="ops-management-panel">
-    <header class="ops-section-heading item-management-heading"><div><h2>아이템 원화 시세 관리</h2><p>목록은 간결하게 확인하고 필요한 항목만 펼쳐 수정합니다.</p></div><span data-client-search-count data-count-suffix="개">{{ items|length }}개</span></header>
+    <header class="ops-section-heading item-management-heading">
+      <div><h2>아이템 원화 시세 관리</h2><p>목록은 간결하게 확인하고 필요한 항목만 펼쳐 수정합니다.</p></div>
+      <div class="item-management-heading-actions">
+        <span data-client-search-count data-count-suffix="개">{{ items|length }}개</span>
+        <label class="item-management-sort"><span>정렬</span><select data-item-management-sort><option value="price_desc">가격 높은순</option><option value="price_asc">가격 낮은순</option><option value="name_asc">이름 가나다순</option></select></label>
+      </div>
+    </header>
     {% if can_manage_items %}
     <form class="item-quick-create" data-async-form method="post" action="/api/items">
       <input type="hidden" name="guild_id" value="{{ guild_id }}">
@@ -21,7 +27,7 @@
     <div class="item-management-list">
       <div class="item-list-header{% if not can_manage_items %} is-readonly{% endif %}"><span>아이템</span><span>원화 시세</span>{% if can_manage_items %}<span>관리</span>{% endif %}</div>
       {% for item in items %}
-      <article class="item-list-row" data-item-row data-client-search-item data-search-text="{{ item.item_name }}">
+      <article class="item-list-row" data-item-row data-client-search-item data-search-text="{{ item.item_name }}" data-item-name="{{ item.item_name }}" data-item-price="{{ item.default_price or 0 }}">
         <div class="item-list-summary{% if not can_manage_items %} is-readonly{% endif %}">
           <div class="item-list-identity"><span class="item-list-icon">{{ icon("tag") }}</span><div><strong>{{ item.item_name }}</strong><small>최근 수정 {{ item.updated_at_label }}</small></div></div>
           <div class="item-list-price"><strong>{{ item.price_label }}</strong><small>등록 원화</small></div>

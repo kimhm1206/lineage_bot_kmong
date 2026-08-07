@@ -8616,6 +8616,23 @@ body.modal-open {
 .item-price-control { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .item-price-control em { flex: 0 0 auto; color: var(--muted); font-size: 12px; font-style: normal; font-weight: 750; }
 
+.item-management-heading-actions,
+.item-management-sort {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.item-management-sort span { color: var(--muted); font-size: 11px; font-weight: 800; }
+.item-management-sort select {
+  min-width: 142px;
+  min-height: 36px;
+  padding: 0 34px 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--panel-subtle);
+  color: var(--text-strong);
+}
+
 .item-management-list { overflow: hidden; }
 
 .item-list-header,
@@ -9304,7 +9321,13 @@ body.modal-open {
   min-height: 0;
   grid-template-rows: auto auto minmax(0, 1fr);
 }
-.drop-item-picker-search-wrap { padding: 18px 20px 12px; }
+.drop-item-picker-search-wrap {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 158px;
+  align-items: end;
+  gap: 10px;
+  padding: 18px 20px 12px;
+}
 .drop-item-picker-search {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -9335,6 +9358,17 @@ body.modal-open {
   font: inherit;
 }
 .drop-item-picker-search input::placeholder { color: var(--muted); }
+.drop-item-picker-sort { display: grid; gap: 5px; }
+.drop-item-picker-sort span { color: var(--muted); font-size: 10px; font-weight: 800; }
+.drop-item-picker-sort select {
+  width: 100%;
+  min-height: 46px;
+  padding: 0 34px 0 11px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--panel-subtle);
+  color: var(--text-strong);
+}
 .drop-item-picker-summary {
   display: flex;
   align-items: center;
@@ -9666,6 +9700,8 @@ body.modal-open {
   }
   #drop-item-picker-modal .ops-modal-body { padding: 0; }
   .drop-item-picker-search-wrap { padding: 14px 14px 10px; }
+  .drop-item-picker-search-wrap { grid-template-columns: 1fr; }
+  .item-management-heading-actions { width: 100%; justify-content: space-between; }
   .drop-item-picker-summary { padding: 0 14px 10px; }
   .drop-item-picker-list { padding: 10px 14px 14px; }
   .drop-item-picker-option { gap: 9px; padding: 9px; }

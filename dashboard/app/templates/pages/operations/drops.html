@@ -152,6 +152,14 @@
       <input type="search" autocomplete="off" placeholder="아이템 이름 검색"
              aria-label="아이템 이름 검색" data-drop-item-search>
     </label>
+    <label class="drop-item-picker-sort">
+      <span>정렬</span>
+      <select data-drop-item-sort>
+        <option value="price_desc">가격 높은순</option>
+        <option value="price_asc">가격 낮은순</option>
+        <option value="name_asc">이름 가나다순</option>
+      </select>
+    </label>
   </div>
   <div class="drop-item-picker-summary">
     <span>검색 결과</span>
@@ -164,6 +172,7 @@
             data-item-id="{{ item.item_id }}"
             data-item-name="{{ item.item_name }}"
             data-item-price="{{ item.default_price_label }}"
+            data-item-price-value="{{ item.default_price or 0 }}"
             data-search-text="{{ item.item_name | lower }}"
             {% if not item.default_price %}disabled{% endif %}>
       <span class="drop-item-picker-option-icon">{{ icon("package-open") }}</span>

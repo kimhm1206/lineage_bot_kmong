@@ -157,6 +157,7 @@
     if (!current) return;
     const openKeys = preservedDetails();
     const clientSearchValue = current.querySelector("[data-client-search-input]")?.value || "";
+    const itemSortValue = current.querySelector("[data-item-management-sort]")?.value || "price_desc";
     const response = await fetch(window.location.href, { headers: { "X-Partial-Page": "1" } });
     if (!response.ok) throw new Error("화면 갱신에 실패했습니다.");
     const html = await response.text();
@@ -174,6 +175,11 @@
     if (clientSearchInput) {
       clientSearchInput.value = clientSearchValue;
       applyClientSearch(clientSearchInput);
+    }
+    const itemSort = current.querySelector("[data-item-management-sort]");
+    if (itemSort) {
+      itemSort.value = itemSortValue;
+      sortItemManagementRows(itemSort);
     }
   };
 
@@ -314,6 +320,38 @@
     ...document.querySelectorAll("[data-drop-item-option]"),
   ];
 
+  const compareItemElements = (left, right, mode) => {
+    const collator = new Intl.Collator("ko-KR", { numeric: true, sensitivity: "base" });
+    const nameOrder = collator.compare(left.dataset.itemName || "", right.dataset.itemName || "");
+    if (mode === "price_desc" || mode === "price_asc") {
+      const leftPrice = Number(left.dataset.itemPriceValue ?? left.dataset.itemPrice ?? 0);
+      const rightPrice = Number(right.dataset.itemPriceValue ?? right.dataset.itemPrice ?? 0);
+      const priceOrder = mode === "price_desc" ? rightPrice - leftPrice : leftPrice - rightPrice;
+      return priceOrder || nameOrder;
+    }
+    return nameOrder;
+  };
+
+  const sortDropItemPicker = () => {
+    const modal = document.getElementById("drop-item-picker-modal");
+    const list = modal?.querySelector("[data-drop-item-list]");
+    const empty = modal?.querySelector("[data-drop-item-empty]");
+    if (!list) return;
+    const mode = modal.querySelector("[data-drop-item-sort]")?.value || "price_desc";
+    dropItemPickerOptions()
+      .sort((left, right) => compareItemElements(left, right, mode))
+      .forEach((option) => list.insertBefore(option, empty));
+  };
+
+  const sortItemManagementRows = (select) => {
+    const page = select?.closest("[data-live-page]");
+    const list = page?.querySelector(".item-management-list");
+    if (!list) return;
+    [...list.querySelectorAll("[data-item-row]")]
+      .sort((left, right) => compareItemElements(left, right, select.value || "price_desc"))
+      .forEach((row) => list.appendChild(row));
+  };
+
   const selectedDropItemOption = (itemId) => dropItemPickerOptions().find(
     (option) => option.dataset.itemId === String(itemId || ""),
   );
@@ -361,6 +399,7 @@
     dropItemPickerOptions().forEach((option) => {
       option.classList.toggle("is-selected", option.dataset.itemId === selectedId);
     });
+    sortDropItemPicker();
     filterDropItemPicker();
     openModal("drop-item-picker-modal");
   };
@@ -1476,6 +1515,10 @@
   document.addEventListener("change", (event) => {
     const buyerAlliance = event.target.closest("[data-buyer-alliance]");
     if (buyerAlliance) setSaleBuyer(buyerAlliance.form);
+    const dropItemSort = event.target.closest("[data-drop-item-sort]");
+    if (dropItemSort) sortDropItemPicker();
+    const itemManagementSort = event.target.closest("[data-item-management-sort]");
+    if (itemManagementSort) sortItemManagementRows(itemManagementSort);
   });
 
   document.addEventListener("input", (event) => {
@@ -1516,6 +1559,7 @@
   const initializeOperationsPage = () => {
     document.querySelectorAll("[data-client-search-input]").forEach(applyClientSearch);
     document.querySelectorAll("[data-drop-item-picker-field]").forEach(syncDropItemPickerField);
+    document.querySelectorAll("[data-item-management-sort]").forEach(sortItemManagementRows);
   };
 
   document.addEventListener("dashboard:page-loaded", initializeOperationsPage);
