@@ -660,10 +660,20 @@
             </div>
             <button class="icon-button" type="button" aria-label="아이템 선택 닫기" data-loot-item-picker-close>&times;</button>
           </header>
-          <label class="field loot-item-picker-search">
-            <span>아이템 이름 검색</span>
-            <input type="search" placeholder="아이템 이름을 입력하세요" autocomplete="off" data-loot-item-picker-search>
-          </label>
+          <div class="loot-item-picker-controls">
+            <label class="field loot-item-picker-search">
+              <span>아이템 이름 검색</span>
+              <input type="search" placeholder="아이템 이름을 입력하세요" autocomplete="off" data-loot-item-picker-search>
+            </label>
+            <label class="field loot-item-picker-sort">
+              <span>정렬</span>
+              <select data-loot-item-picker-sort>
+                <option value="price_desc">가격 높은순</option>
+                <option value="price_asc">가격 낮은순</option>
+                <option value="name_asc">이름 가나다순</option>
+              </select>
+            </label>
+          </div>
           <div class="loot-item-picker-list" data-loot-item-picker-list>
             {% for item in item_prices %}
               <button
@@ -1740,9 +1750,9 @@
             <label class="item-price-sort-control">
               <span>정렬</span>
               <select data-item-price-sort>
-                <option value="name_asc">이름 가나다순</option>
                 <option value="price_desc">가격 높은순</option>
                 <option value="price_asc">가격 낮은순</option>
+                <option value="name_asc">이름 가나다순</option>
               </select>
             </label>
           </header>
@@ -1813,6 +1823,7 @@
     const itemSelect = document.querySelector("[data-loot-item]");
     const itemPickerModal = document.querySelector("[data-loot-item-picker-modal]");
     const itemPickerSearch = document.querySelector("[data-loot-item-picker-search]");
+    const itemPickerSort = document.querySelector("[data-loot-item-picker-sort]");
     const itemPickerOptions = Array.from(document.querySelectorAll("[data-loot-item-picker-option]"));
     const itemPickerEmpty = document.querySelector("[data-loot-item-picker-empty]");
     const itemPriceSort = document.querySelector("[data-item-price-sort]");
@@ -2047,6 +2058,26 @@
       }
     }
 
+    function sortItemPickerOptions(mode) {
+      const list = document.querySelector("[data-loot-item-picker-list]");
+      if (!list || itemPickerOptions.length < 2) {
+        return;
+      }
+      const collator = new Intl.Collator("ko-KR", { numeric: true, sensitivity: "base" });
+      [...itemPickerOptions]
+        .sort((left, right) => {
+          const nameOrder = collator.compare(left.dataset.itemName || "", right.dataset.itemName || "");
+          if (mode === "price_desc" || mode === "price_asc") {
+            const leftPrice = Number(left.dataset.itemPrice || 0);
+            const rightPrice = Number(right.dataset.itemPrice || 0);
+            const priceOrder = mode === "price_desc" ? rightPrice - leftPrice : leftPrice - rightPrice;
+            return priceOrder || nameOrder;
+          }
+          return nameOrder;
+        })
+        .forEach((option) => list.insertBefore(option, itemPickerEmpty));
+    }
+
     function setItemPickerOpen(isOpen) {
       if (!itemPickerModal) {
         return;
@@ -2057,6 +2088,7 @@
         if (itemPickerSearch) {
           itemPickerSearch.value = "";
         }
+        sortItemPickerOptions(itemPickerSort?.value || "price_desc");
         filterItemPickerOptions();
         const selectedId = String(itemSelect?.value || "");
         itemPickerOptions.forEach((option) => {
@@ -4340,6 +4372,7 @@
       }
     });
     itemPickerSearch?.addEventListener("input", filterItemPickerOptions);
+    itemPickerSort?.addEventListener("change", () => sortItemPickerOptions(itemPickerSort.value));
     itemPickerOptions.forEach((option) => option.addEventListener("click", () => selectLootItem(option)));
     itemPriceSort?.addEventListener("change", () => sortItemPriceRows(itemPriceSort.value));
     createForm?.querySelectorAll("[data-loot-cash-price], [data-loot-adena-rate]").forEach((input) => {
@@ -4353,7 +4386,8 @@
 
     renderAttendancePreview();
     syncItemPrice();
-    sortItemPriceRows(itemPriceSort?.value || "name_asc");
+    sortItemPickerOptions(itemPickerSort?.value || "price_desc");
+    sortItemPriceRows(itemPriceSort?.value || "price_desc");
     setupDistributionRowDetails();
     document.querySelectorAll("[data-loot-event-form]").forEach(syncLootPrice);
     activateLootTab(location.hash.replace("#", "") || "{{ active_loot_tab }}");

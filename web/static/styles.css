@@ -3161,13 +3161,21 @@ button:disabled {
   gap: 3px;
 }
 
-.loot-item-picker-search {
+.loot-item-picker-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 168px;
+  align-items: end;
+  gap: 10px;
   padding: 14px 18px;
   border-bottom: 1px solid var(--line);
   background: var(--surface);
 }
 
 .loot-item-picker-search input {
+  min-height: 44px;
+}
+
+.loot-item-picker-sort select {
   min-height: 44px;
 }
 
@@ -5522,6 +5530,10 @@ button:disabled {
   .loot-item-picker-modal-card {
     height: calc(100dvh - 24px);
     max-height: calc(100dvh - 24px);
+  }
+
+  .loot-item-picker-controls {
+    grid-template-columns: 1fr;
   }
 
   .loot-item-picker-option {
