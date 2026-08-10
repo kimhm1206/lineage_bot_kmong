@@ -1314,35 +1314,67 @@ button:disabled {
   flex: 0 0 auto;
 }
 
-.zero-attendance-panel {
+.dashboard-hero-actions {
+  display: flex;
+  align-items: flex-end;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.zero-attendance-modal-backdrop {
+  padding: 20px;
+}
+
+.modal-card.zero-attendance-modal {
   display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
   gap: 0;
+  width: min(920px, 100%);
+  height: min(760px, calc(100dvh - 40px));
+  max-height: calc(100dvh - 40px);
+  padding: 0;
   overflow: hidden;
+  background: var(--surface);
 }
 
-.zero-attendance-header {
-  min-height: 74px;
+.zero-attendance-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  min-height: 78px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--line);
 }
 
-.zero-attendance-count {
-  color: var(--accent);
-  font-size: 26px;
-  font-variant-numeric: tabular-nums;
-}
-
-.zero-attendance-toolbar {
+.zero-attendance-modal-header > div {
   display: grid;
-  grid-template-columns: minmax(430px, 1fr) minmax(280px, 0.7fr);
-  gap: 16px;
-  padding: 18px 20px;
-  border-top: 1px solid var(--line);
+  gap: 5px;
+}
+
+.zero-attendance-modal-header h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: 22px;
+}
+
+.zero-attendance-modal-header span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.zero-attendance-modal-filters {
+  display: grid;
+  gap: 14px;
+  padding: 16px 20px;
   border-bottom: 1px solid var(--line);
   background: var(--surface-muted);
 }
 
 .zero-period-control {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
   padding: 4px;
   border: 1px solid var(--line);
@@ -1375,7 +1407,6 @@ button:disabled {
 
 .zero-custom-period {
   display: grid;
-  grid-column: 1 / -1;
   grid-template-columns: minmax(170px, 1fr) auto minmax(170px, 1fr) auto;
   align-items: end;
   gap: 10px;
@@ -1386,7 +1417,7 @@ button:disabled {
 }
 
 .zero-custom-period label,
-.zero-attendance-search {
+.zero-result-filters label {
   display: grid;
   gap: 7px;
   color: var(--muted);
@@ -1395,7 +1426,8 @@ button:disabled {
 }
 
 .zero-custom-period input,
-.zero-attendance-search input {
+.zero-result-filters input,
+.zero-result-filters select {
   width: 100%;
   min-height: 46px;
   border: 1px solid var(--line);
@@ -1404,6 +1436,12 @@ button:disabled {
   color: var(--text);
   font: inherit;
   padding: 0 13px;
+}
+
+.zero-result-filters {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(220px, 0.65fr);
+  gap: 12px;
 }
 
 .zero-date-separator {
@@ -1415,13 +1453,32 @@ button:disabled {
 
 .zero-attendance-list {
   display: grid;
-  max-height: 520px;
+  align-content: start;
+  min-height: 0;
   overflow-y: auto;
+}
+
+.zero-attendance-result-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 52px;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.zero-attendance-result-head strong {
+  color: var(--accent-strong);
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
 }
 
 .zero-attendance-row {
   display: grid;
-  grid-template-columns: minmax(260px, 1.5fr) minmax(150px, 0.8fr) 110px;
+  grid-template-columns: minmax(260px, 1fr) minmax(150px, auto);
   align-items: center;
   gap: 18px;
   min-height: 66px;
@@ -1461,17 +1518,8 @@ button:disabled {
   white-space: nowrap;
 }
 
-.zero-attendance-class {
+.zero-attendance-meta {
   justify-self: end;
-  min-width: 72px;
-  padding: 7px 10px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--surface-muted);
-  color: var(--text);
-  font-size: 12px;
-  font-weight: 900;
-  text-align: center;
 }
 
 .zero-attendance-empty {
@@ -5429,10 +5477,6 @@ button:disabled {
 }
 
 @media (max-width: 1040px) {
-  .zero-attendance-toolbar {
-    grid-template-columns: 1fr;
-  }
-
   .bid-overview-grid,
   .bid-item-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -5466,15 +5510,22 @@ button:disabled {
 }
 
 @media (max-width: 780px) {
-  .zero-period-control {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .dashboard-hero-actions {
+    width: 100%;
+    align-items: stretch;
   }
 
-  .zero-period-button[data-zero-period="custom"] {
-    grid-column: 1 / -1;
+  .zero-attendance-modal-backdrop {
+    padding: 8px;
   }
 
-  .zero-custom-period {
+  .modal-card.zero-attendance-modal {
+    height: calc(100dvh - 16px);
+    max-height: calc(100dvh - 16px);
+  }
+
+  .zero-custom-period,
+  .zero-result-filters {
     grid-template-columns: 1fr;
   }
 
@@ -5483,17 +5534,12 @@ button:disabled {
   }
 
   .zero-attendance-row {
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr);
     gap: 8px 12px;
   }
 
   .zero-attendance-meta {
-    grid-column: 1;
-  }
-
-  .zero-attendance-class {
-    grid-column: 2;
-    grid-row: 1 / span 2;
+    justify-self: start;
   }
 
   .topbar {

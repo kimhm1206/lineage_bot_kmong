@@ -23,7 +23,6 @@ from fastapi.templating import Jinja2Templates
 from psycopg2.extras import Json
 
 from common import database
-from discord_bot.utils.voice_roster import classify_display_name
 from web.session import RememberMeSessionMiddleware
 
 
@@ -7299,11 +7298,6 @@ def dashboard(
             "recent_sessions": recent_sessions,
             "alliance_options": alliance_options,
             "can_view_never_attended": _can_manage_selected_server(auth),
-            "never_attended_period": {
-                "active": active_period or "custom",
-                "start_date": start_value,
-                "end_date": end_value,
-            },
             "filters": {
                 "start_date": start_value,
                 "end_date": end_value,
@@ -7726,8 +7720,8 @@ def attendance_never_attended_members(
             status_code=503,
         )
 
-    active_period = period if period in {"7d", "30d", "month", "all", "custom"} else "30d"
-    if active_period in {"7d", "30d", "month", "all"}:
+    active_period = period if period in {"30d", "all", "custom"} else "30d"
+    if active_period in {"30d", "all"}:
         start_date, end_date = _dashboard_period_dates(active_period)
     start_at, end_at, start_value, end_value = _date_bounds(start_date, end_date)
     if active_period == "custom" and (not start_value or not end_value):
@@ -7737,9 +7731,7 @@ def attendance_never_attended_members(
         )
 
     period_labels = {
-        "7d": "최근 7일",
         "30d": "최근 30일",
-        "month": "이번 달",
         "all": "전체 기간",
         "custom": f"{start_value} ~ {end_value}",
     }
@@ -7789,7 +7781,7 @@ def attendance_never_attended_members(
                 "discord_id": discord_id,
                 "discord_nickname": display_name,
                 "alliance_name": ", ".join(alliance_names) or "미분류",
-                "class_name": classify_display_name(display_name),
+                "alliance_names": alliance_names or ["미분류"],
             }
         )
 
@@ -7800,9 +7792,16 @@ def attendance_never_attended_members(
             member["discord_id"],
         )
     )
+    has_unclassified_member = any(
+        member["alliance_name"] == "미분류" for member in members
+    )
+    alliance_options = set(alliance_by_role_id.values())
+    if has_unclassified_member:
+        alliance_options.add("미분류")
     return {
         "members": members,
         "member_count": len(members),
+        "alliance_options": sorted(alliance_options),
         "guild_member_count": sum(
             1
             for member in discord_members

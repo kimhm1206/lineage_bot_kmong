@@ -9,8 +9,13 @@
       <h1>출석 통계</h1>
       <p class="hero-copy">기간, 유저, 혈맹을 조합해서 출석 흐름과 순위를 빠르게 확인합니다.</p>
     </div>
-    <div class="server-summary">
-      최근 출석 {{ auth.selected_server.last_started_at or "기록 없음" }}
+    <div class="dashboard-hero-actions">
+      <span class="server-summary">최근 출석 {{ auth.selected_server.last_started_at or "기록 없음" }}</span>
+      {% if can_view_never_attended %}
+        <button class="secondary-button" type="button" data-zero-attendance-open>
+          미출석 인원 확인
+        </button>
+      {% endif %}
     </div>
   </section>
 
@@ -89,60 +94,6 @@
       <strong>{{ overview.average_attendance_count }}</strong>
     </article>
   </section>
-
-  {% if can_view_never_attended %}
-    <section
-      class="panel zero-attendance-panel"
-      data-zero-attendance
-      data-endpoint="/dashboard/never-attended-members"
-      data-guild-id="{{ auth.selected_guild_id }}"
-      data-initial-period="{{ never_attended_period.active }}"
-    >
-      <header class="panel-header zero-attendance-header">
-        <div>
-          <h2>기간 내 출석 0회</h2>
-          <span class="panel-caption" data-zero-summary>현재 Discord 멤버와 선택 기간의 출석 기록을 비교합니다.</span>
-        </div>
-        <strong class="zero-attendance-count" data-zero-count>-</strong>
-      </header>
-
-      <div class="zero-attendance-toolbar">
-        <div class="zero-period-control" role="group" aria-label="출석 0회 조회 기간">
-          {% for value, label in [("7d", "최근 7일"), ("30d", "최근 30일"), ("month", "이번 달"), ("all", "전체"), ("custom", "직접 지정")] %}
-            <button
-              class="zero-period-button {% if never_attended_period.active == value %}is-active{% endif %}"
-              type="button"
-              data-zero-period="{{ value }}"
-            >
-              {{ label }}
-            </button>
-          {% endfor %}
-        </div>
-
-        <div class="zero-custom-period" data-zero-custom-period {% if never_attended_period.active != "custom" %}hidden{% endif %}>
-          <label>
-            <span>시작일</span>
-            <input type="date" value="{{ never_attended_period.start_date }}" data-zero-start-date>
-          </label>
-          <span class="zero-date-separator">~</span>
-          <label>
-            <span>종료일</span>
-            <input type="date" value="{{ never_attended_period.end_date }}" data-zero-end-date>
-          </label>
-          <button class="primary-button" type="button" data-zero-custom-submit>조회</button>
-        </div>
-
-        <label class="zero-attendance-search">
-          <span>결과 검색</span>
-          <input type="search" placeholder="닉네임, 혈맹, 클래스, Discord ID" data-zero-search>
-        </label>
-      </div>
-
-      <div class="zero-attendance-list" data-zero-list aria-live="polite">
-        <div class="empty zero-attendance-empty">출석 0회 유저를 불러오는 중입니다.</div>
-      </div>
-    </section>
-  {% endif %}
 
   <section class="content-grid">
     <article class="panel">
@@ -262,28 +213,93 @@
       </div>
     </article>
   </section>
+
+  {% if can_view_never_attended %}
+    <div
+      class="modal-backdrop zero-attendance-modal-backdrop"
+      data-zero-attendance-modal
+      data-endpoint="/dashboard/never-attended-members"
+      data-guild-id="{{ auth.selected_guild_id }}"
+      hidden
+    >
+      <section class="modal-card zero-attendance-modal" role="dialog" aria-modal="true" aria-labelledby="zero-attendance-title">
+        <header class="zero-attendance-modal-header">
+          <div>
+            <h2 id="zero-attendance-title">미출석 인원 확인</h2>
+            <span data-zero-summary>선택한 기간에 출석하지 않은 Discord 멤버를 확인합니다.</span>
+          </div>
+          <button class="icon-button" type="button" aria-label="닫기" data-zero-attendance-close>&times;</button>
+        </header>
+
+        <div class="zero-attendance-modal-filters">
+          <div class="zero-period-control" role="group" aria-label="미출석 조회 기간">
+            <button class="zero-period-button" type="button" data-zero-period="all">전체</button>
+            <button class="zero-period-button is-active" type="button" data-zero-period="30d">최근 한달</button>
+            <button class="zero-period-button" type="button" data-zero-period="custom">직접 지정</button>
+          </div>
+
+          <div class="zero-custom-period" data-zero-custom-period hidden>
+            <label>
+              <span>시작일</span>
+              <input type="date" data-zero-start-date>
+            </label>
+            <span class="zero-date-separator">~</span>
+            <label>
+              <span>종료일</span>
+              <input type="date" data-zero-end-date>
+            </label>
+            <button class="primary-button" type="button" data-zero-custom-submit>조회</button>
+          </div>
+
+          <div class="zero-result-filters">
+            <label>
+              <span>닉네임 검색</span>
+              <input type="search" placeholder="닉네임을 입력하세요" data-zero-search>
+            </label>
+            <label>
+              <span>혈맹</span>
+              <select data-zero-alliance>
+                <option value="">전체 혈맹</option>
+              </select>
+            </label>
+          </div>
+        </div>
+
+        <div class="zero-attendance-result-head">
+          <span>미출석 인원</span>
+          <strong data-zero-count>-</strong>
+        </div>
+        <div class="zero-attendance-list" data-zero-list aria-live="polite">
+          <div class="empty zero-attendance-empty">목록을 불러오는 중입니다.</div>
+        </div>
+      </section>
+    </div>
+  {% endif %}
 {% endblock %}
 
 {% block scripts %}
   {% if can_view_never_attended %}
     <script>
       (() => {
-        const panel = document.querySelector("[data-zero-attendance]");
-        if (!panel) {
+        const modal = document.querySelector("[data-zero-attendance-modal]");
+        const openButton = document.querySelector("[data-zero-attendance-open]");
+        if (!modal || !openButton) {
           return;
         }
 
-        const list = panel.querySelector("[data-zero-list]");
-        const summary = panel.querySelector("[data-zero-summary]");
-        const count = panel.querySelector("[data-zero-count]");
-        const search = panel.querySelector("[data-zero-search]");
-        const customPeriod = panel.querySelector("[data-zero-custom-period]");
-        const startDate = panel.querySelector("[data-zero-start-date]");
-        const endDate = panel.querySelector("[data-zero-end-date]");
-        const periodButtons = Array.from(panel.querySelectorAll("[data-zero-period]"));
-        let activePeriod = panel.dataset.initialPeriod || "30d";
+        const list = modal.querySelector("[data-zero-list]");
+        const summary = modal.querySelector("[data-zero-summary]");
+        const count = modal.querySelector("[data-zero-count]");
+        const search = modal.querySelector("[data-zero-search]");
+        const alliance = modal.querySelector("[data-zero-alliance]");
+        const customPeriod = modal.querySelector("[data-zero-custom-period]");
+        const startDate = modal.querySelector("[data-zero-start-date]");
+        const endDate = modal.querySelector("[data-zero-end-date]");
+        const periodButtons = Array.from(modal.querySelectorAll("[data-zero-period]"));
+        let activePeriod = "30d";
         let requestController = null;
         let loadedMembers = [];
+        let hasLoaded = false;
 
         const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({
           "&": "&amp;",
@@ -295,39 +311,52 @@
 
         const memberRowHtml = (member) => {
           const nickname = escapeHtml(member.discord_nickname || member.discord_id || "-");
-          const alliance = escapeHtml(member.alliance_name || "미분류");
-          const className = escapeHtml(member.class_name || "미분류");
+          const allianceName = escapeHtml(member.alliance_name || "미분류");
           const discordId = escapeHtml(member.discord_id || "");
-          const searchText = `${member.discord_nickname || ""} ${member.alliance_name || ""} ${member.class_name || ""} ${member.discord_id || ""}`.toLowerCase();
           return `
-            <div class="zero-attendance-row" data-zero-row data-search-text="${escapeHtml(searchText)}">
+            <div class="zero-attendance-row">
               <div class="zero-attendance-identity">
                 <strong>${nickname}</strong>
                 <span>${discordId}</span>
               </div>
-              <span class="zero-attendance-meta">${alliance}</span>
-              <span class="zero-attendance-class">${className}</span>
+              <span class="zero-attendance-meta">${allianceName}</span>
             </div>
           `;
         };
 
-        const applySearch = () => {
+        const applyFilters = () => {
           const query = search.value.trim().toLowerCase();
-          let visibleCount = 0;
-          list.querySelectorAll("[data-zero-row]").forEach((row) => {
-            const isVisible = !query || row.dataset.searchText.includes(query);
-            row.hidden = !isVisible;
-            if (isVisible) {
-              visibleCount += 1;
-            }
+          const allianceName = alliance.value;
+          const visibleMembers = loadedMembers.filter((member) => {
+            const searchText = `${member.discord_nickname || ""} ${member.discord_id || ""}`.toLowerCase();
+            const allianceNames = Array.isArray(member.alliance_names)
+              ? member.alliance_names
+              : [member.alliance_name || "미분류"];
+            return (!query || searchText.includes(query))
+              && (!allianceName || allianceNames.includes(allianceName));
           });
-          count.textContent = query
-            ? `${visibleCount.toLocaleString()} / ${loadedMembers.length.toLocaleString()}명`
+
+          list.innerHTML = visibleMembers.length
+            ? visibleMembers.map(memberRowHtml).join("")
+            : '<div class="empty zero-attendance-empty">조건에 맞는 미출석 인원이 없습니다.</div>';
+          count.textContent = query || allianceName
+            ? `${visibleMembers.length.toLocaleString()} / ${loadedMembers.length.toLocaleString()}명`
             : `${loadedMembers.length.toLocaleString()}명`;
         };
 
+        const updateAllianceOptions = (options) => {
+          const previousValue = alliance.value;
+          const optionHtml = (Array.isArray(options) ? options : []).map((name) => (
+            `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`
+          )).join("");
+          alliance.innerHTML = `<option value="">전체 혈맹</option>${optionHtml}`;
+          if (Array.from(alliance.options).some((option) => option.value === previousValue)) {
+            alliance.value = previousValue;
+          }
+        };
+
         const setLoading = (loading) => {
-          panel.classList.toggle("is-loading", loading);
+          modal.classList.toggle("is-loading", loading);
           periodButtons.forEach((button) => {
             button.disabled = loading;
           });
@@ -350,7 +379,7 @@
           list.innerHTML = '<div class="empty zero-attendance-empty">Discord 멤버와 출석 기록을 비교하는 중입니다.</div>';
 
           const params = new URLSearchParams({
-            guild_id: panel.dataset.guildId || "",
+            guild_id: modal.dataset.guildId || "",
             period: activePeriod,
           });
           if (activePeriod === "custom") {
@@ -359,7 +388,7 @@
           }
 
           try {
-            const response = await fetch(`${panel.dataset.endpoint}?${params.toString()}`, {
+            const response = await fetch(`${modal.dataset.endpoint}?${params.toString()}`, {
               headers: { "Accept": "application/json" },
               signal: currentController.signal,
             });
@@ -369,11 +398,16 @@
             }
 
             loadedMembers = Array.isArray(data.members) ? data.members : [];
-            list.innerHTML = loadedMembers.length
-              ? loadedMembers.map(memberRowHtml).join("")
-              : '<div class="empty zero-attendance-empty">선택한 기간에 출석 0회인 유저가 없습니다.</div>';
+            hasLoaded = true;
+            updateAllianceOptions(data.alliance_options);
             summary.textContent = `${data.period_label} · 서버 유저 ${Number(data.guild_member_count || 0).toLocaleString()}명 기준`;
-            applySearch();
+            if (!startDate.value && data.start_date) {
+              startDate.value = data.start_date;
+            }
+            if (!endDate.value && data.end_date) {
+              endDate.value = data.end_date;
+            }
+            applyFilters();
           } catch (error) {
             if (error.name === "AbortError") {
               return;
@@ -402,11 +436,37 @@
         periodButtons.forEach((button) => {
           button.addEventListener("click", () => selectPeriod(button.dataset.zeroPeriod || "30d"));
         });
-        panel.querySelector("[data-zero-custom-submit]")?.addEventListener("click", loadMembers);
-        search.addEventListener("input", applySearch);
+        modal.querySelector("[data-zero-custom-submit]")?.addEventListener("click", loadMembers);
+        search.addEventListener("input", applyFilters);
+        alliance.addEventListener("change", applyFilters);
+
+        const closeModal = () => {
+          modal.hidden = true;
+          document.body.classList.remove("modal-open");
+        };
+
+        openButton.addEventListener("click", () => {
+          modal.hidden = false;
+          document.body.classList.add("modal-open");
+          if (!hasLoaded) {
+            loadMembers();
+          } else {
+            search.focus();
+          }
+        });
+        modal.querySelector("[data-zero-attendance-close]")?.addEventListener("click", closeModal);
+        modal.addEventListener("click", (event) => {
+          if (event.target === modal) {
+            closeModal();
+          }
+        });
+        document.addEventListener("keydown", (event) => {
+          if (event.key === "Escape" && !modal.hidden) {
+            closeModal();
+          }
+        });
 
         selectPeriod(activePeriod, false);
-        loadMembers();
       })();
     </script>
   {% endif %}
