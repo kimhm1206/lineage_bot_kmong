@@ -14,7 +14,7 @@
         }
       })();
     </script>
-    <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}?v=20260810-attendance-tools">
+    <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}?v=20260810-zero-attendance">
   </head>
   <body class="{% block body_class %}{% endblock %}{% if auth %} page-role-{{ page_required_role|default('user') }}{% endif %}">
     <header class="topbar {% if not auth %}topbar-public{% endif %}">

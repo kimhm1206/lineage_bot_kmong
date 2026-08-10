@@ -313,8 +313,13 @@ class Database:
     ) -> int:
         return count_attendance_status_sessions(guild_id, start_at, end_at)
 
-    def get_attendance_discord_ids(self, guild_id: int) -> set[int]:
-        return get_attendance_discord_ids(guild_id)
+    def get_attendance_discord_ids(
+        self,
+        guild_id: int,
+        start_at: str | datetime | None = None,
+        end_at: str | datetime | None = None,
+    ) -> set[int]:
+        return get_attendance_discord_ids(guild_id, start_at, end_at)
 
     def get_attendance_edit_candidates(
         self,
@@ -1694,16 +1699,30 @@ def count_attendance_status_sessions(
     return int(row["session_count"] or 0) if row else 0
 
 
-def get_attendance_discord_ids(guild_id: int) -> set[int]:
+def get_attendance_discord_ids(
+    guild_id: int,
+    start_at: str | datetime | None = None,
+    end_at: str | datetime | None = None,
+) -> set[int]:
+    conditions = ["s.guild_id = %s"]
+    params: list[Any] = [guild_id]
+    start_bound = _datetime_bound_text(start_at)
+    end_bound = _datetime_bound_text(end_at)
+    if start_bound:
+        conditions.append("s.started_at >= %s")
+        params.append(start_bound)
+    if end_bound:
+        conditions.append("s.started_at <= %s")
+        params.append(end_bound)
     rows = _fetchall(
-        """
+        f"""
         SELECT DISTINCT u.discord_id
         FROM attendance_sessions s
         INNER JOIN attendance_entries e ON e.attendance_id = s.attendance_id
         INNER JOIN users u ON u.user_id = e.user_id
-        WHERE s.guild_id = %s
+        WHERE {' AND '.join(conditions)}
         """,
-        (guild_id,),
+        tuple(params),
     )
     return {int(row["discord_id"]) for row in rows if row["discord_id"] is not None}
 

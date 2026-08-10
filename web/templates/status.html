@@ -21,11 +21,6 @@
     </div>
     <div class="status-hero-actions">
       <span class="server-summary">총 {{ pagination.total_count }}회차</span>
-      {% if can_manage_status %}
-        <button class="secondary-button" type="button" data-status-edit-open="never-attended-members-modal">
-          출석 0회 유저
-        </button>
-      {% endif %}
     </div>
   </section>
 
@@ -213,31 +208,6 @@
 
   {{ pagination_controls(pagination) }}
 
-  {% if can_manage_status %}
-    <div class="modal-backdrop status-modal-backdrop" id="never-attended-members-modal" data-status-modal hidden>
-      <div class="modal-card status-modal-card status-never-attended-card" role="dialog" aria-modal="true" aria-labelledby="never-attended-members-title">
-        <header class="panel-header">
-          <div>
-            <h2 id="never-attended-members-title">출석 0회 유저</h2>
-            <span class="panel-caption" data-never-attended-summary>Discord 서버와 전체 출석 기록을 비교합니다</span>
-          </div>
-          <button class="icon-button" type="button" aria-label="닫기" data-status-modal-close>&times;</button>
-        </header>
-        <label class="status-search-field status-add-search">
-          <span>닉네임 · 혈맹 · 클래스 검색</span>
-          <input type="search" placeholder="검색어를 입력하세요" data-status-search="never-attended-members">
-        </label>
-        <div
-          class="status-modal-list"
-          data-status-list="never-attended-members"
-          data-never-attended-list
-          data-never-attended-url="/status/never-attended-members?guild_id={{ auth.selected_guild_id }}"
-        >
-          <div class="empty status-empty">버튼을 누르면 미참여자를 불러옵니다.</div>
-        </div>
-      </div>
-    </div>
-  {% endif %}
 {% endblock %}
 
 {% block scripts %}
@@ -320,58 +290,6 @@
         }
       };
 
-      const neverAttendedRowHtml = (member) => {
-        const nickname = escapeHtml(member.discord_nickname || member.discord_id || "-");
-        const alliance = escapeHtml(member.alliance_name || "미분류");
-        const className = escapeHtml(member.class_name || "미분류");
-        const discordId = escapeHtml(member.discord_id || "");
-        const searchText = `${member.discord_nickname || ""} ${member.alliance_name || ""} ${member.class_name || ""} ${member.discord_id || ""}`.toLowerCase();
-        return `
-          <div class="status-member-row" data-status-row data-search-text="${escapeHtml(searchText)}">
-            <div>
-              <strong>${nickname}</strong>
-              <span>${alliance} · ${className}</span>
-            </div>
-            <span class="status-member-discord-id">${discordId}</span>
-          </div>
-        `;
-      };
-
-      const loadNeverAttendedList = async (modal) => {
-        const list = modal?.querySelector("[data-never-attended-list]");
-        if (!list || list.dataset.loaded === "1" || list.dataset.loading === "1") {
-          return;
-        }
-        list.dataset.loading = "1";
-        list.innerHTML = '<div class="empty status-empty">Discord 멤버와 출석 기록을 비교하는 중입니다.</div>';
-        try {
-          const response = await fetch(list.dataset.neverAttendedUrl || "", {
-            headers: { "Accept": "application/json" },
-          });
-          const data = await response.json();
-          if (!response.ok) {
-            throw new Error(data.error || "never-attended request failed");
-          }
-          const members = Array.isArray(data.members) ? data.members : [];
-          list.innerHTML = members.length
-            ? members.map(neverAttendedRowHtml).join("")
-            : '<div class="empty status-empty">출석 기록이 없는 Discord 유저가 없습니다.</div>';
-          const summary = modal.querySelector("[data-never-attended-summary]");
-          if (summary) {
-            summary.textContent = `서버 유저 ${Number(data.guild_member_count || 0).toLocaleString()}명 중 출석 0회 ${members.length.toLocaleString()}명`;
-          }
-          list.dataset.loaded = "1";
-          const search = modal.querySelector("[data-status-search]");
-          if (search) {
-            applyStatusSearch(search);
-          }
-        } catch (error) {
-          list.innerHTML = `<div class="empty status-empty">${escapeHtml(error.message || "미참여자를 불러오지 못했습니다.")}</div>`;
-        } finally {
-          delete list.dataset.loading;
-        }
-      };
-
       const openModal = (id) => {
         const modal = document.getElementById(id);
         if (!modal) {
@@ -379,7 +297,6 @@
         }
         modal.hidden = false;
         loadCandidateList(modal);
-        loadNeverAttendedList(modal);
         syncModalScrollLock();
         const search = modal.querySelector("[data-status-search]");
         if (search) {

@@ -1314,15 +1314,168 @@ button:disabled {
   flex: 0 0 auto;
 }
 
-.status-member-discord-id {
-  flex: 0 0 auto;
+.zero-attendance-panel {
+  display: grid;
+  gap: 0;
+  overflow: hidden;
+}
+
+.zero-attendance-header {
+  min-height: 74px;
+}
+
+.zero-attendance-count {
+  color: var(--accent);
+  font-size: 26px;
+  font-variant-numeric: tabular-nums;
+}
+
+.zero-attendance-toolbar {
+  display: grid;
+  grid-template-columns: minmax(430px, 1fr) minmax(280px, 0.7fr);
+  gap: 16px;
+  padding: 18px 20px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-muted);
+}
+
+.zero-period-control {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface);
+}
+
+.zero-period-button {
+  min-height: 38px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
   color: var(--muted);
-  font-size: 11px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.zero-period-button:hover,
+.zero-period-button.is-active {
+  background: var(--hover-bg);
+  color: var(--accent-strong);
+}
+
+.zero-period-button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.zero-custom-period {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(170px, 1fr) auto minmax(170px, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+}
+
+.zero-custom-period[hidden] {
+  display: none;
+}
+
+.zero-custom-period label,
+.zero-attendance-search {
+  display: grid;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 12px;
   font-weight: 800;
 }
 
-.modal-card.status-modal-card.status-never-attended-card {
-  height: min(800px, calc(100dvh - 40px));
+.zero-custom-period input,
+.zero-attendance-search input {
+  width: 100%;
+  min-height: 46px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  padding: 0 13px;
+}
+
+.zero-date-separator {
+  align-self: center;
+  margin-top: 20px;
+  color: var(--muted);
+  font-weight: 900;
+}
+
+.zero-attendance-list {
+  display: grid;
+  max-height: 520px;
+  overflow-y: auto;
+}
+
+.zero-attendance-row {
+  display: grid;
+  grid-template-columns: minmax(260px, 1.5fr) minmax(150px, 0.8fr) 110px;
+  align-items: center;
+  gap: 18px;
+  min-height: 66px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--line);
+}
+
+.zero-attendance-row:last-child {
+  border-bottom: 0;
+}
+
+.zero-attendance-row:hover {
+  background: var(--surface-muted);
+}
+
+.zero-attendance-identity {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.zero-attendance-identity strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.zero-attendance-identity span,
+.zero-attendance-meta {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.zero-attendance-class {
+  justify-self: end;
+  min-width: 72px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-muted);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 900;
+  text-align: center;
+}
+
+.zero-attendance-empty {
+  min-height: 180px;
 }
 
 .modal-card.status-confirm-modal-card {
@@ -5276,6 +5429,10 @@ button:disabled {
 }
 
 @media (max-width: 1040px) {
+  .zero-attendance-toolbar {
+    grid-template-columns: 1fr;
+  }
+
   .bid-overview-grid,
   .bid-item-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -5309,6 +5466,36 @@ button:disabled {
 }
 
 @media (max-width: 780px) {
+  .zero-period-control {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .zero-period-button[data-zero-period="custom"] {
+    grid-column: 1 / -1;
+  }
+
+  .zero-custom-period {
+    grid-template-columns: 1fr;
+  }
+
+  .zero-date-separator {
+    display: none;
+  }
+
+  .zero-attendance-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px 12px;
+  }
+
+  .zero-attendance-meta {
+    grid-column: 1;
+  }
+
+  .zero-attendance-class {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
+
   .topbar {
     align-items: stretch;
     flex-direction: column;

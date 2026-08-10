@@ -7298,6 +7298,12 @@ def dashboard(
             "alliance_stats": alliance_stats,
             "recent_sessions": recent_sessions,
             "alliance_options": alliance_options,
+            "can_view_never_attended": _can_manage_selected_server(auth),
+            "never_attended_period": {
+                "active": active_period or "custom",
+                "start_date": start_value,
+                "end_date": end_value,
+            },
             "filters": {
                 "start_date": start_value,
                 "end_date": end_value,
@@ -7699,10 +7705,13 @@ def attendance_status_edit_candidates(
     }
 
 
-@app.get("/status/never-attended-members")
+@app.get("/dashboard/never-attended-members")
 def attendance_never_attended_members(
     request: Request,
     guild_id: str | None = None,
+    period: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
 ):
     auth = _auth_context(request, guild_id)
     if not auth:
@@ -7717,10 +7726,30 @@ def attendance_never_attended_members(
             status_code=503,
         )
 
+    active_period = period if period in {"7d", "30d", "month", "all", "custom"} else "30d"
+    if active_period in {"7d", "30d", "month", "all"}:
+        start_date, end_date = _dashboard_period_dates(active_period)
+    start_at, end_at, start_value, end_value = _date_bounds(start_date, end_date)
+    if active_period == "custom" and (not start_value or not end_value):
+        return JSONResponse(
+            {"members": [], "error": "조회할 시작일과 종료일을 모두 선택해 주세요."},
+            status_code=400,
+        )
+
+    period_labels = {
+        "7d": "최근 7일",
+        "30d": "최근 30일",
+        "month": "이번 달",
+        "all": "전체 기간",
+        "custom": f"{start_value} ~ {end_value}",
+    }
+
     try:
         discord_members = _discord_guild_members(selected_guild_id)
         attended_discord_ids = database.get_attendance_discord_ids(
-            selected_guild_id
+            selected_guild_id,
+            start_at,
+            end_at,
         )
         mappings = database.get_guild_alliance_role_mappings(selected_guild_id)
     except Exception:
@@ -7779,6 +7808,10 @@ def attendance_never_attended_members(
             for member in discord_members
             if not bool((member.get("user") or {}).get("bot"))
         ),
+        "period": active_period,
+        "period_label": period_labels[active_period],
+        "start_date": start_value,
+        "end_date": end_value,
     }
 
 
