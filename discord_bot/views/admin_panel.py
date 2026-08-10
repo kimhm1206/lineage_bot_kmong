@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import asyncio
+import io
 import os
 from urllib.parse import urlencode
 
 import discord
 
+from common import database
 from discord_bot.utils.attendance import (
     build_record_prompt_view,
     start_attendance,
@@ -12,6 +15,13 @@ from discord_bot.utils.attendance import (
 )
 from discord_bot.utils.guild import is_admin_member, is_supported_guild
 from discord_bot.utils.panel import get_attendance_state
+from discord_bot.utils.voice_roster import (
+    CLASS_LABELS,
+    UNCLASSIFIED_LABEL,
+    compact_member_list,
+    full_roster_text,
+    group_display_names,
+)
 
 
 class AdminPanelView(discord.ui.View):
@@ -105,6 +115,92 @@ class AdminPanelView(discord.ui.View):
 
         ok, message = await start_attendance(self.bot, guild, user)
         await _safe_response(interaction, message)
+
+    @discord.ui.button(
+        label="클래스 현황",
+        style=discord.ButtonStyle.secondary,
+        custom_id="attendance:voice-class-roster",
+        row=0,
+    )
+    async def voice_class_roster_button(
+        self, button: discord.ui.Button, interaction: discord.Interaction
+    ) -> None:
+        guild = interaction.guild
+        if guild is None:
+            await _safe_response(interaction, "서버에서만 사용할 수 있습니다.")
+            return
+
+        if not await _safe_defer(interaction):
+            return
+
+        try:
+            settings = await asyncio.to_thread(database.get_settings, guild.id)
+        except Exception:
+            await interaction.followup.send(
+                "음성채널 설정을 불러오지 못했습니다.",
+                ephemeral=True,
+            )
+            return
+        channel_ids = list(settings.attendance_voice_channel_ids or ())
+        if not channel_ids and settings.attendance_voice_channel_id is not None:
+            channel_ids = [int(settings.attendance_voice_channel_id)]
+
+        voice_channels = []
+        for channel_id in channel_ids:
+            channel = guild.get_channel(int(channel_id))
+            if channel is not None and hasattr(channel, "members"):
+                voice_channels.append(channel)
+        if not voice_channels:
+            await interaction.followup.send(
+                "설정된 출석 음성채널을 찾을 수 없습니다.",
+                ephemeral=True,
+            )
+            return
+
+        members_by_id: dict[int, discord.Member] = {}
+        for channel in voice_channels:
+            for member in channel.members:
+                if not member.bot:
+                    members_by_id[member.id] = member
+
+        groups = group_display_names(
+            member.display_name for member in members_by_id.values()
+        )
+        embed = discord.Embed(
+            title="연합보탐 클래스 현황",
+            description=(
+                f"대상: {', '.join(channel.mention for channel in voice_channels)}\n"
+                f"현재 접속 인원 **{len(members_by_id)}명**"
+            ),
+            color=discord.Color.blurple(),
+        )
+        has_truncated_list = False
+        for label in (*CLASS_LABELS, UNCLASSIFIED_LABEL):
+            names = groups[label]
+            value, was_truncated = compact_member_list(names)
+            has_truncated_list = has_truncated_list or was_truncated
+            embed.add_field(
+                name=f"{label} · {len(names)}명",
+                value=value,
+                inline=False,
+            )
+        embed.set_footer(text="닉네임의 요정 · 법사 · 기사 문구를 기준으로 분류합니다.")
+
+        send_options: dict[str, object] = {
+            "embed": embed,
+            "ephemeral": True,
+        }
+        if has_truncated_list:
+            roster_text = full_roster_text(
+                guild.name,
+                (channel.name for channel in voice_channels),
+                groups,
+            )
+            send_options["file"] = discord.File(
+                io.BytesIO(roster_text.encode("utf-8")),
+                filename="voice_class_roster.txt",
+            )
+        await interaction.followup.send(**send_options)
 
 
 async def _safe_defer(interaction: discord.Interaction) -> bool:

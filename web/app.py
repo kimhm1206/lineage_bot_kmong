@@ -23,6 +23,7 @@ from fastapi.templating import Jinja2Templates
 from psycopg2.extras import Json
 
 from common import database
+from discord_bot.utils.voice_roster import classify_display_name
 from web.session import RememberMeSessionMiddleware
 
 
@@ -304,6 +305,29 @@ def _discord_bot_get_cached(path: str) -> Any:
         value,
     )
     return value
+
+
+def _discord_guild_members(guild_id: int) -> list[dict[str, Any]]:
+    members: list[dict[str, Any]] = []
+    after: str | None = None
+    for _page_number in range(50):
+        query = {"limit": "1000"}
+        if after:
+            query["after"] = after
+        page = _discord_bot_get_cached(
+            f"/guilds/{guild_id}/members?{urlencode(query)}"
+        )
+        if not isinstance(page, list):
+            break
+        members.extend(member for member in page if isinstance(member, dict))
+        if len(page) < 1000:
+            break
+        last_user = (page[-1] or {}).get("user") or {}
+        last_id = str(last_user.get("id") or "")
+        if not last_id or last_id == after:
+            break
+        after = last_id
+    return members
 
 
 def _normalize_discord_user(user: dict[str, Any]) -> dict[str, str]:
@@ -1178,6 +1202,18 @@ def _can_manage_bookkeepers(auth: dict[str, Any]) -> bool:
 
 def _is_developer_auth(auth: dict[str, Any]) -> bool:
     return str(auth["selected_server"].get("role")) == "developer"
+
+
+def _is_global_developer_auth(auth: dict[str, Any]) -> bool:
+    return str((auth.get("user") or {}).get("id") or "") == str(
+        GLOBAL_DEVELOPER_DISCORD_ID
+    )
+
+
+def _can_delete_attendance_sessions(auth: dict[str, Any]) -> bool:
+    return _is_global_developer_auth(auth) or bool(
+        (auth.get("selected_server") or {}).get("is_owner")
+    )
 
 
 def _settings_forbidden_redirect(selected_guild_id: int) -> RedirectResponse:
@@ -7561,6 +7597,7 @@ def attendance_status(
     guild_id: str | None = None,
     page: int = 1,
     period: str | None = None,
+    deleted: str | None = None,
 ):
     auth = _auth_context(request, guild_id)
     if not auth:
@@ -7587,6 +7624,7 @@ def attendance_status(
         end_at,
     )
     can_manage_status = _can_manage_selected_server(auth)
+    can_delete_status = _can_delete_attendance_sessions(auth)
     return _render(
         request,
         "status.html",
@@ -7594,6 +7632,8 @@ def attendance_status(
             "auth": auth,
             "sessions": sessions,
             "can_manage_status": can_manage_status,
+            "can_delete_status": can_delete_status,
+            "deleted": deleted,
             "status_period": {
                 "active": active_period,
                 "filters": _status_period_filters(selected_guild_id, active_period),
@@ -7656,6 +7696,89 @@ def attendance_status_edit_candidates(
             }
             for candidate in candidates
         ]
+    }
+
+
+@app.get("/status/never-attended-members")
+def attendance_never_attended_members(
+    request: Request,
+    guild_id: str | None = None,
+):
+    auth = _auth_context(request, guild_id)
+    if not auth:
+        return JSONResponse({"members": []}, status_code=401)
+
+    selected_guild_id = int(auth["selected_guild_id"])
+    if not _can_manage_selected_server(auth):
+        return JSONResponse({"members": []}, status_code=403)
+    if not DISCORD_BOT_TOKEN:
+        return JSONResponse(
+            {"members": [], "error": "Discord 봇 토큰이 설정되지 않았습니다."},
+            status_code=503,
+        )
+
+    try:
+        discord_members = _discord_guild_members(selected_guild_id)
+        attended_discord_ids = database.get_attendance_discord_ids(
+            selected_guild_id
+        )
+        mappings = database.get_guild_alliance_role_mappings(selected_guild_id)
+    except Exception:
+        return JSONResponse(
+            {"members": [], "error": "Discord 서버 멤버를 불러오지 못했습니다."},
+            status_code=502,
+        )
+
+    alliance_by_role_id = {
+        str(mapping["role_id"]): str(mapping["alliance_name"])
+        for mapping in mappings
+    }
+    members: list[dict[str, str]] = []
+    for member in discord_members:
+        user = member.get("user") or {}
+        discord_id = str(user.get("id") or "")
+        if not discord_id.isdigit() or bool(user.get("bot")):
+            continue
+        if int(discord_id) in attended_discord_ids:
+            continue
+
+        display_name = str(
+            member.get("nick")
+            or user.get("global_name")
+            or user.get("username")
+            or discord_id
+        ).strip()
+        alliance_names = sorted(
+            {
+                alliance_by_role_id[role_id]
+                for role_id in map(str, member.get("roles") or [])
+                if role_id in alliance_by_role_id
+            }
+        )
+        members.append(
+            {
+                "discord_id": discord_id,
+                "discord_nickname": display_name,
+                "alliance_name": ", ".join(alliance_names) or "미분류",
+                "class_name": classify_display_name(display_name),
+            }
+        )
+
+    members.sort(
+        key=lambda member: (
+            member["alliance_name"],
+            member["discord_nickname"].casefold(),
+            member["discord_id"],
+        )
+    )
+    return {
+        "members": members,
+        "member_count": len(members),
+        "guild_member_count": sum(
+            1
+            for member in discord_members
+            if not bool((member.get("user") or {}).get("bot"))
+        ),
     }
 
 
@@ -7745,6 +7868,68 @@ async def delete_attendance_status_entry(
         pass
     return RedirectResponse(
         f"/status?guild_id={selected_guild_id}&page={max(1, page)}&period={active_period}#attendance-{attendance_id}",
+        status_code=303,
+    )
+
+
+@app.post("/status/delete-session")
+async def delete_attendance_status_session(
+    request: Request,
+    guild_id: str | None = None,
+    page: int = 1,
+    period: str = "30d",
+):
+    auth = _auth_context(request, guild_id)
+    if not auth:
+        return _auth_redirect(request)
+
+    selected_guild_id = int(auth["selected_guild_id"])
+    active_period = period if period in {"all", "30d", "7d"} else "30d"
+    redirect_params = {
+        "guild_id": selected_guild_id,
+        "page": max(1, page),
+        "period": active_period,
+    }
+    if not _can_delete_attendance_sessions(auth):
+        redirect_params["deleted"] = "forbidden"
+        return RedirectResponse(
+            f"/status?{urlencode(redirect_params)}",
+            status_code=303,
+        )
+
+    form_data = await _urlencoded_form_data(request)
+    try:
+        attendance_id = int(form_data.get("attendance_id") or "")
+        if attendance_id <= 0:
+            raise ValueError("attendance_not_found")
+        deleted_session = database.delete_attendance_session(
+            selected_guild_id,
+            attendance_id,
+        )
+        _record_work_log(
+            auth,
+            selected_guild_id,
+            action_type="attendance_delete",
+            target_type="attendance_session",
+            target_id=attendance_id,
+            summary=(
+                f"출석 #{attendance_id} 회차 삭제 · "
+                f"{deleted_session['participant_count']}명"
+            ),
+            details=deleted_session,
+        )
+        redirect_params["deleted"] = "session"
+    except ValueError as exc:
+        redirect_params["deleted"] = (
+            "linked_loot"
+            if str(exc) == "attendance_has_linked_loot"
+            else "not_found"
+        )
+    except Exception:
+        redirect_params["deleted"] = "error"
+
+    return RedirectResponse(
+        f"/status?{urlencode(redirect_params)}",
         status_code=303,
     )
 

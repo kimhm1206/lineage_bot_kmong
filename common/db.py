@@ -313,6 +313,9 @@ class Database:
     ) -> int:
         return count_attendance_status_sessions(guild_id, start_at, end_at)
 
+    def get_attendance_discord_ids(self, guild_id: int) -> set[int]:
+        return get_attendance_discord_ids(guild_id)
+
     def get_attendance_edit_candidates(
         self,
         guild_id: int,
@@ -335,6 +338,13 @@ class Database:
         user_id: int,
     ) -> None:
         delete_attendance_entry(guild_id, attendance_id, user_id)
+
+    def delete_attendance_session(
+        self,
+        guild_id: int,
+        attendance_id: int,
+    ) -> dict[str, Any]:
+        return delete_attendance_session(guild_id, attendance_id)
 
     def add_work_log(
         self,
@@ -1684,6 +1694,20 @@ def count_attendance_status_sessions(
     return int(row["session_count"] or 0) if row else 0
 
 
+def get_attendance_discord_ids(guild_id: int) -> set[int]:
+    rows = _fetchall(
+        """
+        SELECT DISTINCT u.discord_id
+        FROM attendance_sessions s
+        INNER JOIN attendance_entries e ON e.attendance_id = s.attendance_id
+        INNER JOIN users u ON u.user_id = e.user_id
+        WHERE s.guild_id = %s
+        """,
+        (guild_id,),
+    )
+    return {int(row["discord_id"]) for row in rows if row["discord_id"] is not None}
+
+
 def get_attendance_status_sessions(
     guild_id: int,
     limit: int = 10,
@@ -1887,6 +1911,57 @@ def delete_attendance_entry(guild_id: int, attendance_id: int, user_id: int) -> 
             )
             _rebuild_loot_for_attendance(cursor, guild_id, attendance_id)
         connection.commit()
+
+
+def delete_attendance_session(
+    guild_id: int,
+    attendance_id: int,
+) -> dict[str, Any]:
+    with _connect() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    s.attendance_id,
+                    s.started_at,
+                    (
+                        SELECT COUNT(*)
+                        FROM attendance_entries e
+                        WHERE e.attendance_id = s.attendance_id
+                    ) AS participant_count,
+                    (
+                        SELECT COUNT(*)
+                        FROM loot_events le
+                        WHERE le.guild_id = s.guild_id
+                          AND le.attendance_id = s.attendance_id
+                    ) AS linked_loot_count
+                FROM attendance_sessions s
+                WHERE s.guild_id = %s
+                  AND s.attendance_id = %s
+                FOR UPDATE
+                """,
+                (guild_id, attendance_id),
+            )
+            row = cursor.fetchone()
+            if row is None:
+                raise ValueError("attendance_not_found")
+            if int(row["linked_loot_count"] or 0) > 0:
+                raise ValueError("attendance_has_linked_loot")
+
+            cursor.execute(
+                """
+                DELETE FROM attendance_sessions
+                WHERE guild_id = %s
+                  AND attendance_id = %s
+                """,
+                (guild_id, attendance_id),
+            )
+        connection.commit()
+    return {
+        "attendance_id": int(row["attendance_id"]),
+        "started_at": str(row["started_at"]),
+        "participant_count": int(row["participant_count"] or 0),
+    }
 
 
 def add_work_log(

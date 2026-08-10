@@ -3,14 +3,29 @@
 {% block title %}출석 현황{% endblock %}
 
 {% block content %}
+  {% if deleted == "session" %}
+    <div class="alert success">출석 회차와 참여 기록을 삭제했습니다.</div>
+  {% elif deleted == "linked_loot" %}
+    <div class="alert error">드랍 기록과 연결된 출석 회차는 삭제할 수 없습니다.</div>
+  {% elif deleted == "not_found" %}
+    <div class="alert error">삭제할 출석 회차를 찾을 수 없습니다.</div>
+  {% elif deleted in ("forbidden", "error") %}
+    <div class="alert error">출석 회차를 삭제하지 못했습니다.</div>
+  {% endif %}
+
   <section class="ops-hero">
     <div>
       <p class="eyebrow">{{ auth.selected_server.name }}</p>
       <h1>출석 현황</h1>
       <p class="hero-copy">출석 회차별 혈맹 참여 인원과 상세 명단을 확인합니다.</p>
     </div>
-    <div class="server-summary">
-      총 {{ pagination.total_count }}회차
+    <div class="status-hero-actions">
+      <span class="server-summary">총 {{ pagination.total_count }}회차</span>
+      {% if can_manage_status %}
+        <button class="secondary-button" type="button" data-status-edit-open="never-attended-members-modal">
+          출석 0회 유저
+        </button>
+      {% endif %}
     </div>
   </section>
 
@@ -63,9 +78,16 @@
             {% endfor %}
           </div>
           {% if can_manage_status %}
-            <button class="tiny-button status-edit-toggle" type="button" data-status-edit-open="status-edit-{{ session.attendance_id }}" onclick="event.preventDefault(); event.stopPropagation();">
-              출석 수정
-            </button>
+            <div class="status-action-group" onclick="event.preventDefault(); event.stopPropagation();">
+              <button class="tiny-button status-edit-toggle" type="button" data-status-edit-open="status-edit-{{ session.attendance_id }}">
+                출석 수정
+              </button>
+              {% if can_delete_status %}
+                <button class="tiny-button danger-text-button" type="button" data-status-edit-open="status-delete-{{ session.attendance_id }}">
+                  회차 삭제
+                </button>
+              {% endif %}
+            </div>
           {% endif %}
         </summary>
 
@@ -156,6 +178,32 @@
           </div>
         </div>
       {% endif %}
+      {% if can_delete_status %}
+        <div class="modal-backdrop status-modal-backdrop" id="status-delete-{{ session.attendance_id }}" data-status-modal hidden>
+          <div class="modal-card status-confirm-modal-card" role="dialog" aria-modal="true" aria-labelledby="status-delete-title-{{ session.attendance_id }}">
+            <header class="panel-header">
+              <div>
+                <h2 id="status-delete-title-{{ session.attendance_id }}">출석 회차 삭제</h2>
+                <span class="panel-caption">#{{ session.attendance_id }} · {{ session.started_at }}</span>
+              </div>
+              <button class="icon-button" type="button" aria-label="닫기" data-status-modal-close>&times;</button>
+            </header>
+            <div class="status-confirm-body">
+              <div>
+                <strong>이 출석 회차를 삭제할까요?</strong>
+                <p>참여자 {{ session.participant_count }}명의 출석 기록도 함께 삭제됩니다. 드랍과 연결된 회차는 삭제되지 않습니다.</p>
+              </div>
+              <div class="status-confirm-actions">
+                <button class="secondary-button" type="button" data-status-modal-close>취소</button>
+                <form method="post" action="/status/delete-session?guild_id={{ auth.selected_guild_id }}&page={{ pagination.current_page }}&period={{ status_period.active }}">
+                  <input type="hidden" name="attendance_id" value="{{ session.attendance_id }}">
+                  <button class="danger-button" type="submit">회차 삭제</button>
+                </form>
+              </div>
+            </div>
+          </div>
+        </div>
+      {% endif %}
     {% else %}
       <article class="panel">
         <div class="empty status-empty">출석 회차가 없습니다.</div>
@@ -164,6 +212,32 @@
   </section>
 
   {{ pagination_controls(pagination) }}
+
+  {% if can_manage_status %}
+    <div class="modal-backdrop status-modal-backdrop" id="never-attended-members-modal" data-status-modal hidden>
+      <div class="modal-card status-modal-card status-never-attended-card" role="dialog" aria-modal="true" aria-labelledby="never-attended-members-title">
+        <header class="panel-header">
+          <div>
+            <h2 id="never-attended-members-title">출석 0회 유저</h2>
+            <span class="panel-caption" data-never-attended-summary>Discord 서버와 전체 출석 기록을 비교합니다</span>
+          </div>
+          <button class="icon-button" type="button" aria-label="닫기" data-status-modal-close>&times;</button>
+        </header>
+        <label class="status-search-field status-add-search">
+          <span>닉네임 · 혈맹 · 클래스 검색</span>
+          <input type="search" placeholder="검색어를 입력하세요" data-status-search="never-attended-members">
+        </label>
+        <div
+          class="status-modal-list"
+          data-status-list="never-attended-members"
+          data-never-attended-list
+          data-never-attended-url="/status/never-attended-members?guild_id={{ auth.selected_guild_id }}"
+        >
+          <div class="empty status-empty">버튼을 누르면 미참여자를 불러옵니다.</div>
+        </div>
+      </div>
+    </div>
+  {% endif %}
 {% endblock %}
 
 {% block scripts %}
@@ -246,6 +320,58 @@
         }
       };
 
+      const neverAttendedRowHtml = (member) => {
+        const nickname = escapeHtml(member.discord_nickname || member.discord_id || "-");
+        const alliance = escapeHtml(member.alliance_name || "미분류");
+        const className = escapeHtml(member.class_name || "미분류");
+        const discordId = escapeHtml(member.discord_id || "");
+        const searchText = `${member.discord_nickname || ""} ${member.alliance_name || ""} ${member.class_name || ""} ${member.discord_id || ""}`.toLowerCase();
+        return `
+          <div class="status-member-row" data-status-row data-search-text="${escapeHtml(searchText)}">
+            <div>
+              <strong>${nickname}</strong>
+              <span>${alliance} · ${className}</span>
+            </div>
+            <span class="status-member-discord-id">${discordId}</span>
+          </div>
+        `;
+      };
+
+      const loadNeverAttendedList = async (modal) => {
+        const list = modal?.querySelector("[data-never-attended-list]");
+        if (!list || list.dataset.loaded === "1" || list.dataset.loading === "1") {
+          return;
+        }
+        list.dataset.loading = "1";
+        list.innerHTML = '<div class="empty status-empty">Discord 멤버와 출석 기록을 비교하는 중입니다.</div>';
+        try {
+          const response = await fetch(list.dataset.neverAttendedUrl || "", {
+            headers: { "Accept": "application/json" },
+          });
+          const data = await response.json();
+          if (!response.ok) {
+            throw new Error(data.error || "never-attended request failed");
+          }
+          const members = Array.isArray(data.members) ? data.members : [];
+          list.innerHTML = members.length
+            ? members.map(neverAttendedRowHtml).join("")
+            : '<div class="empty status-empty">출석 기록이 없는 Discord 유저가 없습니다.</div>';
+          const summary = modal.querySelector("[data-never-attended-summary]");
+          if (summary) {
+            summary.textContent = `서버 유저 ${Number(data.guild_member_count || 0).toLocaleString()}명 중 출석 0회 ${members.length.toLocaleString()}명`;
+          }
+          list.dataset.loaded = "1";
+          const search = modal.querySelector("[data-status-search]");
+          if (search) {
+            applyStatusSearch(search);
+          }
+        } catch (error) {
+          list.innerHTML = `<div class="empty status-empty">${escapeHtml(error.message || "미참여자를 불러오지 못했습니다.")}</div>`;
+        } finally {
+          delete list.dataset.loading;
+        }
+      };
+
       const openModal = (id) => {
         const modal = document.getElementById(id);
         if (!modal) {
@@ -253,6 +379,7 @@
         }
         modal.hidden = false;
         loadCandidateList(modal);
+        loadNeverAttendedList(modal);
         syncModalScrollLock();
         const search = modal.querySelector("[data-status-search]");
         if (search) {

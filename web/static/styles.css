@@ -1091,6 +1091,13 @@ button:disabled {
   overflow: hidden;
 }
 
+.status-hero-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
 .status-session summary {
   display: grid;
   grid-template-columns: minmax(260px, 0.9fr) minmax(0, 1.1fr) auto;
@@ -1108,6 +1115,13 @@ button:disabled {
 
 .status-edit-toggle {
   justify-self: end;
+  white-space: nowrap;
+}
+
+.status-action-group {
+  display: flex;
+  justify-self: end;
+  gap: 8px;
   white-space: nowrap;
 }
 
@@ -1300,7 +1314,54 @@ button:disabled {
   flex: 0 0 auto;
 }
 
-.status-modal-card {
+.status-member-discord-id {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.modal-card.status-modal-card.status-never-attended-card {
+  height: min(800px, calc(100dvh - 40px));
+}
+
+.modal-card.status-confirm-modal-card {
+  gap: 0;
+  width: min(520px, 100%);
+  padding: 0;
+  overflow: hidden;
+}
+
+.status-confirm-body {
+  display: grid;
+  gap: 20px;
+  padding: 22px;
+}
+
+.status-confirm-body strong {
+  color: var(--text);
+  font-size: 16px;
+}
+
+.status-confirm-body p {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.6;
+}
+
+.status-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.status-confirm-actions form {
+  display: flex;
+}
+
+.modal-card.status-modal-card {
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr);
   width: min(720px, 100%);
@@ -5279,6 +5340,16 @@ button:disabled {
     align-items: flex-start;
     flex-direction: column;
     padding: 18px;
+  }
+
+  .status-hero-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .status-action-group {
+    justify-self: start;
+    flex-wrap: wrap;
   }
 
   .page-role-user .ops-hero,
