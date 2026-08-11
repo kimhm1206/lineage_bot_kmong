@@ -7,6 +7,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dashboard.app.identifiers import json_safe_snowflakes
+from dashboard.app.services.settlement_math import member_share_after_fees
 
 PAGE_SIZE = 12
 STATUS_LABELS = {0: "미완료", 1: "완료", 2: "귀속"}
@@ -2046,7 +2047,16 @@ async def personal_distribution_page(
         user_id = None
     selected_user = next((row for row in users if int(row["user_id"]) == user_id), None)
     if user_id is None:
-        return {"users": users, "user_id": None, "selected_user": None, "details": [], "summary_cards": []}
+        return {
+            "users": users,
+            "user_id": None,
+            "selected_user": None,
+            "details": [],
+            "estimates": [],
+            "estimated_total_label": "0",
+            "estimated_count": 0,
+            "summary_cards": [],
+        }
     period_clause = (
         ""
         if period_days == 0
@@ -2110,6 +2120,90 @@ async def personal_distribution_page(
             )
         ).mappings().all()
     ]
+    estimates = [
+        dict(row)
+        for row in (
+            await session.execute(
+                text("""
+                    SELECT parent.payout_object_id,
+                           parent.amount_adena AS alliance_amount_adena,
+                           parent.recipient_alliance_id AS alliance_id,
+                           d.attendance_id,
+                           v.item_name,
+                           d.occurred_at,
+                           member_count.value AS member_count,
+                           COALESCE(
+                               fee_rates.rate_ppms,
+                               ARRAY[]::INTEGER[]
+                           ) AS fee_rates_ppm,
+                           TO_CHAR(
+                               TO_TIMESTAMP(d.occurred_at),
+                               'YYYY-MM-DD HH24:MI'
+                           ) AS occurred_at_label
+                    FROM settlement_payout_objects parent
+                    JOIN settlement_drops d ON d.drop_id = parent.drop_id
+                    JOIN settlement_drop_sales sale
+                      ON sale.drop_id = d.drop_id
+                     AND sale.status_code = 1
+                    JOIN catalog_item_versions v
+                      ON v.item_version_id = d.item_version_id
+                    JOIN settlement_drop_participants participant
+                      ON participant.drop_id = d.drop_id
+                     AND participant.user_id = :user_id
+                     AND participant.alliance_id = parent.recipient_alliance_id
+                    JOIN LATERAL (
+                        SELECT COUNT(*)::BIGINT AS value
+                        FROM settlement_drop_participants member
+                        WHERE member.drop_id = d.drop_id
+                          AND member.alliance_id = parent.recipient_alliance_id
+                    ) member_count ON member_count.value > 0
+                    LEFT JOIN LATERAL (
+                        SELECT ARRAY_AGG(
+                                   latest.rate_ppm
+                                   ORDER BY rule.fee_rule_id
+                               ) AS rate_ppms
+                        FROM settlement_fee_rules rule
+                        JOIN LATERAL (
+                            SELECT version.rate_ppm
+                            FROM settlement_fee_rule_versions version
+                            WHERE version.fee_rule_id = rule.fee_rule_id
+                            ORDER BY version.valid_from DESC,
+                                     version.fee_rule_version_id DESC
+                            LIMIT 1
+                        ) latest ON TRUE
+                        WHERE rule.guild_id = d.guild_id
+                          AND rule.scope_code = 2
+                          AND rule.alliance_id = parent.recipient_alliance_id
+                          AND rule.is_active IS TRUE
+                    ) fee_rates ON TRUE
+                    WHERE d.guild_id = :guild_id
+                      AND parent.object_code = 1
+                      AND parent.status_code = 0
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM settlement_payout_objects child
+                          WHERE child.parent_payout_object_id =
+                                parent.payout_object_id
+                      )
+                    ORDER BY d.occurred_at DESC,
+                             parent.payout_object_id DESC
+                """),
+                {"guild_id": guild_id, "user_id": user_id},
+            )
+        ).mappings().all()
+    ]
+    for row in estimates:
+        row["payout_object_id"] = int(row["payout_object_id"])
+        row["alliance_id"] = int(row["alliance_id"])
+        row["attendance_id"] = int(row["attendance_id"])
+        row["alliance_amount_adena"] = int(row["alliance_amount_adena"])
+        row["member_count"] = int(row["member_count"])
+        row["estimated_amount"] = member_share_after_fees(
+            row["alliance_amount_adena"],
+            (int(rate) for rate in (row["fee_rates_ppm"] or [])),
+            row["member_count"],
+        )
+        row["estimated_amount_label"] = _money(row["estimated_amount"])
     for row in details:
         status = int(row["status_code"])
         row["amount_label"] = _money(row["amount_adena"])
@@ -2123,11 +2217,15 @@ async def personal_distribution_page(
     pending = sum(int(row["amount_adena"]) for row in details if int(row["status_code"]) == 0)
     complete = sum(int(row["amount_adena"]) for row in details if int(row["status_code"]) == 1)
     forfeited = sum(int(row["amount_adena"]) for row in details if int(row["status_code"]) == 2)
+    estimated_total = sum(int(row["estimated_amount"]) for row in estimates)
     return {
         "users": users,
         "user_id": user_id,
         "selected_user": selected_user,
         "details": details,
+        "estimates": estimates,
+        "estimated_total_label": _money(estimated_total),
+        "estimated_count": len(estimates),
         "summary_cards": [
             {"label": "기간 내 총 분배금", "value": _money(pending + complete + forfeited), "meta": f"{len(details):,}건"},
             {"label": "미수령", "value": _money(pending), "meta": f"{sum(1 for r in details if int(r['status_code']) == 0):,}건"},

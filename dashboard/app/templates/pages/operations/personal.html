@@ -15,9 +15,44 @@
   {{ summary(summary_cards) }}
 
   {% if selected_user %}
+  <section class="personal-estimate-panel">
+    <header class="personal-estimate-heading">
+      <div>
+        <span class="personal-estimate-kicker">1차 정산 대기</span>
+        <h2>예상 분배금</h2>
+        <p>판매 완료 후 본인 혈맹의 1차 정산을 기다리는 항목입니다.</p>
+      </div>
+      <div class="personal-estimate-total">
+        <span>예상 합계</span>
+        <strong>{{ estimated_total_label }} <small>아데나</small></strong>
+        <em>{{ estimated_count }}건</em>
+      </div>
+    </header>
+    <div class="personal-estimate-notice">
+      {{ icon("info") }}
+      <p>예상 분배금은 실제 지급 금액이 아닙니다. 1차 정산 전 수수료와 정산 조건이 변경되면 최종 분배금도 달라질 수 있습니다.</p>
+    </div>
+    {% if estimates %}
+    <div class="personal-estimate-grid">
+      {% for estimate in estimates %}
+      <article class="personal-estimate-card">
+        <div>
+          <small>출석 #{{ estimate.attendance_id }} · {{ estimate.occurred_at_label }}</small>
+          <h3>{{ estimate.item_name }}</h3>
+        </div>
+        <strong>{{ estimate.estimated_amount_label }} <small>아데나</small></strong>
+        <span>예상</span>
+      </article>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="personal-estimate-empty">현재 1차 정산을 기다리는 예상 분배금이 없습니다.</p>
+    {% endif %}
+  </section>
+
   <section class="personal-ledger-panel">
     <header class="ops-section-heading">
-      <div><h2>분배 내역</h2><p>판매와 혈맹 분배가 완료되어 본인에게 생성된 금액만 표시됩니다.</p></div>
+      <div><h2>확정 분배 내역</h2><p>본인 혈맹의 1차 정산이 완료되어 실제 생성된 금액만 표시됩니다.</p></div>
       <div class="personal-status-filter" data-personal-filter><button class="is-active" type="button" data-status="all">전체</button><button type="button" data-status="pending">미수령</button><button type="button" data-status="complete">수령</button><button type="button" data-status="forfeited">귀속</button></div>
     </header>
     {% if details %}

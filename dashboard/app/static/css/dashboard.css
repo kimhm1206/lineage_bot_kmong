@@ -9097,6 +9097,29 @@ body.modal-open {
 .personal-identity > div { display: grid; gap: 3px; }
 .personal-identity strong { color: var(--text-strong); }
 .personal-identity small { color: var(--muted); font-size: 11px; }
+.personal-estimate-panel { margin-bottom: 18px; padding: 18px; border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line)); border-radius: 8px; background: color-mix(in srgb, var(--accent) 3%, var(--panel)); }
+.personal-estimate-heading { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+.personal-estimate-heading > div:first-child { min-width: 0; }
+.personal-estimate-kicker { display: block; margin-bottom: 5px; color: var(--accent-strong); font-size: 11px; font-weight: 800; }
+.personal-estimate-heading h2 { margin: 0; color: var(--text-strong); font-size: 19px; }
+.personal-estimate-heading p { margin: 5px 0 0; color: var(--muted); font-size: 12px; }
+.personal-estimate-total { display: grid; min-width: 210px; grid-template-columns: 1fr auto; align-items: end; gap: 3px 12px; padding: 13px 15px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); }
+.personal-estimate-total > span { grid-column: 1 / -1; color: var(--muted); font-size: 11px; font-weight: 700; }
+.personal-estimate-total strong { color: var(--accent-strong); font-size: 22px; line-height: 1.1; white-space: nowrap; }
+.personal-estimate-total strong small { color: var(--muted); font-size: 10px; }
+.personal-estimate-total em { color: var(--muted); font-size: 11px; font-style: normal; }
+.personal-estimate-notice { display: flex; align-items: flex-start; gap: 8px; margin: 14px 0; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--line)); border-radius: 6px; background: var(--accent-soft); color: var(--muted-strong); }
+.personal-estimate-notice .icon { flex: 0 0 auto; width: 16px; color: var(--accent-strong); }
+.personal-estimate-notice p { margin: 0; font-size: 11px; line-height: 1.55; }
+.personal-estimate-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.personal-estimate-card { display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px 14px; min-height: 92px; padding: 14px; border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 7px; background: var(--panel); }
+.personal-estimate-card > div { min-width: 0; }
+.personal-estimate-card h3 { overflow: hidden; margin: 5px 0 0; color: var(--text-strong); font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }
+.personal-estimate-card small { color: var(--muted); font-size: 10px; }
+.personal-estimate-card > strong { color: var(--text-strong); font-size: 17px; white-space: nowrap; }
+.personal-estimate-card > strong small { font-size: 9px; }
+.personal-estimate-card > span { grid-column: 1 / -1; justify-self: start; padding: 4px 8px; border-radius: 4px; background: var(--accent-soft); color: var(--accent-strong); font-size: 10px; font-weight: 800; }
+.personal-estimate-empty { margin: 14px 0 0; padding: 16px; border: 1px dashed var(--line-strong); border-radius: 7px; color: var(--muted); font-size: 12px; text-align: center; }
 .personal-status-filter { display: flex; gap: 4px; padding: 4px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel-subtle); }
 .personal-status-filter button { height: 32px; padding: 0 12px; border: 0; border-radius: 5px; background: transparent; color: var(--muted); cursor: pointer; font-size: 12px; font-weight: 700; }
 .personal-status-filter button.is-active { background: var(--panel); color: var(--accent-strong); box-shadow: 0 1px 4px rgba(20, 34, 60, .08); }
@@ -9496,12 +9519,15 @@ body.modal-open {
   .drop-record-main.is-readonly { grid-template-columns: minmax(220px, 1.2fr) 100px 135px minmax(130px, .7fr); }
   .drop-actions { grid-column: 1 / -1; justify-content: flex-end; padding-top: 10px; border-top: 1px solid var(--line); }
   .fee-rule-grid { grid-template-columns: 1fr; }
+  .personal-estimate-grid,
   .personal-distribution-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 980px) {
   .ops-toolbar,
   .personal-context-bar { align-items: stretch; flex-direction: column; }
+  .personal-estimate-heading { align-items: stretch; flex-direction: column; }
+  .personal-estimate-total { min-width: 0; }
   .ops-filter-form,
   .personal-context-bar form { flex-wrap: wrap; }
   .ops-primary-action { align-self: flex-end; }
@@ -9631,6 +9657,7 @@ body.modal-open {
   .alliance-history-progress { grid-column: 1; }
   .alliance-history-row > form { grid-column: 2; grid-row: 2 / span 2; align-self: center; }
   .fee-rule-grid,
+  .personal-estimate-grid,
   .personal-distribution-grid { grid-template-columns: 1fr; }
   .settlement-fee-settings { height: auto; grid-template-rows: auto auto; }
   .settlement-fee-create { grid-template-columns: 1fr; align-items: stretch; }

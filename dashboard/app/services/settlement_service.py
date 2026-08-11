@@ -9,9 +9,13 @@ from sqlalchemy import bindparam, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dashboard.app.services import audit_service
+from dashboard.app.services.settlement_math import (
+    PPM_BASE,
+    member_share_after_fees,
+    proportional_fee,
+)
 
 
-PPM_BASE = 1_000_000
 BIGINT_MAX = 9_223_372_036_854_775_807
 STATUS_PENDING = 0
 STATUS_COMPLETE = 1
@@ -492,7 +496,7 @@ async def _build_alliance_payouts(session: AsyncSession, *, drop_id: int) -> Non
     gross = int(drop["gross_adena"])
     total_fee = 0
     for rule in rules:
-        amount = gross * int(rule["rate_ppm"]) // PPM_BASE
+        amount = proportional_fee(gross, int(rule["rate_ppm"]))
         total_fee += amount
         if amount <= 0:
             continue
@@ -771,10 +775,8 @@ async def _build_clan_children(
         alliance_id=int(parent["recipient_alliance_id"]),
     )
     parent_amount = int(parent["amount_adena"])
-    total_fee = 0
     for rule in rules:
-        amount = parent_amount * int(rule["rate_ppm"]) // PPM_BASE
-        total_fee += amount
+        amount = proportional_fee(parent_amount, int(rule["rate_ppm"]))
         if amount <= 0:
             continue
         await session.execute(
@@ -810,7 +812,11 @@ async def _build_clan_children(
     )
     if not members:
         raise SettlementError("해당 혈맹의 출석 참여자를 찾을 수 없습니다.")
-    per_member = max(parent_amount - total_fee, 0) // len(members)
+    per_member = member_share_after_fees(
+        parent_amount,
+        (int(rule["rate_ppm"]) for rule in rules),
+        len(members),
+    )
     for user_id in members:
         await session.execute(
             text("""

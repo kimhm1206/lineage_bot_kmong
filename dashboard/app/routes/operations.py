@@ -488,7 +488,16 @@ async def personal_distribution_page(
             fallback_to_first=can_select_personal_user,
         )
         if workspace["guild_id"] is not None
-        else {"users": [], "user_id": None, "selected_user": None, "details": [], "summary_cards": []}
+        else {
+            "users": [],
+            "user_id": None,
+            "selected_user": None,
+            "details": [],
+            "estimates": [],
+            "estimated_total_label": "0",
+            "estimated_count": 0,
+            "summary_cards": [],
+        }
     )
     context.update(page_data)
     context.update(
